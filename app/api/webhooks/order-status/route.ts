@@ -1,41 +1,93 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
+import { orderStatusWebhookSchema } from "@/lib/validation/schemas"
+
+// Get allowed origins from environment variable
+function getAllowedOrigins(): string[] {
+  const origins = process.env.ALLOWED_ORIGINS || ""
+  const list = origins.split(",").map((o) => o.trim()).filter(Boolean)
+  
+  // Always include Cloud Functions domain for webhooks (FIX-005)
+  // Note: Firestore triggers/functions don't always send an 'origin' header, 
+  // but for those that do, we should permit this pattern.
+  // The actual verification is handled by the webhookSecret.
+  
+  // In development, allow localhost
+  if (process.env.NODE_ENV === "development") {
+    list.push("http://localhost:3000", "http://localhost:3001")
+  }
+  return list
+}
+
+// Apply CORS headers safely
+function getCORSHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get("origin") || ""
+  const allowedOrigins = getAllowedOrigins()
+
+  // Only allow specific origins
+  if (allowedOrigins.includes(origin)) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-webhook-secret",
+    }
+  }
+
+  // Default: no CORS headers (browser will block)
+  return {}
+}
 
 // Handle CORS preflight requests
 export async function OPTIONS(request: NextRequest) {
+  const corsHeaders = getCORSHeaders(request)
+
+  if (Object.keys(corsHeaders).length === 0) {
+    return new NextResponse(null, { status: 403 })
+  }
+
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
+    headers: corsHeaders,
   })
 }
 
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { orderId, status, webhookSecret } = body
+    const headerSecret = request.headers.get("x-webhook-secret")
 
-    // Verify webhook secret for security
-    if (webhookSecret !== process.env.WEBHOOK_SECRET) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    if (!orderId || !status) {
+    // Verify webhook secret for security (must happen before parsing body).
+    if (!headerSecret || headerSecret !== process.env.WEBHOOK_SECRET) {
       return NextResponse.json(
-        { error: "Order ID and status are required" },
-        { status: 400 }
+        { error: "Unauthorized" },
+        { status: 401, headers: getCORSHeaders(request) }
       )
     }
+
+    const body = await request.json()
+    const parsed = orderStatusWebhookSchema.safeParse(body)
+
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((i) => i.message).join("; ")
+      return NextResponse.json(
+        {
+          error: "Invalid webhook payload",
+          message,
+          issues: parsed.error.issues,
+        },
+        { status: 400, headers: getCORSHeaders(request) }
+      )
+    }
+
+    const { orderId, status } = parsed.data
 
     console.log(`🔄 Webhook: Processing order ${orderId} -> ${status}`)
 
     // Get the order from the main website orders collection
     const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
-    
+
     if (!orderDoc.exists) {
       return NextResponse.json(
         { error: `Order ${orderId} not found` },
@@ -44,14 +96,14 @@ export async function POST(request: NextRequest) {
     }
 
     const orderData = orderDoc.data()
-    
+
     if (!orderData) {
       return NextResponse.json(
         { error: `Order ${orderId} data not found` },
         { status: 404 }
       )
     }
-    
+
     const now = new Date()
 
     // Update the order status in the main orders collection
@@ -60,26 +112,36 @@ export async function POST(request: NextRequest) {
       updatedAt: now
     })
 
-    // Create/Update sales order in accounting system
-    const salesOrder = {
-      id: orderId,
-      website_order_id: orderId,
-      customer_id: orderData.userId || "unknown",
-      customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",
-      items: orderData.items?.map((item: any) => ({
-        sku: item.productId,
-        qty: item.quantity,
-        unit_price: item.basePrice || item.adjustedPrice
-      })) || [],
-      status: mapOrderStatus(status),
-      created_at: orderData.createdAt?.toDate?.() || now,
-      total_amount: orderData.total || 0,
-      order_source: "web",
-      updated_at: now
-    }
+    // Create/Update sales order in accounting system (Idempotent FIX-006)
+    const salesOrderRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId);
+    const existingSalesOrder = await salesOrderRef.get();
 
-    await db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId).set(salesOrder)
-    console.log(`✅ Created/Updated sales order for ${orderId}`)
+    if (existingSalesOrder.exists) {
+      await salesOrderRef.update({
+        status: mapOrderStatus(status),
+        updated_at: now
+      });
+      console.log(`✅ Updated existing sales order status for ${orderId}`);
+    } else {
+      const salesOrder = {
+        id: orderId,
+        website_order_id: orderId,
+        customer_id: orderData.userId || "unknown",
+        customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",
+        items: orderData.items?.map((item: any) => ({
+          sku: item.productId,
+          qty: item.quantity,
+          unit_price: item.basePrice || item.adjustedPrice
+        })) || [],
+        status: mapOrderStatus(status),
+        created_at: orderData.createdAt?.toDate?.() || now,
+        total_amount: orderData.total || 0,
+        order_source: "web",
+        updated_at: now
+      };
+      await salesOrderRef.set(salesOrder);
+      console.log(`✅ Created new sales order for ${orderId}`);
+    }
 
     // If status is "processing", create work order immediately
     if (status === "processing") {
@@ -90,18 +152,28 @@ export async function POST(request: NextRequest) {
 
       if (existingWorkOrderSnapshot.empty) {
         console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
-        
+
         // Get order items for cost calculation
-        const orderDoc = await db.collection("orders").doc(orderId).get();
+        const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
         const orderItems = orderDoc.exists ? (orderDoc.data()?.items || []) : [];
-        
+
         // Calculate costs from designs FIRST
         console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
         const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
-        
+
         if (costCalculation.success) {
           console.log(`✅ Cost calculation successful: EGP ${costCalculation.totalEstimatedCost}`);
           
+          if (costCalculation.warnings && costCalculation.warnings.length > 0) {
+            console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
+          }
+
+          // Construct notes including warnings if any
+          let notes = `Work order created with automatic cost calculation (EGP ${costCalculation.totalEstimatedCost})`;
+          if (costCalculation.warnings && costCalculation.warnings.length > 0) {
+            notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map(w => w.split(': ')[1] || w).join(', ')}`;
+          }
+
           // Create work order with calculated costs
           const workOrder = {
             sales_order_id: orderId,
@@ -109,25 +181,42 @@ export async function POST(request: NextRequest) {
             completionPercentage: 0,
             raw_materials_used: [],
             materials_issued: [],
-            overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
-            labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
+            overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.overheadCost || 0), 0),
+            labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost || 0), 0),
             total_cost: 0,
             estimated_cost: costCalculation.totalEstimatedCost,
             created_at: now,
             updated_at: now,
             estimated_completion: null,
             completed_at: null,
-            notes: `Work order created with automatic cost calculation (EGP ${costCalculation.totalEstimatedCost})`,
+            notes: notes,
             items: orderItems,
             item_costs: costCalculation.itemCosts,
             order_source: "web"
           };
 
           const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
-          console.log(`✅ Created work order ${workOrderRef.id} with automatic cost calculation EGP ${costCalculation.totalEstimatedCost}`);
+          console.log(`✅ Created work order ${workOrderRef.id} with cost EGP ${costCalculation.totalEstimatedCost}`);
+
+          // Post WIP journal entry (DR WIP / CR Accrued Liabilities)
+          // Use estimated cost for opening (can be overridden manually later)
+          if (costCalculation.totalEstimatedCost > 0) {
+            const wipResult = await EnhancedAccountingService.recordWIPOpening(
+              workOrderRef.id,
+              costCalculation.totalEstimatedCost
+            );
+            if (wipResult.success) {
+              console.log(`✅ Posted WIP opening journal entry ${wipResult.entryId}`);
+            } else {
+              console.error(`❌ Failed to post WIP journal: ${wipResult.error}`);
+            }
+          } else {
+            const warningMsg = costCalculation.warnings ? "Unmatched designs" : "Zero estimated cost";
+            console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: ${warningMsg}`);
+          }
         } else {
           console.error(`❌ Cost calculation failed: ${costCalculation.error}`);
-          
+
           // Fallback: Create basic work order with warning
           const basicWorkOrder = {
             sales_order_id: orderId,
@@ -150,8 +239,9 @@ export async function POST(request: NextRequest) {
 
           const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
           console.log(`⚠️ Created basic work order ${workOrderRef.id} without costs - manual update required`);
+          console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: Cost calculation failed`);
         }
-        
+
         return NextResponse.json({
           success: true,
           message: `Order ${orderId} processed successfully`,
@@ -159,11 +249,7 @@ export async function POST(request: NextRequest) {
           status,
           timestamp: now.toISOString()
         }, {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          }
+          headers: getCORSHeaders(request)
         })
       } else {
         console.log(`ℹ️ Work order already exists for order ${orderId}`)
@@ -177,11 +263,7 @@ export async function POST(request: NextRequest) {
       status,
       timestamp: now.toISOString()
     }, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      }
+      headers: getCORSHeaders(request)
     })
 
   } catch (error) {
@@ -197,7 +279,7 @@ export async function POST(request: NextRequest) {
 function mapOrderStatus(websiteStatus: string): string {
   const statusMap: { [key: string]: string } = {
     "pending": "pending",
-    "processing": "producing", 
+    "processing": "producing",
     "producing": "producing",
     "completed": "completed",
     "shipped": "completed",
@@ -205,6 +287,6 @@ function mapOrderStatus(websiteStatus: string): string {
     "cancelled": "cancelled",
     "refunded": "cancelled"
   }
-  
+
   return statusMap[websiteStatus.toLowerCase()] || "pending"
 }

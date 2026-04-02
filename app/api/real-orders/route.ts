@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/firebase"
+import { db, COLLECTIONS } from "@/lib/firebase"
 
 export async function GET(request: NextRequest) {
   try {
     console.log("Fetching real orders from Firestore...")
-    
+
     // Fetch orders from your actual Firestore collection
-    const ordersSnapshot = await db.collection("orders").get()
-    const orders = ordersSnapshot.docs.map(doc => ({
+    const ordersSnapshot = await db.collection(COLLECTIONS.ORDERS).get()
+    const orders: any[] = ordersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       customer_email: order.userId, // Using userId as identifier
       order_date: order.createdAt?.toDate?.() || new Date(),
       status: mapOrderStatus(order.status),
-      items: order.items?.map(item => ({
+      items: order.items?.map((item: any) => ({
         product_id: item.productId,
         product_name: item.name,
         quantity: item.quantity,
@@ -40,8 +40,8 @@ export async function GET(request: NextRequest) {
     }))
 
     // Also fetch returns/refunds
-    const returnsSnapshot = await db.collection("returns").get()
-    const returns = returnsSnapshot.docs.map(doc => ({
+    const returnsSnapshot = await db.collection(COLLECTIONS.RETURNS).get()
+    const returns: any[] = returnsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))

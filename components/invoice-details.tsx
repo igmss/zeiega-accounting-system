@@ -32,7 +32,7 @@ interface InvoiceDetailsProps {
   }
 }
 
-export function InvoiceDetails({ invoice }: InvoiceDetailsProps) {
+export function InvoiceDetails({ invoice }: { invoice: any }) {
   const getStatusBadge = (status: string, dueDate: Date) => {
     if (status === "paid") {
       return <Badge variant="default">Paid</Badge>
@@ -73,25 +73,25 @@ export function InvoiceDetails({ invoice }: InvoiceDetailsProps) {
               <span className="text-muted-foreground">Created:</span>
               <span className="font-medium">
                 {invoice.created_at 
-                  ? (invoice.created_at?.toDate ? invoice.created_at.toDate() : new Date(invoice.created_at || new Date())).toLocaleDateString()
+                  ? ((invoice.created_at as any)?.toDate ? (invoice.created_at as any).toDate() : new Date(invoice.created_at || new Date())).toLocaleDateString()
                   : 'N/A'
                 }
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Due Date:</span>
-              <span className={`font-medium ${new Date() > (invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600" : ""}`}>
-                {(invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())).toLocaleDateString()}
+              <span className={`font-medium ${new Date() > ((invoice.due_date as any)?.toDate ? (invoice.due_date as any).toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600" : ""}`}>
+                {((invoice.due_date as any)?.toDate ? (invoice.due_date as any).toDate() : new Date(invoice.due_date || new Date())).toLocaleDateString()}
               </span>
             </div>
             {invoice.paid_at && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Paid Date:</span>
                 <span className="font-medium text-green-600">
-                  {invoice.paid_at 
-                    ? (invoice.paid_at?.toDate ? invoice.paid_at.toDate() : new Date(invoice.paid_at || new Date())).toLocaleDateString()
-                    : 'N/A'
-                  }
+                    {invoice.paid_at 
+                      ? ((invoice.paid_at as any)?.toDate ? (invoice.paid_at as any).toDate() : new Date(invoice.paid_at || new Date())).toLocaleDateString()
+                      : 'N/A'
+                    }
                 </span>
               </div>
             )}
@@ -135,7 +135,7 @@ export function InvoiceDetails({ invoice }: InvoiceDetailsProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoice.items.map((item, index) => (
+              {(invoice.items || []).map((item: any, index: number) => (
                 <TableRow key={index}>
                   <TableCell className="font-medium">{item.sku}</TableCell>
                   <TableCell>{item.description}</TableCell>

@@ -35,7 +35,7 @@ export class WorkOrderService {
 
       // Check material availability
       const materialAvailability = await DesignService.checkMaterialAvailability(designId, quantity);
-      
+
       if (!materialAvailability.isAvailable) {
         console.warn(`Materials not available for design ${designId}:`, materialAvailability.unavailableMaterials);
       }
@@ -91,8 +91,13 @@ export class WorkOrderService {
     laborRate: number = 50 // Default labor rate per hour in EGP
   ): Promise<void> {
     try {
+      const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get();
+      const workOrderData = workOrderDoc.data();
+      const overheadCost = workOrderData?.overhead_cost || 0;
+
       const laborCost = laborHours * laborRate;
-      const totalCost = materialCosts + laborCost;
+      // BUG-11 Fix: Include overhead_cost in totalCost calculation
+      const totalCost = materialCosts + laborCost + overheadCost;
 
       await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
         labor_hours: laborHours,
@@ -123,14 +128,14 @@ export class WorkOrderService {
         return { workOrder: null, design: null, materialRequirements: [] };
       }
 
-      const workOrder = { 
-        id: workOrderDoc.id, 
+      const workOrder = {
+        id: workOrderDoc.id,
         ...workOrderDoc.data(),
-        created_at: workOrderDoc.data()?.created_at?.toDate ? workOrderDoc.data().created_at.toDate() : (workOrderDoc.data()?.created_at || new Date()),
-        updated_at: workOrderDoc.data()?.updated_at?.toDate ? workOrderDoc.data().updated_at.toDate() : (workOrderDoc.data()?.updated_at || new Date()),
-        completed_at: workOrderDoc.data()?.completed_at?.toDate ? workOrderDoc.data().completed_at.toDate() : (workOrderDoc.data()?.completed_at || null),
-        start_time: workOrderDoc.data()?.start_time?.toDate ? workOrderDoc.data().start_time.toDate() : (workOrderDoc.data()?.start_time || null),
-        estimated_completion: workOrderDoc.data()?.estimated_completion?.toDate ? workOrderDoc.data().estimated_completion.toDate() : (workOrderDoc.data()?.estimated_completion || null)
+        created_at: (workOrderDoc.data()?.created_at as any)?.toDate ? (workOrderDoc.data() as any).created_at.toDate() : (workOrderDoc.data()?.created_at || new Date()),
+        updated_at: (workOrderDoc.data()?.updated_at as any)?.toDate ? (workOrderDoc.data() as any).updated_at.toDate() : (workOrderDoc.data()?.updated_at || new Date()),
+        completed_at: (workOrderDoc.data()?.completed_at as any)?.toDate ? (workOrderDoc.data() as any).completed_at.toDate() : (workOrderDoc.data()?.completed_at || null),
+        start_time: (workOrderDoc.data()?.start_time as any)?.toDate ? (workOrderDoc.data() as any).start_time.toDate() : (workOrderDoc.data()?.start_time || null),
+        estimated_completion: (workOrderDoc.data()?.estimated_completion as any)?.toDate ? (workOrderDoc.data() as any).estimated_completion.toDate() : (workOrderDoc.data()?.estimated_completion || null)
       } as WorkOrder;
 
       // Fetch sales order details from multiple possible sources
@@ -138,12 +143,12 @@ export class WorkOrderService {
         try {
           let salesOrderData = null;
           let customerData = null;
-          
+
           // Try to get from acc_sales_orders first (accounting system)
           const accSalesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrder.sales_order_id).get();
           if (accSalesOrderDoc.exists) {
             salesOrderData = accSalesOrderDoc.data();
-            
+
             // Use customer data directly from sales order if available
             if (salesOrderData?.customer_name) {
               customerData = {
@@ -160,10 +165,10 @@ export class WorkOrderService {
               }
             }
           }
-          
+
           // If not found in accounting system, try original orders collection
           if (!salesOrderData) {
-            const orderDoc = await db.collection("orders").doc(workOrder.sales_order_id).get();
+            const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(workOrder.sales_order_id).get();
             if (orderDoc.exists) {
               salesOrderData = orderDoc.data();
               // Extract customer data from order
@@ -175,10 +180,10 @@ export class WorkOrderService {
               };
             }
           }
-          
+
           // If still not found, try manual_orders collection
           if (!salesOrderData) {
-            const manualOrderDoc = await db.collection("manual_orders").doc(workOrder.sales_order_id).get();
+            const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrder.sales_order_id).get();
             if (manualOrderDoc.exists) {
               salesOrderData = manualOrderDoc.data();
               // Extract customer data from manual order
@@ -190,7 +195,7 @@ export class WorkOrderService {
               };
             }
           }
-          
+
           // Set customer data if found
           if (customerData) {
             workOrder.customer_name = customerData.name || "Unknown Customer";
@@ -239,23 +244,23 @@ export class WorkOrderService {
 
       // Get design information if available and recalculate costs from latest design data
       let design = null;
-      let materialRequirements = [];
-      
+      let materialRequirements: any[] = [];
+
       // Recalculate item_costs from latest design data if items exist
       if (workOrder.items && workOrder.items.length > 0) {
         try {
           // Recalculate costs from current design data
           const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(workOrder.items);
-          
+
           if (costCalculation.success && costCalculation.itemCosts.length > 0) {
             // Update item_costs with recalculated values based on latest design data
             workOrder.item_costs = costCalculation.itemCosts;
-            
+
             // Also update aggregate costs
             workOrder.estimated_cost = costCalculation.totalEstimatedCost;
             workOrder.labor_cost = costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0);
             workOrder.overhead_cost = costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0);
-            
+
             console.log(`Recalculated costs for work order ${workOrderId}: Total EGP ${costCalculation.totalEstimatedCost}`);
           }
         } catch (error) {
@@ -263,7 +268,7 @@ export class WorkOrderService {
           // Continue with existing costs if recalculation fails
         }
       }
-      
+
       // Get design information for display (if item_costs reference a design)
       if (workOrder.item_costs && workOrder.item_costs.length > 0 && workOrder.item_costs[0].designId) {
         const firstDesignId = workOrder.item_costs[0].designId;
@@ -302,11 +307,11 @@ export class WorkOrderService {
         const workOrderData = {
           id: doc.id,
           ...doc.data(),
-          created_at: doc.data().created_at?.toDate ? doc.data().created_at.toDate() : (doc.data().created_at || new Date()),
-          updated_at: doc.data().updated_at?.toDate ? doc.data().updated_at.toDate() : (doc.data().updated_at || new Date()),
-          completed_at: doc.data().completed_at?.toDate ? doc.data().completed_at.toDate() : (doc.data().completed_at || null),
-          start_time: doc.data().start_time?.toDate ? doc.data().start_time.toDate() : (doc.data().start_time || null),
-          estimated_completion: doc.data().estimated_completion?.toDate ? doc.data().estimated_completion.toDate() : (doc.data().estimated_completion || null)
+          created_at: (doc.data().created_at as any)?.toDate ? (doc.data().created_at as any).toDate() : (doc.data().created_at || new Date()),
+          updated_at: (doc.data().updated_at as any)?.toDate ? (doc.data().updated_at as any).toDate() : (doc.data().updated_at || new Date()),
+          completed_at: (doc.data().completed_at as any)?.toDate ? (doc.data().completed_at as any).toDate() : (doc.data().completed_at || null),
+          start_time: (doc.data().start_time as any)?.toDate ? (doc.data().start_time as any).toDate() : (doc.data().start_time || null),
+          estimated_completion: (doc.data().estimated_completion as any)?.toDate ? (doc.data().estimated_completion as any).toDate() : (doc.data().estimated_completion || null)
         } as WorkOrder;
 
         // Fetch sales order details from multiple possible sources
@@ -314,12 +319,12 @@ export class WorkOrderService {
           try {
             let salesOrderData = null;
             let customerData = null;
-            
+
             // Try to get from acc_sales_orders first (accounting system)
             const accSalesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrderData.sales_order_id).get();
             if (accSalesOrderDoc.exists) {
               salesOrderData = accSalesOrderDoc.data();
-              
+
               // Use customer data directly from sales order if available
               if (salesOrderData?.customer_name) {
                 customerData = {
@@ -336,10 +341,10 @@ export class WorkOrderService {
                 }
               }
             }
-            
+
             // If not found in accounting system, try original orders collection
             if (!salesOrderData) {
-              const orderDoc = await db.collection("orders").doc(workOrderData.sales_order_id).get();
+              const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(workOrderData.sales_order_id).get();
               if (orderDoc.exists) {
                 salesOrderData = orderDoc.data();
                 // Extract customer data from order
@@ -351,10 +356,10 @@ export class WorkOrderService {
                 };
               }
             }
-            
+
             // If still not found, try manual_orders collection
             if (!salesOrderData) {
-              const manualOrderDoc = await db.collection("manual_orders").doc(workOrderData.sales_order_id).get();
+              const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrderData.sales_order_id).get();
               if (manualOrderDoc.exists) {
                 salesOrderData = manualOrderDoc.data();
                 // Extract customer data from manual order
@@ -366,7 +371,7 @@ export class WorkOrderService {
                 };
               }
             }
-            
+
             // Set customer data if found
             if (customerData) {
               workOrderData.customer_name = customerData.name || "Unknown Customer";
@@ -438,7 +443,17 @@ export class WorkOrderService {
         throw new Error("Work order not found");
       }
 
-      const revenue = workOrder.total_amount || 0;
+      // BUG-12 Fix: Profitability uses realized revenue from PAID invoices, not the sales order value
+      const invoicesSnapshot = await db.collection(COLLECTIONS.INVOICES)
+        .where("sales_order_id", "==", workOrder.sales_order_id)
+        .get();
+
+      const revenue = invoicesSnapshot.docs.reduce((sum, doc) => {
+        const inv = doc.data();
+        // Sum any amounts actually paid across all invoices (paid, partial, overdue)
+        return sum + (inv.paid_amount || 0);
+      }, 0);
+
       const totalCost = workOrder.total_cost || workOrder.estimated_cost || 0;
       const profit = revenue - totalCost;
       const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;

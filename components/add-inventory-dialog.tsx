@@ -25,6 +25,7 @@ export function AddInventoryDialog() {
     supplier: "",
     location: "",
     description: "",
+    paymentSource: "",
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,6 +42,7 @@ export function AddInventoryDialog() {
           quantity_on_hand: parseFloat(formData.quantity),
           cost_per_unit: parseFloat(formData.cost_per_unit),
           reorder_level: parseFloat(formData.reorder_level),
+          paymentSource: formData.paymentSource,
         }),
       })
 
@@ -60,6 +62,7 @@ export function AddInventoryDialog() {
         supplier: "",
         location: "",
         description: "",
+        paymentSource: "",
       })
       setIsOpen(false)
       
@@ -198,6 +201,25 @@ export function AddInventoryDialog() {
                 onChange={(e) => handleInputChange("location", e.target.value)}
                 placeholder="e.g., Warehouse Section A"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="paymentSource">Payment Source *</Label>
+              <Select 
+                value={formData.paymentSource} 
+                onValueChange={(value) => handleInputChange("paymentSource", value)}
+                required
+              >
+                <SelectTrigger id="paymentSource">
+                  <SelectValue placeholder="Select payment source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash on Hand (1101)</SelectItem>
+                  <SelectItem value="bank">Bank Account (1103)</SelectItem>
+                  <SelectItem value="payable">On Credit - Vendor (2101)</SelectItem>
+                  <SelectItem value="opening">Opening Balance (3001)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

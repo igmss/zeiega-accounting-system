@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
       try {
         // Get the order data
-        const orderDoc = await db.collection("orders").doc(salesOrderId).get();
+        const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(salesOrderId).get();
         if (!orderDoc.exists) {
           console.warn(`Order ${salesOrderId} not found for work order ${workOrderId}`);
           results.failed++;
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
         // Calculate costs from designs
         const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
-        
+
         if (!costCalculation.success) {
           console.error(`Failed to calculate costs for work order ${workOrderId}: ${costCalculation.error}`);
           results.failed++;

@@ -63,7 +63,7 @@ export function SalesOrderDetails({ order }: SalesOrderDetailsProps) {
               <span className="text-muted-foreground">Created:</span>
               <span className="font-medium">
                 {order.created_at 
-                  ? (order.created_at.toDate ? order.created_at.toDate() : new Date(order.created_at)).toLocaleDateString()
+                  ? ((order.created_at as any).toDate ? (order.created_at as any).toDate() : new Date(order.created_at)).toLocaleDateString()
                   : 'N/A'
                 }
               </span>

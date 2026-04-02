@@ -55,8 +55,8 @@ export function SalesOrdersList() {
         if (!response.ok) {
           throw new Error('Failed to fetch sales orders')
         }
-        const ordersData = await response.json()
-        setOrders(ordersData)
+        const result = await response.json()
+        setOrders(result.data || [])
       } catch (error) {
         console.error("Error loading sales orders:", error)
         setOrders([])
@@ -215,11 +215,10 @@ export function SalesOrdersList() {
       })
       setIsManualOrderOpen(false)
 
-      // Refresh orders
       const ordersResponse = await fetch('/api/sales-orders')
       if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json()
-        setOrders(ordersData)
+        const result = await ordersResponse.json()
+        setOrders(result.data || [])
       }
     } catch (error) {
       console.error('Error creating manual order:', error)
@@ -302,17 +301,17 @@ export function SalesOrdersList() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {order.items
-                        .map((item) => `${item.qty}x ${item.sku}`)
+                        .map((item: any) => `${item.qty}x ${item.sku}`)
                         .join(", ")
                         .slice(0, 30)}
-                      {order.items.map((item) => `${item.qty}x ${item.sku}`).join(", ").length > 30 ? "..." : ""}
+                      {order.items.map((item: any) => `${item.qty}x ${item.sku}`).join(", ").length > 30 ? "..." : ""}
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
                   <TableCell>
                     {order.created_at 
-                      ? (order.created_at.toDate ? order.created_at.toDate() : new Date(order.created_at)).toLocaleDateString()
+                      ? ((order.created_at as any).toDate ? (order.created_at as any).toDate() : new Date(order.created_at)).toLocaleDateString()
                       : 'N/A'
                     }
                   </TableCell>

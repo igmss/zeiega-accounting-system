@@ -1,66 +1,70 @@
 import { NextResponse } from "next/server"
-import { CentralizedAccountingService } from "../sync-balances/route"
 
 // API endpoint for recording loans with automatic balance synchronization
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { amount, description, lenderName, loanType } = body
+    const { amount, description, lenderName, loanType, receivedVia } = body
     
     // Validate input
     if (!amount || amount <= 0) {
-      return NextResponse.json(
-        { error: "Valid loan amount is required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Valid loan amount is required" }, { status: 400 })
     }
     
+    const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
+
     const now = new Date()
-    const loanDescription = description || `Loan received from ${lenderName || 'Lender'} - $${amount.toLocaleString()}`
-    const liabilityAccount = loanType === 'long-term' ? 'LONG_TERM_DEBT' : 'SHORT_TERM_DEBT'
+    const loanDescription = description || `Loan received from ${lenderName || 'Lender'}`
     
-    // Create journal entry for the loan
+    // BUG-1: Replace placeholders with numeric codes
+    let cashAccount = "1103" // Default Bank
+    if (receivedVia === "cash") cashAccount = "1101"
+
+    const liabilityAccount = loanType === "long-term" ? "2201" : "2210" // 2201: Long-term, 2210: Short-term Notes
+    
     const entries = [
       {
-        account_id: "CASH",
+        accountCode: cashAccount,
+        accountName: receivedVia === "cash" ? "Cash on Hand" : "Bank Account",
         debit: amount,
         credit: 0,
         description: loanDescription
       },
       {
-        account_id: liabilityAccount,
+        accountCode: liabilityAccount,
+        accountName: loanType === "long-term" ? "Long-Term Loans" : "Short-Term Loans",
         debit: 0,
         credit: amount,
-        description: `Loan payable - $${amount.toLocaleString()}`
+        description: `Loan payable to ${lenderName || 'Lender'}`
       }
     ]
     
-    // Create journal entry and auto-sync balances
-    const journalEntryId = await CentralizedAccountingService.createJournalEntryAndSync(
+    const result = await EnhancedAccountingService.createJournalEntry(
+      JournalEntryType.GENERAL,
       entries,
-      `LOAN_${Date.now()}_${lenderName?.replace(/\s+/g, '_') || 'LENDER'}`
+      `LOAN-${Date.now()}`,
+      `Loan recording: ${loanDescription}`
     )
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
+    }
     
     return NextResponse.json({
       success: true,
-      message: `Loan of $${amount.toLocaleString()} recorded successfully`,
-      journalEntryId: journalEntryId,
+      journalEntryId: result.entryId,
       loan: {
-        amount: amount,
+        amount,
         description: loanDescription,
-        lenderName: lenderName,
-        liabilityAccount: liabilityAccount,
-        loanType: loanType || 'short-term',
+        lenderName,
+        liabilityAccount,
+        loanType: loanType || "short-term",
         date: now
       }
     })
-    
   } catch (error) {
     console.error("Error recording loan:", error)
-    return NextResponse.json(
-      { error: "Failed to record loan" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to record loan" }, { status: 500 })
   }
 }
 
@@ -69,55 +73,43 @@ export async function GET() {
   try {
     const { db, COLLECTIONS } = await import("@/lib/firebase")
     
-    // Get all journal entries that represent loans
+    // BUG-1: Update detection logic for numeric codes
     const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
     
-    const loans = []
+    const loans: any[] = []
     journalSnapshot.docs.forEach(doc => {
       const entry = doc.data()
       if (entry.entries) {
+        // Loan = Debit 1101/1103 (Cash/Bank) AND Credit 2201/2210 (Loans Payable)
         const hasCashDebit = entry.entries.some((subEntry: any) => 
-          subEntry.account_id === 'CASH' && subEntry.debit > 0
+          (subEntry.account_id === "1101" || subEntry.account_id === "1103") && subEntry.debit > 0
         )
         const hasLiabilityCredit = entry.entries.some((subEntry: any) => 
-          (subEntry.account_id === 'SHORT_TERM_DEBT' || subEntry.account_id === 'LONG_TERM_DEBT') && 
-          subEntry.credit > 0
+          (subEntry.account_id === "2201" || subEntry.account_id === "2210") && subEntry.credit > 0
         )
         
         if (hasCashDebit && hasLiabilityCredit) {
           const cashEntry = entry.entries.find((subEntry: any) => 
-            subEntry.account_id === 'CASH' && subEntry.debit > 0
+            (subEntry.account_id === "1101" || subEntry.account_id === "1103") && subEntry.debit > 0
           )
           const liabilityEntry = entry.entries.find((subEntry: any) => 
-            (subEntry.account_id === 'SHORT_TERM_DEBT' || subEntry.account_id === 'LONG_TERM_DEBT') && 
-            subEntry.credit > 0
+            (subEntry.account_id === "2201" || subEntry.account_id === "2210") && subEntry.credit > 0
           )
           
           loans.push({
             id: doc.id,
             amount: cashEntry?.debit || 0,
-            description: cashEntry?.description || '',
-            liabilityAccount: liabilityEntry?.account_id || '',
-            loanType: liabilityEntry?.account_id === 'LONG_TERM_DEBT' ? 'long-term' : 'short-term',
-            date: entry.date?.toDate() || new Date(),
-            created_at: entry.created_at?.toDate() || new Date()
+            description: entry.description || cashEntry?.description || "",
+            liabilityAccount: liabilityEntry?.account_id || "",
+            loanType: liabilityEntry?.account_id === "2201" ? "long-term" : "short-term",
+            date: entry.date?.toDate ? entry.date.toDate() : (entry.date || new Date())
           })
         }
       }
     })
     
-    return NextResponse.json({
-      success: true,
-      loans: loans,
-      count: loans.length,
-      timestamp: new Date().toISOString()
-    })
-    
+    return NextResponse.json({ success: true, loans, count: loans.length })
   } catch (error) {
-    console.error("Error fetching loans:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch loans" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to fetch loans" }, { status: 500 })
   }
 }

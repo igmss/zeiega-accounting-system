@@ -124,7 +124,7 @@ export function InventoryValuationReport({ dateRange }: InventoryValuationReport
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-2xl font-bold text-red-600">
-                  ${slowMovingItems.reduce((sum, item) => sum + item.total_value, 0).toLocaleString()}
+                  ${slowMovingItems.reduce((sum: number, item: any) => sum + item.total_value, 0).toLocaleString()}
                 </div>
                 <div className="text-sm text-muted-foreground">Slow Moving Value</div>
               </div>

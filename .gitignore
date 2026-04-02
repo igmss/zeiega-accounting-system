@@ -147,3 +147,7 @@ firebase-service-account.json
 test-webhook-integration.js
 scripts/update-cash-balance.js
 scripts/test-order-status-update.js
+
+# Suspicious files (do not commit)
+t-secret-123*
+h origin main

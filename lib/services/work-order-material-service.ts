@@ -1,5 +1,6 @@
-import { db, COLLECTIONS } from "../firebase";
+import { db, COLLECTIONS, FieldValue } from "../firebase";
 import { DesignService } from "./design-service";
+import { EnhancedAccountingService } from "./enhanced-accounting-service";
 import type { MaterialRequirement } from "../types/designs";
 
 export class WorkOrderMaterialService {
@@ -45,7 +46,7 @@ export class WorkOrderMaterialService {
           .doc(requirement.inventoryItemId);
         
         batch.update(inventoryRef, {
-          quantity_on_hand: db.FieldValue.increment(-requirement.requiredQuantity),
+          quantity_on_hand: FieldValue.increment(-requirement.requiredQuantity),
           updatedAt: new Date()
         });
 
@@ -80,30 +81,31 @@ export class WorkOrderMaterialService {
         updated_at: new Date()
       });
 
-      // Create journal entry for materials usage
-      const journalEntryRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc();
-      batch.set(journalEntryRef, {
-        date: new Date(),
-        entries: [
-          {
-            account_id: "INVENTORY_WIP",
-            debit: totalCost,
-            credit: 0,
-            description: `Materials issued for work order ${workOrderId} - Design ${designId}`
-          },
-          {
-            account_id: "INVENTORY_RAW",
-            debit: 0,
-            credit: totalCost,
-            description: `Raw materials issued for work order ${workOrderId}`
-          }
-        ],
-        linked_doc: workOrderId,
-        created_at: new Date(),
-        type: "material_issue"
-      });
+      // Create journal entry via EnhancedAccountingService (BUG-2 Fix: Accounting BEFORE Batch)
+      // This handles real COA codes (1210 WIP, 1201 Raw Materials) and indexing
+      const accountingMaterials = issuedMaterials.map(m => ({
+        itemId: m.inventoryItemId,
+        itemName: m.inventoryItemName,
+        quantity: m.requiredQuantity,
+        unitCost: m.costPerUnit
+      }));
 
-      // Commit all changes
+      const accountingResult = await EnhancedAccountingService.recordMaterialIssue(
+        workOrderId,
+        accountingMaterials
+      );
+
+      if (!accountingResult.success) {
+        console.error(`❌ Material issue accounting failed: ${accountingResult.error}. Inventory deduction aborted.`);
+        return {
+          success: false,
+          issuedMaterials: [],
+          totalCost: 0,
+          error: `Accounting failure: ${accountingResult.error}`
+        };
+      }
+
+      // Commit inventory and status changes ONLY if accounting succeeded
       await batch.commit();
 
       console.log(`✅ Successfully issued materials for work order ${workOrderId}, total cost: EGP ${totalCost}`);
@@ -112,7 +114,7 @@ export class WorkOrderMaterialService {
         success: true,
         issuedMaterials,
         totalCost,
-        journalEntryId: journalEntryRef.id
+        journalEntryId: accountingResult.entryId
       };
 
     } catch (error) {
@@ -148,44 +150,56 @@ export class WorkOrderMaterialService {
       }
 
       const workOrderData = workOrderDoc.data();
-      const totalCost = workOrderData?.materials_issued?.reduce((sum: number, material: any) => 
+      
+      // Calculate cost with fallbacks (BUG-20 Fix)
+      // 1. Check materials_issued array (formal issue path)
+      let totalCost = workOrderData?.materials_issued?.reduce((sum: number, material: any) => 
         sum + material.totalCost, 0) || 0;
+      
+      // 2. Fallback to total_cost field (manual/auto-calculation path)
+      if (totalCost <= 0) {
+        totalCost = workOrderData?.total_cost || 0;
+      }
 
-      // Update work order status
+      // 3. Fallback to estimated_cost field (initial estimation path)
+      if (totalCost <= 0) {
+        totalCost = workOrderData?.estimated_cost || 0;
+      }
+
+      // Update work order status regardless of cost
       await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
         status: "completed",
         completed_at: new Date(),
-        updated_at: new Date()
+        updated_at: new Date(),
+        // Store the final cost used for completion
+        final_completion_cost: totalCost
       });
 
-      // Create journal entry for completion (WIP → Finished Goods)
-      const journalEntryRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc();
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(journalEntryRef.id).set({
-        date: new Date(),
-        entries: [
-          {
-            account_id: "INVENTORY_FINISHED",
-            debit: totalCost,
-            credit: 0,
-            description: `Completed work order ${workOrderId} - Design ${designId}`
-          },
-          {
-            account_id: "INVENTORY_WIP",
-            debit: 0,
-            credit: totalCost,
-            description: `Work order ${workOrderId} completed`
-          }
-        ],
-        linked_doc: workOrderId,
-        created_at: new Date(),
-        type: "work_order_completion"
-      });
+      // Create journal entry for completion (WIP → Finished Goods) only if cost > 0
+      let journalEntryId: string | undefined = undefined;
+      
+      if (totalCost > 0) {
+        // This handles real COA codes (1220 Finished Goods, 1210 WIP) and indexing
+        const accountingResult = await EnhancedAccountingService.recordWIPToFinishedGoods(
+          workOrderId,
+          totalCost
+        );
+
+        if (!accountingResult.success) {
+          console.error(`⚠️ Work order completed but accounting entry failed: ${accountingResult.error}`);
+        } else {
+          journalEntryId = accountingResult.entryId;
+        }
+      } else {
+        console.warn(`⚠️ Work order ${workOrderId} completed with zero cost. Skipping journal entry.`);
+      }
+
 
       console.log(`✅ Successfully completed work order ${workOrderId}`);
 
       return {
         success: true,
-        journalEntryId: journalEntryRef.id
+        journalEntryId
       };
 
     } catch (error) {

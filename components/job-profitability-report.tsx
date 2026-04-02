@@ -221,7 +221,7 @@ export function JobProfitabilityReport({ dateRange }: JobProfitabilityReportProp
                   <div className="text-2xl font-bold text-green-600">{highMarginJobs.length}</div>
                   <div className="text-sm text-muted-foreground">High Margin Jobs &gt;35%</div>
                   <div className="text-xs text-muted-foreground">
-                    ${highMarginJobs.reduce((sum, job) => sum + job.gross_profit, 0).toLocaleString()} profit
+                    ${highMarginJobs.reduce((sum: number, job: any) => sum + job.gross_profit, 0).toLocaleString()} profit
                   </div>
                 </div>
               </CardContent>
@@ -233,7 +233,7 @@ export function JobProfitabilityReport({ dateRange }: JobProfitabilityReportProp
                   <div className="text-2xl font-bold text-yellow-600">{mediumMarginJobs.length}</div>
                   <div className="text-sm text-muted-foreground">Medium Margin Jobs (20-35%)</div>
                   <div className="text-xs text-muted-foreground">
-                    ${mediumMarginJobs.reduce((sum, job) => sum + job.gross_profit, 0).toLocaleString()} profit
+                    ${mediumMarginJobs.reduce((sum: number, job: any) => sum + job.gross_profit, 0).toLocaleString()} profit
                   </div>
                 </div>
               </CardContent>
@@ -245,7 +245,7 @@ export function JobProfitabilityReport({ dateRange }: JobProfitabilityReportProp
                   <div className="text-2xl font-bold text-red-600">{lowMarginJobs.length}</div>
                   <div className="text-sm text-muted-foreground">Low Margin Jobs &lt;20%</div>
                   <div className="text-xs text-muted-foreground">
-                    ${lowMarginJobs.reduce((sum, job) => sum + job.gross_profit, 0).toLocaleString()} profit
+                    ${lowMarginJobs.reduce((sum: number, job: any) => sum + job.gross_profit, 0).toLocaleString()} profit
                   </div>
                 </div>
               </CardContent>

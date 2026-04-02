@@ -65,21 +65,25 @@ export interface WorkOrder {
   total_cost: number // Calculated total cost
   estimated_cost: number // Estimated cost from design
   status: "pending" | "in_progress" | "completed"
-  created_at: Date
-  completed_at?: Date
-  updated_at?: Date
+  created_at: Date | any
+  completed_at?: Date | any
+  updated_at?: Date | any
   completionPercentage?: number
   assigned_worker?: string
-  start_time?: Date
-  estimated_completion?: Date
+  start_time?: Date | any
+  estimated_completion?: Date | any
   notes?: string
   items?: any[] // Order items from sales order
+  item_costs?: any[] // Calculated costs per item
   customer_name?: string // Fetched from customer collection
   customer_email?: string
   customer_phone?: string
   customer_address?: string
   total_amount?: number // Total order value from sales order
   order_status?: string // Status from sales order
+  cost_override?: number
+  cost_override_reason?: string
+  cost_override_by?: string
 }
 
 export interface InventoryItem {
@@ -88,7 +92,7 @@ export interface InventoryItem {
   type: "raw" | "finished"
   quantity_on_hand: number
   cost_per_unit: number
-  created_at: Date
+  created_at: Date | any
 }
 
 export interface InventoryMovement {
@@ -97,17 +101,23 @@ export interface InventoryMovement {
   qty: number
   type: "issue" | "receipt" | "return" | "adjustment"
   related_doc?: string
-  created_at: Date
+  created_at: Date | any
 }
 
 export interface Invoice {
   id: string
   sales_order_id: string
   customer_id: string
+  customer_name?: string
+  customer_email?: string
   amount: number
-  due_date: Date
-  status: "unpaid" | "paid" | "partial"
-  created_at: Date
+  tax_amount?: number
+  total_amount?: number
+  due_date: Date | any
+  status: "unpaid" | "paid" | "partial" | "overdue"
+  created_at: Date | any
+  paid_at?: Date | any
+  items?: any[]
 }
 
 export interface Payment {
@@ -122,6 +132,7 @@ export interface Payment {
 // Source data types (from existing website)
 export interface WebsiteOrder {
   id: string
+  userId?: string
   customer_email: string
   items: any[]
   total: number

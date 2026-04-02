@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { AccountingService } from "@/lib/accounting-service"
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
 export const dynamic = 'force-dynamic'
 
@@ -11,10 +11,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const accountingService = new AccountingService()
-
     // Process returns from website
-    const result = await accountingService.processWebsiteReturns()
+    const result = await EnhancedAccountingService.syncWebsiteReturns()
 
     return NextResponse.json({
       success: true,

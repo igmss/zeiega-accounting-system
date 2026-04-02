@@ -1,172 +1,125 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * GET /api/reports/profit-loss
+ * Generate Profit & Loss (Income Statement) using the proper Chart of Accounts structure
+ * Query params: from, to (YYYY-MM-DD format)
+ */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
-    
+
     if (!from || !to) {
       return NextResponse.json(
-        { error: "Date range is required" },
+        { error: "Date range is required (from, to)" },
         { status: 400 }
       )
     }
 
-    const fromDate = new Date(from)
-    const toDate = new Date(to)
+    const startDate = new Date(from)
+    const endDate = new Date(to)
 
-    // Fetch real orders for revenue calculation
-    const ordersSnapshot = await db.collection("orders")
-      .where('createdAt', '>=', fromDate)
-      .where('createdAt', '<=', toDate)
-      .get()
+    // Generate income statement using the service that correctly uses new COA
+    const incomeStatement = await FinancialStatementsService.generateIncomeStatement(
+      startDate,
+      endDate
+    )
 
-    const orders = ordersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-    
-    // Calculate revenue from delivered orders
-    const salesRevenue = orders
-      .filter(order => order.status === 'delivered')
-      .reduce((sum, order) => sum + (order.total || 0), 0)
-    
-    const otherIncome = 0 // Would come from other revenue sources
-    const totalRevenue = salesRevenue + otherIncome
+    // Calculate expense breakdown from operating expenses items
+    const expenseBreakdown = incomeStatement.operatingExpenses.items.reduce((acc, item) => {
+      const code = parseInt(item.code)
+      // Categorize by account code ranges
+      if (code >= 6001 && code <= 6006) {
+        acc.administrative += item.amount
+      } else if (code >= 6101 && code <= 6107) {
+        acc.marketing += item.amount
+      } else if (code >= 6201 && code <= 6206) {
+        acc.operating += item.amount
+      }
+      return acc
+    }, { administrative: 0, marketing: 0, operating: 0 })
 
-    // Fetch returns for COGS adjustment
-    const returnsSnapshot = await db.collection("returns")
-      .where('refundDate', '>=', fromDate)
-      .where('refundDate', '<=', toDate)
-      .get()
-
-    const returns = returnsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-
-    // Calculate refunds (negative revenue)
-    const refunds = returns
-      .filter(ret => ret.refundProcessed === true)
-      .reduce((sum, ret) => sum + (ret.refundAmount || 0), 0)
-
-    const netRevenue = totalRevenue - refunds
-
-    // If no data, return zero values to prevent NaN
-    if (orders.length === 0) {
-      return NextResponse.json({
-        revenue: {
-          sales_revenue: 0,
-          other_income: otherIncome,
-          total_revenue: otherIncome,
-        },
-        cost_of_goods_sold: {
-          raw_materials: 0,
-          direct_labor: 0,
-          manufacturing_overhead: 0,
-          total_cogs: 0,
-        },
-        gross_profit: otherIncome,
-        operating_expenses: {
-          salaries_wages: 0,
-          rent: 0,
-          utilities: 0,
-          insurance: 0,
-          depreciation: 0,
-          other_expenses: 0,
-          total_operating_expenses: 0,
-        },
-        operating_income: otherIncome,
-        other_income_expenses: {
-          interest_income: 0,
-          interest_expense: 0,
-          total_other: 0,
-        },
-        net_income: otherIncome,
-        monthlyTrend: [
-          { month: "Oct", revenue: otherIncome, expenses: 0, profit: otherIncome },
-          { month: "Nov", revenue: otherIncome, expenses: 0, profit: otherIncome },
-          { month: "Dec", revenue: otherIncome, expenses: 0, profit: otherIncome },
-          { month: "Jan", revenue: otherIncome, expenses: 0, profit: otherIncome },
-        ]
-      })
-    }
-
-    // Fetch work orders for COGS calculation
-    const workOrdersSnapshot = await db.collection("acc_work_orders")
-      .where('created_at', '>=', fromDate)
-      .where('created_at', '<=', toDate)
-      .get()
-
-    const workOrders = workOrdersSnapshot.docs.map(doc => doc.data())
-    
-    // Calculate COGS
-    const rawMaterialsCost = workOrders.reduce((sum, wo) => {
-      return sum + (wo.raw_materials_used?.reduce((matSum: number, mat: any) => 
-        matSum + (mat.qty * mat.cost), 0) || 0)
-    }, 0)
-    
-    const laborCost = workOrders.reduce((sum, wo) => sum + (wo.laborCost || 0), 0)
-    const overheadCost = workOrders.reduce((sum, wo) => sum + (wo.overhead_cost || 0), 0)
-    const totalCOGS = rawMaterialsCost + laborCost + overheadCost
-
-    const grossProfit = totalRevenue - totalCOGS
-
-    // Calculate operating expenses from actual data (would come from expense tracking system)
-    const operatingExpenses = {
-      salaries_wages: 0,
-      rent: 0,
-      utilities: 0,
-      insurance: 0,
-      depreciation: 0,
-      other_expenses: 0,
-      total_operating_expenses: 0,
-    }
-
-    const operatingIncome = grossProfit - operatingExpenses.total_operating_expenses
-
-    // Calculate other income/expenses from actual data (would come from financial records)
-    const otherIncomeExpenses = {
-      interest_income: 0,
-      interest_expense: 0,
-      total_other: 0,
-    }
-
-    const netIncome = operatingIncome + otherIncomeExpenses.total_other
-
-    // Generate monthly trend data from actual data
-    const monthlyTrend = [
-      { month: "Oct", revenue: 0, expenses: 0, profit: 0 },
-      { month: "Nov", revenue: 0, expenses: 0, profit: 0 },
-      { month: "Dec", revenue: 0, expenses: 0, profit: 0 },
-      { month: "Jan", revenue: netRevenue, expenses: totalCOGS + operatingExpenses.total_operating_expenses, profit: netIncome },
-    ]
-
-    const reportData = {
+    // Transform to the expected API response format
+    const response = {
+      periodStart: incomeStatement.periodStart.toISOString().split("T")[0],
+      periodEnd: incomeStatement.periodEnd.toISOString().split("T")[0],
       revenue: {
-        sales_revenue: Math.round(salesRevenue),
-        other_income: otherIncome,
-        total_revenue: Math.round(netRevenue), // Use net revenue after refunds
+        items: incomeStatement.revenue.items.map(item => ({
+          code: item.code,
+          name: item.name,
+          amount: Math.round(item.amount * 100) / 100
+        })),
+        sales_revenue: Math.round(incomeStatement.revenue.total * 100) / 100,
+        other_income: 0,
+        total_revenue: Math.round(incomeStatement.revenue.total * 100) / 100,
       },
       cost_of_goods_sold: {
-        raw_materials: Math.round(rawMaterialsCost),
-        direct_labor: Math.round(laborCost),
-        manufacturing_overhead: Math.round(overheadCost),
-        total_cogs: Math.round(totalCOGS),
+        items: incomeStatement.costOfGoodsSold.items.map(item => ({
+          code: item.code,
+          name: item.name,
+          amount: Math.round(item.amount * 100) / 100
+        })),
+        raw_materials: Math.round(
+          incomeStatement.costOfGoodsSold.items
+            .filter(i => i.code === "5001")
+            .reduce((sum, i) => sum + i.amount, 0) * 100
+        ) / 100,
+        direct_labor: Math.round(
+          incomeStatement.costOfGoodsSold.items
+            .filter(i => i.code === "5002" || i.code === "5003")
+            .reduce((sum, i) => sum + i.amount, 0) * 100
+        ) / 100,
+        manufacturing_overhead: Math.round(
+          incomeStatement.costOfGoodsSold.items
+            .filter(i => parseInt(i.code) >= 5004 && parseInt(i.code) <= 5008)
+            .reduce((sum, i) => sum + i.amount, 0) * 100
+        ) / 100,
+        total_cogs: Math.round(incomeStatement.costOfGoodsSold.total * 100) / 100,
       },
-      gross_profit: Math.round(grossProfit),
-      operating_expenses: operatingExpenses,
-      operating_income: Math.round(operatingIncome),
-      other_income_expenses: otherIncomeExpenses,
-      net_income: Math.round(netIncome),
-      monthlyTrend
+      gross_profit: Math.round(incomeStatement.grossProfit * 100) / 100,
+      operating_expenses: {
+        items: incomeStatement.operatingExpenses.items.map(item => ({
+          code: item.code,
+          name: item.name,
+          amount: Math.round(item.amount * 100) / 100
+        })),
+        onlineSalesCosts: {
+          items: (incomeStatement.operatingExpenses.onlineSalesCosts?.items || []).map(item => ({
+            code: item.code,
+            name: item.name,
+            amount: Math.round(item.amount * 100) / 100
+          })),
+          total: Math.round((incomeStatement.operatingExpenses.onlineSalesCosts?.total || 0) * 100) / 100,
+        },
+        salaries_wages: Math.round(expenseBreakdown.administrative * 100) / 100,
+        marketing: Math.round(expenseBreakdown.marketing * 100) / 100,
+        other_expenses: Math.round(expenseBreakdown.operating * 100) / 100,
+        total_operating_expenses: Math.round(incomeStatement.operatingExpenses.total * 100) / 100,
+      },
+      operating_income: Math.round(incomeStatement.operatingIncome * 100) / 100,
+      other_income_expenses: {
+        items: incomeStatement.otherIncomeExpenses.items.map(item => ({
+          code: item.code,
+          name: item.name,
+          amount: Math.round(item.amount * 100) / 100
+        })),
+        interest_income: 0,
+        interest_expense: Math.round(
+          incomeStatement.otherIncomeExpenses.items
+            .filter(i => i.code === "7001")
+            .reduce((sum, i) => sum + i.amount, 0) * 100
+        ) / 100,
+        total_other: Math.round(incomeStatement.otherIncomeExpenses.total * 100) / 100,
+      },
+      net_income: Math.round(incomeStatement.netIncome * 100) / 100,
     }
 
-    return NextResponse.json(reportData)
+    return NextResponse.json(response)
   } catch (error) {
     console.error("Error generating P&L report:", error)
     return NextResponse.json(

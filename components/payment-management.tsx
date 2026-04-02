@@ -24,8 +24,8 @@ export function PaymentManagement() {
         if (!response.ok) {
           throw new Error('Failed to fetch payments')
         }
-        const paymentsData = await response.json()
-        setPayments(paymentsData)
+        const result = await response.json()
+        setPayments(result.data || [])
       } catch (error) {
         console.error("Error loading payments:", error)
         setPayments([])

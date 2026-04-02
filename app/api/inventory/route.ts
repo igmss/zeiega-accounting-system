@@ -16,73 +16,6 @@ interface JournalDocument {
   created_at: any
 }
 
-// Function to automatically sync inventory values with Chart of Accounts
-async function syncInventoryWithChartOfAccounts() {
-  try {
-    console.log("🔄 Auto-syncing inventory with Chart of Accounts...")
-    
-    const now = new Date()
-    
-    // Calculate total inventory value from acc_inventory_items
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    
-    let totalInventoryValue = 0
-    inventorySnapshot.docs.forEach(doc => {
-      const data = doc.data()
-      const itemValue = (data.quantity_on_hand || 0) * (data.cost_per_unit || 0)
-      totalInventoryValue += itemValue
-    })
-    
-    // Update INVENTORY_RAW account balance
-    const inventoryRawRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc('INVENTORY_RAW')
-    await inventoryRawRef.update({
-      balance: totalInventoryValue,
-      last_updated: now
-    })
-    
-    // Also update CASH account balance based on journal entries
-    await syncCashBalance()
-    
-    console.log(`✅ Auto-synced INVENTORY_RAW balance to EGP ${totalInventoryValue.toLocaleString()}`)
-  } catch (error) {
-    console.error("Error auto-syncing inventory with Chart of Accounts:", error)
-  }
-}
-
-// Function to sync CASH balance from journal entries
-async function syncCashBalance() {
-  try {
-    console.log("🔄 Auto-syncing CASH balance...")
-    
-    const now = new Date()
-    
-    // Calculate CASH balance from journal entries
-    const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
-    
-    let cashBalance = 0
-    journalSnapshot.docs.forEach(doc => {
-      const entry = doc.data() as JournalDocument
-      if (entry.entries) {
-        entry.entries.forEach((subEntry: JournalEntry) => {
-          if (subEntry.account_id === 'CASH') {
-            cashBalance += (subEntry.debit || 0) - (subEntry.credit || 0)
-          }
-        })
-      }
-    })
-    
-    // Update CASH account balance
-    const cashRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc('CASH')
-    await cashRef.update({
-      balance: cashBalance,
-      last_updated: now
-    })
-    
-    console.log(`✅ Auto-synced CASH balance to EGP ${cashBalance.toLocaleString()}`)
-  } catch (error) {
-    console.error("Error auto-syncing CASH balance:", error)
-  }
-}
 
 export async function GET() {
   try {
@@ -105,15 +38,33 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const itemData = await request.json()
+    const { paymentSource, ...itemDataWithoutSource } = itemData
     
     // Add timestamps
     const now = new Date()
     const item = {
-      ...itemData,
+      ...itemDataWithoutSource,
       createdAt: now,
       updatedAt: now,
       lastUpdated: now,
     }
+
+    // Validate payment source
+    const paymentSourceMap: Record<string, { id: string, name: string }> = {
+      cash: { id: "1101", name: "Cash on Hand" },
+      bank: { id: "1103", name: "Bank Account" },
+      payable: { id: "2101", name: "Accounts Payable" },
+      opening: { id: "3001", name: "Owner's Capital" },
+    }
+
+    if (!paymentSource || !paymentSourceMap[paymentSource]) {
+      return NextResponse.json(
+        { error: "Valid payment source is required (cash, bank, payable, opening)" },
+        { status: 400 }
+      )
+    }
+
+    const creditAccount = paymentSourceMap[paymentSource]
     
     // Calculate total cost
     const totalCost = (item.quantity_on_hand || 0) * (item.cost_per_unit || 0)
@@ -121,34 +72,33 @@ export async function POST(request: Request) {
     // Add inventory item
     const docRef = await db.collection(COLLECTIONS.INVENTORY_ITEMS).add(item)
     
-    // Create journal entry for inventory purchase (Cash → Raw Materials)
+    // Create journal entry for inventory purchase (Credit Account → Raw Materials)
     if (totalCost > 0) {
       const journalEntry = {
         date: now,
         entries: [
           {
-            account_id: "INVENTORY_RAW",
+            account_id: "1201", // Raw Materials
             debit: totalCost,
             credit: 0,
             description: `Inventory purchase: ${item.name} - ${item.quantity_on_hand} ${item.unit}`
           },
           {
-            account_id: "CASH",
+            account_id: creditAccount.id,
             debit: 0,
             credit: totalCost,
-            description: `Cash payment for inventory: ${item.name}`
+            description: `${creditAccount.name} payment for inventory: ${item.name}`
           }
         ],
+        account_ids: ["1201", creditAccount.id], // Proper index for reporting (BUG-18)
         linked_doc: docRef.id,
         created_at: now
       }
       
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
-      console.log(`Created journal entry for inventory purchase: EGP ${totalCost}`)
+      console.log(`Created journal entry for inventory purchase sync: EGP ${totalCost} via ${creditAccount.name}`)
     }
     
-    // Auto-sync Chart of Accounts with current inventory values
-    await syncInventoryWithChartOfAccounts()
     
     return NextResponse.json({ id: docRef.id, ...item })
   } catch (error) {
@@ -172,8 +122,6 @@ export async function PUT(request: Request) {
     
     await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(id).update(item)
     
-    // Auto-sync Chart of Accounts with current inventory values
-    await syncInventoryWithChartOfAccounts()
     
     return NextResponse.json({ id, ...item })
   } catch (error) {
@@ -199,8 +147,6 @@ export async function DELETE(request: Request) {
     
     await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(id).delete()
     
-    // Auto-sync Chart of Accounts with current inventory values
-    await syncInventoryWithChartOfAccounts()
     
     return NextResponse.json({ success: true })
   } catch (error) {

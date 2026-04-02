@@ -7,9 +7,9 @@ import { db, COLLECTIONS } from "@/lib/firebase";
 export async function GET() {
   try {
     console.log("Fetching work orders with design information...");
-    
+
     const workOrders = await WorkOrderService.getAllWorkOrdersWithDesigns();
-    
+
     return NextResponse.json({
       success: true,
       data: workOrders,
@@ -29,19 +29,19 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const workOrderData = await request.json();
-    
+
     console.log("Creating work order with data:", workOrderData);
-    
+
     // If order items are provided, use automatic cost calculation
     if (workOrderData.items && workOrderData.items.length > 0) {
       console.log("Using automatic cost calculation from order items...");
-      
+
       const result = await OrderItemDesignService.createWorkOrderWithAutoCosts(
         workOrderData.sales_order_id,
         workOrderData.items,
         workOrderData
       );
-      
+
       if (result.success) {
         return NextResponse.json({
           success: true,
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
         console.warn(`Auto cost calculation failed: ${result.error}, falling back to manual creation`);
       }
     }
-    
+
     // If design_id is provided, use design-based creation
     if (workOrderData.design_id) {
       const result = await WorkOrderService.createWorkOrderWithDesign(
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         workOrderData.quantity || 1,
         workOrderData
       );
-      
+
       if (result.success) {
         return NextResponse.json({
           success: true,
@@ -78,10 +78,10 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    
+
     // Fallback: Try automatic cost calculation even without items
     console.log("Attempting automatic cost calculation as fallback...");
-    
+
     // If we have items, try automatic cost calculation
     if (workOrderData.items && workOrderData.items.length > 0) {
       const result = await OrderItemDesignService.createWorkOrderWithAutoCosts(
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         workOrderData.items,
         workOrderData
       );
-      
+
       if (result.success) {
         return NextResponse.json({
           success: true,
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    
+
     // Final fallback: Create basic work order with warning
     console.warn("Creating basic work order without automatic cost calculation");
     const now = new Date();
@@ -116,9 +116,9 @@ export async function POST(request: NextRequest) {
       materials_issued: [],
       notes: `Basic work order created without automatic cost calculation - manual cost entry required`
     };
-    
+
     const docRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
-    
+
     return NextResponse.json({
       success: true,
       workOrderId: docRef.id,
@@ -137,14 +137,14 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: Request) {
   try {
     const { id, ...workOrderData } = await request.json()
-    
+
     const workOrder = {
       ...workOrderData,
       updatedAt: new Date(),
     }
-    
-    await db.collection("acc_work_orders").doc(id).update(workOrder)
-    
+
+    await db.collection(COLLECTIONS.WORK_ORDERS).doc(id).update(workOrder)
+
     return NextResponse.json({ id, ...workOrder })
   } catch (error) {
     console.error("Error updating work order:", error)

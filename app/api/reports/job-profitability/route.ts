@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
-    
+
     if (!from || !to) {
       return NextResponse.json(
         { error: "Date range is required" },
@@ -20,33 +20,33 @@ export async function GET(request: Request) {
     const toDate = new Date(to)
 
     // Fetch work orders and sales orders
-    const workOrdersSnapshot = await db.collection("acc_work_orders")
+    const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
       .where('created_at', '>=', fromDate)
       .where('created_at', '<=', toDate)
       .get()
 
-    const workOrders = workOrdersSnapshot.docs.map(doc => ({
+    const workOrders: any[] = workOrdersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
 
-    const salesOrdersSnapshot = await db.collection("acc_sales_orders").get()
-    const salesOrders = salesOrdersSnapshot.docs.map(doc => ({
+    const salesOrdersSnapshot = await db.collection(COLLECTIONS.SALES_ORDERS).get()
+    const salesOrders: any[] = salesOrdersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
 
     // Create job profitability data
-    const jobData = workOrders.map(wo => {
-      const salesOrder = salesOrders.find(so => so.id === wo.sales_order_id)
-      
-      const materialCost = wo.raw_materials_used?.reduce((sum: number, mat: any) => 
+    const jobData = workOrders.map((wo: any) => {
+      const salesOrder = (salesOrders as any[]).find(so => so.id === wo.sales_order_id)
+
+      const materialCost = wo.raw_materials_used?.reduce((sum: number, mat: any) =>
         sum + (mat.qty * mat.cost), 0) || 0
-      
-      const laborCost = wo.laborCost || 0
+
+      const laborCost = wo.labor_cost || wo.laborCost || 0
       const overheadCost = wo.overhead_cost || 0
       const totalCost = materialCost + laborCost + overheadCost
-      
+
       const revenue = salesOrder?.total || 0
       const grossProfit = revenue - totalCost
       const marginPercent = revenue > 0 ? (grossProfit / revenue) * 100 : 0

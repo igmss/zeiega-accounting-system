@@ -183,7 +183,7 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
                     </TableCell>
                     <TableCell>
                       <Badge 
-                        variant={material.availableQuantity >= material.quantityPerUnit ? "default" : "destructive"}
+                        variant={(material.availableQuantity || 0) >= material.quantityPerUnit ? "default" : "destructive"}
                       >
                         {material.availableQuantity || 0}
                       </Badge>

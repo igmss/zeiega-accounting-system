@@ -7,7 +7,7 @@ export async function POST() {
 
     // Fetch all inventory items
     const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems = inventorySnapshot.docs.map(doc => ({
+    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))

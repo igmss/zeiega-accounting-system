@@ -18,10 +18,15 @@ import {
   Users,
   Wrench,
   Palette,
+  LogOut,
+  User,
+  Receipt,
+  Landmark,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { signOut, useSession } from "next-auth/react"
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -31,9 +36,13 @@ const navigation = [
   { name: "Work Orders", href: "/work-orders", icon: Wrench },
   { name: "Inventory", href: "/inventory", icon: Package },
   { name: "Invoices", href: "/invoices", icon: FileText },
+  { name: "Expenses", href: "/expenses", icon: Receipt },
+  { name: "Assets", href: "/assets", icon: Landmark },
+  { name: "Liabilities", href: "/liabilities", icon: CreditCard }, // Using CreditCard icon
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Chart of Accounts", href: "/chart-of-accounts", icon: BookOpen },
+  { name: "System Setup", href: "/accounting/setup/opening-balances", icon: Settings },
 ]
 
 interface DashboardLayoutProps {
@@ -85,6 +94,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
 function Sidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: "/auth/login" })
+  }
 
   return (
     <div className="flex h-full flex-col bg-sidebar border-r border-sidebar-border">
@@ -118,9 +132,34 @@ function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border">
+      <div className="p-4 border-t border-sidebar-border space-y-3">
+        {session?.user && (
+          <div className="flex items-center gap-2 px-2">
+            <div className="h-8 w-8 rounded-full bg-sidebar-accent flex items-center justify-center">
+              <User className="h-4 w-4 text-sidebar-accent-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {session.user.name}
+              </p>
+              <p className="text-xs text-sidebar-foreground/60 truncate">
+                {session.user.role}
+              </p>
+            </div>
+          </div>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-red-500"
+          onClick={handleLogout}
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          Logout
+        </Button>
         <div className="text-xs text-sidebar-foreground/60">Manufacturing ERP v1.0</div>
       </div>
     </div>
   )
 }
+

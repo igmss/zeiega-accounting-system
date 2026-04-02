@@ -167,23 +167,38 @@ export class DesignService {
     try {
       const docRef = db.collection(this.COLLECTION_NAME).doc(id);
       
-      // Recalculate costs and margins if relevant fields are updated
+      // Fetch existing design to prevent cost corruption on partial updates
+      const existingDesign = await this.getDesign(id);
+      if (!existingDesign) {
+        throw new Error("Design not found");
+      }
+
+      // Check if any cost-related fields are being updated
+      const costFields: Array<keyof Design> = [
+        'materialCost', 
+        'laborCost', 
+        'overheadCost', 
+        'manufacturingTime'
+      ];
+      const shouldRecalculate = costFields.some(field => field in updates);
+      
       const updateData: any = {
         ...updates,
         updatedAt: new Date()
       };
 
-      if (updates.materialCost !== undefined || 
-          updates.laborCost !== undefined || 
-          updates.overheadCost !== undefined) {
-        updateData.totalCost = this.calculateTotalCost(updates as Design);
+      if (shouldRecalculate) {
+        // Merge with existing data for comprehensive cost calculation
+        const mergedDesign = { ...existingDesign, ...updates };
+        updateData.totalCost = this.calculateTotalCost(mergedDesign);
+        console.log(`Recalculated totalCost for design ${id}: EGP ${updateData.totalCost}`);
       }
 
       await docRef.update(updateData);
-      console.log("Design updated:", id);
+      console.log("Design updated successfully:", id);
     } catch (error) {
       console.error("Error updating design:", error);
-      throw new Error("Failed to update design");
+      throw new Error(`Failed to update design: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

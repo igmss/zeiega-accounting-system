@@ -2,91 +2,47 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    console.log("Fetching sales orders from real orders...")
+    const { searchParams } = new URL(request.url)
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
+    const cursor = searchParams.get("cursor")
+
+    console.log(`Fetching unified sales orders (limit: ${limit}, cursor: ${cursor})`)
+
+    // Use unified acc_sales_orders collection for consistent pagination
+    let query = db.collection(COLLECTIONS.SALES_ORDERS)
+      .orderBy("created_at", "desc")
+      .limit(limit)
     
-    // Fetch from your real orders collection (web orders)
-    const ordersSnapshot = await db.collection("orders").get()
-    const webOrders = ordersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    if (cursor) {
+      const lastDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(cursor).get()
+      if (lastDoc.exists) {
+        query = query.startAfter(lastDoc)
+      }
+    }
 
-    // Fetch manual orders
-    const manualOrdersSnapshot = await db.collection("manual_orders").get()
-    const manualOrders = manualOrdersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const snapshot = await query.get()
+    const salesOrders = snapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        ...data,
+        // Ensure standard date format for UI
+        created_at: (data.created_at as any)?.toDate?.() || data.created_at || new Date(),
+        updated_at: (data.updated_at as any)?.toDate?.() || data.updated_at || new Date()
+      }
+    })
 
-    // Map web orders to sales orders format
-    const webSalesOrders = webOrders.map(order => ({
-      id: order.id,
-      customer_name: order.shippingAddress?.fullName || "Unknown Customer",
-      customer_email: order.userId,
-      website_order_id: order.id,
-      created_at: order.createdAt?.toDate?.() || new Date(),
-      status: mapOrderStatus(order.status),
-      items: order.items?.map(item => ({
-        product_id: item.productId,
-        product_name: item.name,
-        sku: item.productId,
-        qty: item.quantity,
-        quantity: item.quantity,
-        unit_price: item.basePrice,
-        total_price: item.adjustedPrice || item.basePrice
-      })) || [],
-      subtotal: order.total || 0,
-      tax_amount: 0,
-      shipping_cost: 0,
-      total: order.total || 0,
-      total_amount: order.total || 0,
-      payment_method: order.paymentMethod || "unknown",
-      shipping_address: order.shippingAddress || {},
-      notes: `Original order status: ${order.status}`,
-      order_source: "web", // Mark as web order
-      updated_at: order.updatedAt?.toDate?.() || new Date()
-    }))
+    const lastVisible = snapshot.docs[snapshot.docs.length - 1]
+    const nextCursor = lastVisible ? lastVisible.id : null
+    const hasMore = snapshot.docs.length === limit
 
-    // Map manual orders to sales orders format (same structure as web orders)
-    const manualSalesOrders = manualOrders.map(order => ({
-      id: order.id,
-      customer_name: order.shippingAddress?.fullName || "Manual Customer",
-      customer_email: order.userId,
-      website_order_id: order.id,
-      created_at: order.createdAt?.toDate?.() || new Date(),
-      status: order.status || "pending",
-      items: order.items?.map(item => ({
-        product_id: item.productId,
-        product_name: item.name,
-        sku: item.productId,
-        qty: item.quantity,
-        quantity: item.quantity,
-        unit_price: item.basePrice,
-        total_price: item.adjustedPrice || item.basePrice,
-        category: item.category,
-        color: item.color,
-        size: item.size,
-        image: item.image
-      })) || [],
-      subtotal: order.total || 0,
-      tax_amount: 0,
-      shipping_cost: 0,
-      total: order.total || 0,
-      total_amount: order.total || 0,
-      payment_method: order.paymentMethod || "manual",
-      shipping_address: order.shippingAddress || {},
-      notes: "Manual order",
-      order_source: "manual", // Mark as manual order
-      updated_at: order.updatedAt?.toDate?.() || new Date()
-    }))
-
-    // Combine both types of orders
-    const allSalesOrders = [...webSalesOrders, ...manualSalesOrders]
-
-    console.log(`Mapped ${allSalesOrders.length} sales orders (${webOrders.length} web, ${manualOrders.length} manual)`)
-    return NextResponse.json(allSalesOrders)
+    return NextResponse.json({
+      data: salesOrders,
+      nextCursor,
+      hasMore
+    })
   } catch (error) {
     console.error("Error fetching sales orders:", error)
     return NextResponse.json(
@@ -116,7 +72,7 @@ function mapOrderStatus(status: string): string {
 export async function POST(request: Request) {
   try {
     const orderData = await request.json()
-    
+
     // Create manual order with same structure as web orders
     const now = new Date()
     const manualOrder = {
@@ -124,9 +80,9 @@ export async function POST(request: Request) {
       carrier: null,
       createdAt: now,
       fragranceCodes: [],
-      
+
       // Items array (same structure as web orders)
-      items: orderData.items?.map(item => ({
+      items: orderData.items?.map((item: any) => ({
         adjustedPrice: item.total_price || item.unit_price,
         basePrice: item.unit_price,
         category: item.category || "Manual",
@@ -140,7 +96,7 @@ export async function POST(request: Request) {
         taleId: null,
         type: "product"
       })) || [],
-      
+
       // Payment and shipping
       paymentMethod: orderData.payment_method || "manual",
       shippingAddress: {
@@ -152,20 +108,20 @@ export async function POST(request: Request) {
         zipCode: orderData.shipping_address?.zipCode || ""
       },
       shippingMethod: null,
-      
+
       // Status and tracking
       status: orderData.status || "pending",
       total: orderData.total || 0,
       trackingNumber: null,
       updatedAt: now,
       userId: orderData.customer_email || "manual_user",
-      
+
       // Mark as manual order
       orderSource: "manual"
     }
 
     // Create in manual_orders collection
-    const docRef = await db.collection("manual_orders").add(manualOrder)
+    const docRef = await db.collection(COLLECTIONS.MANUAL_ORDERS).add(manualOrder)
 
     // Create accounting records for the manual order
     try {
@@ -176,7 +132,7 @@ export async function POST(request: Request) {
         website_order_id: salesOrderId,
         customer_id: orderData.customer_email || "manual_user",
         customer_name: orderData.customer_name || "Manual Customer",
-        items: orderData.items?.map(item => ({
+        items: orderData.items?.map((item: any) => ({
           sku: item.product_id,
           qty: item.qty || item.quantity,
           unit_price: item.unit_price
@@ -188,7 +144,7 @@ export async function POST(request: Request) {
       }
 
       // Save to accounting sales orders collection
-      await db.collection("acc_sales_orders").doc(salesOrderId).set(accountingSalesOrder)
+      await db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId).set(accountingSalesOrder)
 
       console.log(`Created accounting sales order ${salesOrderId}`)
     } catch (accountingError) {
@@ -209,7 +165,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { orderId, status } = await request.json()
-    
+
     if (!orderId || !status) {
       return NextResponse.json(
         { error: "Order ID and status are required" },
@@ -218,7 +174,7 @@ export async function PUT(request: Request) {
     }
 
     // Update manual order status in Firestore
-    await db.collection("manual_orders").doc(orderId).update({
+    await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).update({
       status: status,
       updatedAt: new Date()
     })
@@ -229,24 +185,24 @@ export async function PUT(request: Request) {
         // Get the order details - check both manual and web orders
         let orderData = null
         let orderSource = "manual"
-        
+
         // First try manual orders
-        const manualOrderDoc = await db.collection("manual_orders").doc(orderId).get()
+        const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).get()
         if (manualOrderDoc.exists) {
           orderData = manualOrderDoc.data()
           orderSource = "manual"
         } else {
           // Try web orders
-          const webOrderDoc = await db.collection("orders").doc(orderId).get()
+          const webOrderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
           if (webOrderDoc.exists) {
             orderData = webOrderDoc.data()
             orderSource = "web"
           }
         }
-        
+
         if (orderData) {
           console.log(`Creating work order for ${orderSource} order ${orderId} with automatic cost calculation...`);
-          
+
           // Create work order with automatic cost calculation from designs
           const workOrderResult = await OrderItemDesignService.createWorkOrderWithAutoCosts(
             orderId,
@@ -258,20 +214,20 @@ export async function PUT(request: Request) {
               order_source: orderSource
             }
           );
-          
+
           if (workOrderResult.success) {
             console.log(`✅ Created work order ${workOrderResult.workOrderId} with auto-calculated cost EGP ${workOrderResult.totalEstimatedCost}`);
-            
+
             // Update accounting sales order status to "producing" (only for manual orders)
             if (orderSource === "manual") {
-              await db.collection("acc_sales_orders").doc(orderId).update({
+              await db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId).update({
                 status: "producing",
                 updated_at: new Date()
               });
             }
           } else {
             console.error(`❌ Failed to create work order: ${workOrderResult.error}`);
-            
+
             // Fallback: Create basic work order without auto costs
             const basicWorkOrder = {
               sales_order_id: orderId,
@@ -291,8 +247,8 @@ export async function PUT(request: Request) {
               overhead_cost: 0,
               materials_issued: []
             };
-            
-            const workOrderRef = await db.collection("acc_work_orders").add(basicWorkOrder);
+
+            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
             console.log(`Created basic work order ${workOrderRef.id} as fallback`);
           }
         }

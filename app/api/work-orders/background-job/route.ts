@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
     // Get all work orders
     const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS).get();
-    
+
     const workOrdersToProcess = workOrdersSnapshot.docs.filter(doc => {
       const data = doc.data();
       return !data.estimated_cost || data.estimated_cost === 0;
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
       try {
         // Get the order data
-        const orderDoc = await db.collection("orders").doc(salesOrderId).get();
+        const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(salesOrderId).get();
         if (!orderDoc.exists) {
           console.warn(`Order ${salesOrderId} not found`);
           results.failed++;
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
         // Calculate costs from designs
         const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
-        
+
         if (!costCalculation.success) {
           console.error(`Cost calculation failed for work order ${workOrderId}: ${costCalculation.error}`);
           results.failed++;
@@ -109,16 +109,16 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS).get();
-    
+
     let totalWorkOrders = 0;
     let workOrdersWithCosts = 0;
     let workOrdersWithoutCosts = 0;
-    const workOrdersWithoutCostsList = [];
+    const workOrdersWithoutCostsList: any[] = [];
 
     workOrdersSnapshot.docs.forEach(doc => {
       const workOrder = doc.data();
       totalWorkOrders++;
-      
+
       if (workOrder.estimated_cost && workOrder.estimated_cost > 0) {
         workOrdersWithCosts++;
       } else {

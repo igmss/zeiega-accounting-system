@@ -1,10 +1,10 @@
 "use server"
 
-import { AccountingService } from "./accounting-service"
+import { EnhancedAccountingService } from "./services/enhanced-accounting-service"
 
 export async function runOrdersJob() {
   try {
-    const result = await AccountingService.processWebsiteOrders()
+    const result = await EnhancedAccountingService.syncWebsiteOrders()
     return {
       success: true,
       processed: result.processed,
@@ -23,7 +23,7 @@ export async function runOrdersJob() {
 
 export async function runReturnsJob() {
   try {
-    const result = await AccountingService.processWebsiteReturns()
+    const result = await EnhancedAccountingService.syncWebsiteReturns()
     return {
       success: true,
       processed: result.processed,
@@ -42,7 +42,7 @@ export async function runReturnsJob() {
 
 export async function runInventoryJob() {
   try {
-    const result = await AccountingService.updateInventoryValuations()
+    const result = await EnhancedAccountingService.updateInventoryValuations()
     return {
       success: true,
       updated: result.updated,

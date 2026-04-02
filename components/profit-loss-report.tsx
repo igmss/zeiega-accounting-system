@@ -271,45 +271,35 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
                   <TableCell></TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="pl-6">Salaries & Wages</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(reportData.operating_expenses.salaries_wages)}
-                  </TableCell>
+                  <TableCell className="font-bold pt-4 pl-6 text-sm text-blue-600 italic">Online Sales Costs</TableCell>
+                  <TableCell></TableCell>
                   <TableCell></TableCell>
                 </TableRow>
+                {reportData.operating_expenses.onlineSalesCosts?.items.map((item: any) => (
+                  <TableRow key={item.code}>
+                    <TableCell className="pl-12 text-sm">{item.name}</TableCell>
+                    <TableCell className="text-right text-sm">{formatCurrency(item.amount)}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                ))}
                 <TableRow>
-                  <TableCell className="pl-6">Rent</TableCell>
-                  <TableCell className="text-right">{formatCurrency(reportData.operating_expenses.rent)}</TableCell>
+                  <TableCell className="pl-12 font-medium text-sm">Subtotal Online Sales Costs</TableCell>
                   <TableCell></TableCell>
+                  <TableCell className="text-right font-medium text-sm">{formatCurrency(reportData.operating_expenses.onlineSalesCosts?.total || 0)}</TableCell>
                 </TableRow>
+
                 <TableRow>
-                  <TableCell className="pl-6">Utilities</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(reportData.operating_expenses.utilities)}
-                  </TableCell>
+                  <TableCell className="pl-6 pt-4 font-bold">General Operating Expenses</TableCell>
+                  <TableCell></TableCell>
                   <TableCell></TableCell>
                 </TableRow>
-                <TableRow>
-                  <TableCell className="pl-6">Insurance</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(reportData.operating_expenses.insurance)}
-                  </TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="pl-6">Depreciation</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(reportData.operating_expenses.depreciation)}
-                  </TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="pl-6">Other Expenses</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(reportData.operating_expenses.other_expenses)}
-                  </TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
+                {reportData.operating_expenses.items.map((item: any) => (
+                  <TableRow key={item.code}>
+                    <TableCell className="pl-12">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                ))}
                 <TableRow>
                   <TableCell className="font-medium">Total Operating Expenses</TableCell>
                   <TableCell></TableCell>

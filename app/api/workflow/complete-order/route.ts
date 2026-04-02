@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/firebase"
+import { db, COLLECTIONS } from "@/lib/firebase"
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
     const { orderId } = await request.json()
-    
+
     if (!orderId) {
       return NextResponse.json(
         { error: "Order ID is required" },
@@ -17,28 +17,28 @@ export async function POST(request: Request) {
     // Try to get the order from multiple possible collections
     let orderData = null
     let orderSource = null
-    
+
     // Try manual_orders first
-    const manualOrderDoc = await db.collection("manual_orders").doc(orderId).get()
+    const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).get()
     if (manualOrderDoc.exists) {
       orderData = manualOrderDoc.data()
       orderSource = "manual_orders"
     } else {
       // Try orders collection (web orders)
-      const webOrderDoc = await db.collection("orders").doc(orderId).get()
+      const webOrderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
       if (webOrderDoc.exists) {
         orderData = webOrderDoc.data()
         orderSource = "orders"
       } else {
         // Try acc_sales_orders (accounting system)
-        const salesOrderDoc = await db.collection("acc_sales_orders").doc(orderId).get()
+        const salesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId).get()
         if (salesOrderDoc.exists) {
           orderData = salesOrderDoc.data()
           orderSource = "acc_sales_orders"
         }
       }
     }
-    
+
     if (!orderData || !orderSource) {
       return NextResponse.json(
         { error: "Order not found" },
@@ -48,21 +48,21 @@ export async function POST(request: Request) {
 
     // 1. Update order status to completed in the source collection
     if (orderSource === "manual_orders") {
-      await db.collection("manual_orders").doc(orderId).update({
+      await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).update({
         status: "completed",
         updatedAt: new Date()
       })
     } else if (orderSource === "orders") {
-      await db.collection("orders").doc(orderId).update({
+      await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
         status: "completed",
         updatedAt: new Date()
       })
     }
 
     // 2. Update accounting sales order status (create if doesn't exist)
-    const salesOrderRef = db.collection("acc_sales_orders").doc(orderId)
+    const salesOrderRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId)
     const salesOrderDoc = await salesOrderRef.get()
-    
+
     if (salesOrderDoc.exists) {
       await salesOrderRef.update({
         status: "completed",
@@ -85,57 +85,38 @@ export async function POST(request: Request) {
     }
 
     // 3. Complete work order (if not already completed)
-    const workOrdersSnapshot = await db.collection("acc_work_orders")
+    const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
       .where("sales_order_id", "==", orderId)
       .get()
-    
+
     if (!workOrdersSnapshot.empty) {
       const workOrderDoc = workOrdersSnapshot.docs[0]
       const workOrderData = workOrderDoc.data()
-      
+
+      const { WorkOrderMaterialService } = await import("@/lib/services/work-order-material-service")
+      const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
+
       // Only update if not already completed
       if (workOrderData.status !== "completed") {
-        await workOrderDoc.ref.update({
-          status: "completed",
-          completionPercentage: 100,
-          completed_at: new Date(),
-          updated_at: new Date()
-        })
-      }
-
-      // 4. Move from WIP to Finished Goods (only if not already done)
-      const existingJournalEntry = await db.collection("acc_journal_entries")
-        .where("linked_doc", "==", workOrderDoc.id)
-        .where("entries", "array-contains", { account_id: "INVENTORY_FINISHED" })
-        .get()
-      
-      if (existingJournalEntry.empty) {
-        const journalEntry = {
-          date: new Date(),
-          entries: [
-            { account_id: "INVENTORY_FINISHED", debit: orderData.total || 0, credit: 0, description: `Completed work order ${workOrderDoc.id}` },
-            { account_id: "INVENTORY_WIP", debit: 0, credit: orderData.total || 0, description: `Completed work order ${workOrderDoc.id}` }
-          ],
-          linked_doc: workOrderDoc.id,
-          created_at: new Date()
-        }
-        
-        await db.collection("acc_journal_entries").add(journalEntry)
+        await WorkOrderMaterialService.completeWorkOrder(
+          workOrderDoc.id,
+          workOrderData.design_id
+        )
       }
     }
 
     // 5. Generate invoice (if not already generated)
     const invoiceId = `INV-${orderId.slice(-8)}`
-    
+
     // Check if invoice already exists
-    const existingInvoice = await db.collection("acc_invoices").doc(invoiceId).get()
-    
+    const existingInvoice = await db.collection(COLLECTIONS.INVOICES).doc(invoiceId).get()
+
     if (!existingInvoice.exists) {
       // Extract customer info based on order source
       const customerId = orderData.userId || orderData.customer_id || "unknown"
       const customerName = orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer"
       const totalAmount = orderData.total || orderData.total_amount || 0
-      
+
       const invoice = {
         id: invoiceId,
         sales_order_id: orderId,
@@ -151,25 +132,77 @@ export async function POST(request: Request) {
         items: orderData.items || []
       }
 
-      await db.collection("acc_invoices").doc(invoiceId).set(invoice)
+      await db.collection(COLLECTIONS.INVOICES).doc(invoiceId).set(invoice)
 
-      // 6. Create journal entry for invoice
-      const invoiceJournalEntry = {
-        date: new Date(),
-        entries: [
-          { account_id: "ACCOUNTS_RECEIVABLE", debit: orderData.total || 0, credit: 0, description: `Invoice ${invoiceId}` },
-          { account_id: "SALES_REVENUE", debit: 0, credit: orderData.total || 0, description: `Sales revenue ${invoiceId}` }
-        ],
-        linked_doc: invoiceId,
-        created_at: new Date()
-      }
+      // 6. Create journal entry for invoice (Revenue)
+      const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
       
-      await db.collection("acc_journal_entries").add(invoiceJournalEntry)
+      await EnhancedAccountingService.createJournalEntry(
+        JournalEntryType.SALES_INVOICE,
+        [
+          { 
+            accountCode: "1110", // AR
+            accountName: "Accounts Receivable", 
+            debit: totalAmount, 
+            credit: 0, 
+            description: `Invoice ${invoiceId}` 
+          },
+          { 
+            accountCode: "4001", // Sales Revenue
+            accountName: "Sales Revenue", 
+            debit: 0, 
+            credit: totalAmount, 
+            description: `Sales revenue ${invoiceId}` 
+          }
+        ],
+        invoiceId,
+        `Invoice ${invoiceId}`
+      )
+
+      // 7. Create COGS journal entry (Cost)
+      // Fetch the associated work order to get the cost
+      const woSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
+        .where("sales_order_id", "==", orderId)
+        .get()
+
+      if (!woSnapshot.empty) {
+        const woData = woSnapshot.docs[0].data()
+        const cogsAmount = woData.total_cost || woData.estimated_cost || 0
+
+        if (cogsAmount > 0) {
+          await EnhancedAccountingService.createJournalEntry(
+            JournalEntryType.SALES_COGS,
+            [
+              { 
+                accountCode: "5001", // COGS / Raw Materials Used
+                accountName: "Cost of Goods Sold", 
+                debit: cogsAmount, 
+                credit: 0, 
+                description: `COGS for order ${orderId}` 
+              },
+              { 
+                accountCode: "1220", // Finished Goods Inventory
+                accountName: "Finished Goods Inventory", 
+                debit: 0, 
+                credit: cogsAmount, 
+                description: `Inventory reduction for order ${orderId}` 
+              }
+            ],
+            invoiceId,
+            `COGS for order ${orderId}`
+          )
+          console.log(`✅ COGS journal entry created for order ${orderId}: EGP ${cogsAmount}`)
+        } else {
+          console.warn(`⚠️ No cost information found for work order associated with order ${orderId}`)
+        }
+      } else {
+        console.warn(`⚠️ No work order found for order ${orderId}. Skipping COGS journal entry.`)
+      }
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      orderId, 
+    return NextResponse.json({
+      success: true,
+      orderId,
       invoiceId,
       message: "Order completed and invoice generated successfully"
     })

@@ -110,6 +110,8 @@ export interface DesignFilter {
   complexity?: 'low' | 'medium' | 'high';
   minCost?: number;
   maxCost?: number;
+  minMargin?: number;
+  maxMargin?: number;
 }
 
 export interface DesignStats {

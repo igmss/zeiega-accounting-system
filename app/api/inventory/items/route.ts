@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type'); // Filter by type: 'raw', 'finished', etc.
     const search = searchParams.get('search'); // Search by name or SKU
     
-    let query = db.collection(COLLECTIONS.INVENTORY_ITEMS);
+    let query = db.collection(COLLECTIONS.INVENTORY_ITEMS) as FirebaseFirestore.Query;
     
     // Filter by type if specified
     if (type) {
@@ -21,11 +21,11 @@ export async function GET(request: NextRequest) {
     query = query.orderBy('name', 'asc');
     
     const snapshot = await query.get();
-    let items = snapshot.docs.map(doc => ({
+    let items: any[] = snapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate() || new Date()
+      ...(doc.data() as any),
+      createdAt: (doc.data() as any).createdAt?.toDate() || new Date(),
+      updatedAt: (doc.data() as any).updatedAt?.toDate() || new Date()
     }));
     
     // Apply search filter if specified

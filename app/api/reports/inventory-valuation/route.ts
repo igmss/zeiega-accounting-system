@@ -4,8 +4,8 @@ import { db, COLLECTIONS } from "@/lib/firebase"
 export async function GET() {
   try {
     // Fetch inventory items
-    const inventorySnapshot = await db.collection("acc_inventory_items").get()
-    const inventoryItems = inventorySnapshot.docs.map(doc => ({
+    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
+    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
@@ -47,7 +47,7 @@ export async function GET() {
     const rawMaterialsValue = inventoryData
       .filter(item => item.type === 'raw')
       .reduce((sum, item) => sum + item.total_value, 0)
-    
+
     const finishedGoodsValue = inventoryData
       .filter(item => item.type === 'finished')
       .reduce((sum, item) => sum + item.total_value, 0)

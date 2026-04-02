@@ -30,8 +30,8 @@ export function InvoiceManagement() {
         if (!response.ok) {
           throw new Error('Failed to fetch invoices')
         }
-        const invoicesData = await response.json()
-        setInvoices(invoicesData)
+        const result = await response.json()
+        setInvoices(result.data || [])
       } catch (error) {
         console.error("Error loading invoices:", error)
         setInvoices([])
@@ -49,8 +49,8 @@ export function InvoiceManagement() {
       try {
         const response = await fetch('/api/invoices')
         if (response.ok) {
-          const invoicesData = await response.json()
-          setInvoices(invoicesData)
+          const result = await response.json()
+          setInvoices(result.data || [])
         }
       } catch (error) {
         console.error('Error refreshing invoices:', error)

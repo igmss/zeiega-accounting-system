@@ -12,6 +12,12 @@ import { ProfitLossReport } from "./profit-loss-report"
 import { BalanceSheetReport } from "./balance-sheet-report"
 import { InventoryValuationReport } from "./inventory-valuation-report"
 import { JobProfitabilityReport } from "./job-profitability-report"
+import { CashFlowReport } from "./cash-flow-report"
+import { ARAgingReport } from "./ar-aging-report"
+import { TaxVATReport } from "./tax-vat-report"
+import { COGMReport } from "./cogm-report"
+import { TrialBalanceReport } from "./trial-balance-report"
+import { GeneralLedgerReport } from "./general-ledger-report"
 
 export function FinancialReports() {
   const [dateRange, setDateRange] = useState({
@@ -79,14 +85,26 @@ export function FinancialReports() {
         </CardContent>
       </Card>
 
-      {/* Report Tabs */}
+      {/* Report Tabs - Three Rows */}
       <Tabs defaultValue="profit-loss" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="profit-loss">P&L Statement</TabsTrigger>
-          <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory Valuation</TabsTrigger>
-          <TabsTrigger value="job-profitability">Job Profitability</TabsTrigger>
-        </TabsList>
+        <div className="space-y-2">
+          {/* Row 1 - Core Financial Statements */}
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="profit-loss">P&L</TabsTrigger>
+            <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
+            <TabsTrigger value="trial-balance">Trial Balance</TabsTrigger>
+            <TabsTrigger value="general-ledger">General Ledger</TabsTrigger>
+            <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
+          </TabsList>
+          {/* Row 2 - Operational Reports */}
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="cogm">COGM</TabsTrigger>
+            <TabsTrigger value="inventory">Inventory</TabsTrigger>
+            <TabsTrigger value="ar-aging">AR Aging</TabsTrigger>
+            <TabsTrigger value="tax-vat">Tax/VAT</TabsTrigger>
+            <TabsTrigger value="job-profitability">Job Profit</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="profit-loss">
           <ProfitLossReport dateRange={dateRange} />
@@ -96,8 +114,32 @@ export function FinancialReports() {
           <BalanceSheetReport dateRange={dateRange} />
         </TabsContent>
 
+        <TabsContent value="trial-balance">
+          <TrialBalanceReport dateRange={dateRange} />
+        </TabsContent>
+
+        <TabsContent value="general-ledger">
+          <GeneralLedgerReport dateRange={dateRange} />
+        </TabsContent>
+
+        <TabsContent value="cash-flow">
+          <CashFlowReport dateRange={dateRange} />
+        </TabsContent>
+
+        <TabsContent value="cogm">
+          <COGMReport dateRange={dateRange} />
+        </TabsContent>
+
         <TabsContent value="inventory">
           <InventoryValuationReport dateRange={dateRange} />
+        </TabsContent>
+
+        <TabsContent value="ar-aging">
+          <ARAgingReport dateRange={dateRange} />
+        </TabsContent>
+
+        <TabsContent value="tax-vat">
+          <TaxVATReport dateRange={dateRange} />
         </TabsContent>
 
         <TabsContent value="job-profitability">

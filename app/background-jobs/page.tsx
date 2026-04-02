@@ -52,7 +52,7 @@ export default function BackgroundJobsPage() {
     setIsRunning((prev) => ({ ...prev, [jobType]: true }))
 
     try {
-      let result
+      let result: any
       const startTime = new Date().toISOString()
 
       switch (jobType) {
@@ -74,8 +74,8 @@ export default function BackgroundJobsPage() {
         status: result.success ? "completed" : "failed",
         startTime,
         endTime: new Date().toISOString(),
-        processed: result.processed?.length || result.updated?.length || 0,
-        errors: result.errors || (result.error ? [result.error] : undefined),
+        processed: (result as any).processed?.length || (result as any).updated?.length || 0,
+        errors: (result as any).errors || ((result as any).error ? [(result as any).error] : undefined),
       }
 
       setJobHistory((prev) => [newJob, ...prev.slice(0, 9)]) // Keep last 10 jobs

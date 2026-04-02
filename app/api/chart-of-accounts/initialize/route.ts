@@ -1,69 +1,111 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { CHART_OF_ACCOUNTS, AccountType } from "@/lib/accounting/account-types"
+import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
 
 export async function POST() {
   try {
-    console.log("Initializing chart of accounts...")
+    console.log("Initializing chart of accounts with enhanced structure...")
+
+    // Get expected account count from our new structure
+    const expectedAccountCount = Object.keys(CHART_OF_ACCOUNTS).length
 
     // Check if accounts already exist
     const existingAccountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
-    
-    if (!existingAccountsSnapshot.empty) {
-      console.log("Chart of accounts already exists, skipping initialization")
-      return NextResponse.json({
-        success: true,
-        message: "Chart of accounts already exists",
-        accountCount: existingAccountsSnapshot.size
-      })
+
+    // Only skip if we already have the full new structure (check for new account codes)
+    if (!existingAccountsSnapshot.empty && existingAccountsSnapshot.size >= expectedAccountCount) {
+      // Verify it's the new structure:
+      // 1. Must have new account "1454" (Cryptocurrency Holdings)
+      // 2. Must NOT have old account "1122" (Employee Advances - Duplicate)
+      const hasNewAccount = existingAccountsSnapshot.docs.some(doc => doc.id === "1454")
+      const hasOldAccount = existingAccountsSnapshot.docs.some(doc => doc.id === "1122")
+
+      if (hasNewAccount && !hasOldAccount) {
+        console.log("Chart of accounts already exists with new structure")
+        return NextResponse.json({
+          success: true,
+          message: "Chart of accounts already exists with new structure",
+          accountCount: existingAccountsSnapshot.size
+        })
+      }
     }
 
-    // Initialize chart of accounts
-    const accounts = [
-      { id: "CASH", name: "Cash", type: "asset", balance: 315000 }, // Starting with EGP 315,000
-      { id: "AR", name: "Accounts Receivable", type: "asset", balance: 0 },
-      { id: "INVENTORY_RAW", name: "Raw Materials Inventory", type: "asset", balance: 0 },
-      { id: "INVENTORY_WIP", name: "Work in Progress", type: "asset", balance: 0 },
-      { id: "INVENTORY_FG", name: "Finished Goods Inventory", type: "asset", balance: 0 },
-      { id: "EQUIPMENT", name: "Equipment", type: "asset", balance: 0 },
-      { id: "ACCUMULATED_DEPRECIATION", name: "Accumulated Depreciation", type: "asset", balance: 0 },
-      { id: "BUILDING", name: "Building", type: "asset", balance: 0 },
-      { id: "ACCOUNTS_PAYABLE", name: "Accounts Payable", type: "liability", balance: 0 },
-      { id: "ACCRUED_EXPENSES", name: "Accrued Expenses", type: "liability", balance: 0 },
-      { id: "SHORT_TERM_DEBT", name: "Short-term Debt", type: "liability", balance: 0 },
-      { id: "LONG_TERM_DEBT", name: "Long-term Debt", type: "liability", balance: 0 },
-      { id: "RETAINED_EARNINGS", name: "Retained Earnings", type: "equity", balance: 0 },
-      { id: "REVENUE", name: "Sales Revenue", type: "revenue", balance: 0 },
-      { id: "COGS", name: "Cost of Goods Sold", type: "expense", balance: 0 },
-      { id: "RETURNS", name: "Returns and Allowances", type: "expense", balance: 0 },
-      { id: "VAT_PAYABLE", name: "VAT Payable", type: "liability", balance: 0 },
-      { id: "WAGES_PAYABLE", name: "Wages Payable", type: "liability", balance: 0 },
-      { id: "INVENTORY_ADJUSTMENT", name: "Inventory Adjustment", type: "expense", balance: 0 },
-    ]
-
-    const batch = db.batch()
-    accounts.forEach((account) => {
-      const ref = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(account.id)
-      batch.set(ref, {
-        ...account,
-        created_at: new Date(),
-        last_updated: new Date()
+    // Clear ALL existing accounts to replace with new structure
+    if (!existingAccountsSnapshot.empty) {
+      console.log(`Clearing ${existingAccountsSnapshot.size} old accounts...`)
+      const deleteBatch = db.batch()
+      existingAccountsSnapshot.docs.forEach(doc => {
+        deleteBatch.delete(doc.ref)
       })
-    })
+      await deleteBatch.commit()
+      console.log("Old accounts cleared")
+    }
 
-    await batch.commit()
+    // Initialize new chart of accounts from account-types
+    const accounts = Object.values(CHART_OF_ACCOUNTS)
+    console.log(`Creating ${accounts.length} accounts...`)
+
+    // Firestore batch limit is 500, so we split into batches
+    const batchSize = 400
+    for (let i = 0; i < accounts.length; i += batchSize) {
+      const batch = db.batch()
+      const batchAccounts = accounts.slice(i, i + batchSize)
+
+      batchAccounts.forEach((account) => {
+        const ref = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(account.code)
+        batch.set(ref, {
+          id: account.code,
+          code: account.code,
+          name: account.name,
+          name_ar: account.nameAr || null,
+          type: account.type,
+          sub_type: account.subType,
+          normal_balance: account.normalBalance,
+          parent_code: account.parentCode || null,
+          is_active: account.isActive,
+          is_system_account: account.isSystemAccount,
+          is_cash_flow_tracked: account.isCashFlowTracked,
+          description: account.description || null,
+          balance: 0,
+          created_at: new Date(),
+          last_updated: new Date(),
+        })
+      })
+
+      await batch.commit()
+      console.log(`Created batch ${Math.floor(i / batchSize) + 1}`)
+    }
+
+    // Initialize current fiscal year
+    const currentYear = new Date().getFullYear()
+    const fiscalResult = await FiscalPeriodService.initializeFiscalYear(currentYear)
+    if (fiscalResult.success) {
+      console.log(`✅ Fiscal year ${currentYear} initialized`)
+    }
+
     console.log(`✅ Chart of accounts initialized with ${accounts.length} accounts`)
 
     return NextResponse.json({
       success: true,
-      message: "Chart of accounts initialized successfully",
-      accountCount: accounts.length
+      message: "Chart of accounts initialized with enhanced structure",
+      accountCount: accounts.length,
+      fiscalYearInitialized: fiscalResult.success,
+      features: [
+        "50+ accounts with proper hierarchy",
+        "Arabic localization support",
+        "Account types and sub-types",
+        "Parent/child relationships",
+        "Fiscal period management",
+      ]
     })
 
   } catch (error) {
     console.error("Error initializing chart of accounts:", error)
     return NextResponse.json(
-      { error: "Failed to initialize chart of accounts" },
+      { error: "Failed to initialize chart of accounts", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     )
   }
 }
+

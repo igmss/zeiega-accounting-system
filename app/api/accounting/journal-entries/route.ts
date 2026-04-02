@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { CentralizedAccountingService } from "../sync-balances/route"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 // API endpoint for creating journal entries with automatic balance synchronization
 export async function POST(request: Request) {

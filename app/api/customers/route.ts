@@ -1,15 +1,38 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const customersSnapshot = await db.collection(COLLECTIONS.CUSTOMERS).get()
+    const { searchParams } = new URL(request.url)
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
+    const cursor = searchParams.get("cursor")
+
+    let query = db.collection(COLLECTIONS.CUSTOMERS)
+      .orderBy("createdAt", "desc")
+      .limit(limit)
+    
+    if (cursor) {
+      const lastDoc = await db.collection(COLLECTIONS.CUSTOMERS).doc(cursor).get()
+      if (lastDoc.exists) {
+        query = query.startAfter(lastDoc)
+      }
+    }
+
+    const customersSnapshot = await query.get()
     const customers = customersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
-    return NextResponse.json(customers)
+
+    const lastVisible = customersSnapshot.docs[customersSnapshot.docs.length - 1]
+    const nextCursor = lastVisible ? lastVisible.id : null
+    const hasMore = customersSnapshot.docs.length === limit
+
+    return NextResponse.json({
+      data: customers,
+      nextCursor,
+      hasMore
+    })
   } catch (error) {
     console.error("Error fetching customers:", error)
     return NextResponse.json(

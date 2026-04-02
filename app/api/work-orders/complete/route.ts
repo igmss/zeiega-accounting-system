@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       )
     }
     
-    const workOrder = workOrderDoc.data()
+    const workOrder = workOrderDoc.data() as any
     
     // Update work order status
     await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
@@ -31,31 +31,16 @@ export async function POST(request: Request) {
       updated_at: new Date()
     })
     
-    // Create journal entry for work order completion
-    const journalEntry = {
-      date: new Date(),
-      entries: [
-        {
-          account_id: "INVENTORY_FINISHED",
-          debit: workOrder.total_amount || 0,
-          credit: 0,
-          description: `Work order completed: ${workOrderId}`
-        },
-        {
-          account_id: "INVENTORY_WIP",
-          debit: 0,
-          credit: workOrder.total_amount || 0,
-          description: `Work order completed: ${workOrderId}`
-        }
-      ],
-      linked_doc: workOrderId,
-      created_at: new Date()
+    const { WorkOrderMaterialService } = await import("@/lib/services/work-order-material-service")
+
+    const result = await WorkOrderMaterialService.completeWorkOrder(
+      workOrderId,
+      workOrder.design_id || ""
+    )
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 })
     }
-    
-    await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
-    
-    // Update Chart of Accounts balances
-    await syncInventoryWithChartOfAccounts()
     
     return NextResponse.json({
       success: true,
@@ -78,7 +63,7 @@ async function syncInventoryWithChartOfAccounts() {
   try {
     // Fetch all inventory items
     const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems = inventorySnapshot.docs.map(doc => ({
+    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))

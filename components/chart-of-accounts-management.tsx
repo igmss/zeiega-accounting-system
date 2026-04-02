@@ -34,6 +34,8 @@ interface ChartAccount {
   type: string
   balance: number
   parent_id?: string | null
+  isActive?: boolean
+  deprecatedReason?: string
 }
 
 interface JournalEntry {
@@ -157,7 +159,10 @@ export function ChartOfAccountsManagement() {
       account.name.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const getAccountTypeBadge = (type: string) => {
+  const getAccountTypeBadge = (type: string, isActive: boolean = true) => {
+    if (!isActive) {
+      return <Badge variant="outline" className="bg-gray-100 text-gray-400 border-gray-200">Inactive</Badge>
+    }
     switch (type) {
       case "asset":
         return <Badge variant="default">Asset</Badge>
@@ -286,10 +291,25 @@ export function ChartOfAccountsManagement() {
                 </TableHeader>
                 <TableBody>
                   {filteredAccounts.map((account) => (
-                    <TableRow key={account.id}>
-                      <TableCell className="font-medium">{account.id}</TableCell>
-                      <TableCell>{account.name}</TableCell>
-                      <TableCell>{getAccountTypeBadge(account.type)}</TableCell>
+                    <TableRow key={account.id} className={account.isActive === false ? "opacity-60 bg-muted/30" : ""}>
+                      <TableCell className="font-medium">
+                        <span className={account.isActive === false ? "line-through text-muted-foreground" : ""}>
+                          {account.id}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className={account.isActive === false ? "text-muted-foreground" : ""}>
+                            {account.name}
+                          </span>
+                          {account.deprecatedReason && (
+                            <span className="text-[10px] text-red-500 italic">
+                              {account.deprecatedReason}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{getAccountTypeBadge(account.type, account.isActive !== false)}</TableCell>
                       <TableCell className="font-medium">{formatCurrency(account.balance)}</TableCell>
                     </TableRow>
                   ))}
@@ -319,8 +339,8 @@ export function ChartOfAccountsManagement() {
                         </div>
                         <div className="text-right">
                           <div className="text-sm">
-                            {entry.date 
-                              ? (entry.date.toDate ? entry.date.toDate() : new Date(entry.date)).toLocaleDateString()
+                            {(entry.date as any) 
+                              ? ((entry.date as any).toDate ? (entry.date as any).toDate() : new Date(entry.date)).toLocaleDateString()
                               : 'N/A'
                             }
                           </div>
@@ -409,7 +429,7 @@ export function ChartOfAccountsManagement() {
               <Label htmlFor="account-type" className="text-right">
                 Account Type
               </Label>
-              <Select value={newAccount.type} onValueChange={(value) => setNewAccount({...newAccount, type: value})}>
+                  <Select value={newAccount.type} onValueChange={(value) => setNewAccount({...newAccount, type: value})}>
                 <SelectTrigger className="col-span-3">
                   <SelectValue placeholder="Select account type" />
                 </SelectTrigger>

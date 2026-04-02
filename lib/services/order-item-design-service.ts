@@ -1,6 +1,7 @@
 import { db, COLLECTIONS } from "../firebase";
 import { DesignService } from "./design-service";
 import { SizeCostService } from "./size-cost-service";
+import { BOMService } from "./bom-service";
 
 export class OrderItemDesignService {
   /**
@@ -9,22 +10,15 @@ export class OrderItemDesignService {
   static async calculateOrderCostsFromDesigns(orderItems: any[]): Promise<{
     success: boolean;
     totalEstimatedCost: number;
-    itemCosts: Array<{
-      item: any;
-      designId?: string;
-      designName?: string;
-      estimatedCost: number;
-      materialCost: number;
-      laborCost: number;
-      overheadCost: number;
-      quantity: number;
-    }>;
+    itemCosts: any[];
+    warnings?: string[];
     error?: string;
   }> {
     try {
       console.log(`Calculating costs for ${orderItems.length} order items from designs...`);
       
       const itemCosts = [];
+      const warnings: string[] = [];
       let totalEstimatedCost = 0;
 
       for (const item of orderItems) {
@@ -42,12 +36,25 @@ export class OrderItemDesignService {
           // Get actual material requirements and calculate real material cost from current inventory prices
           let actualMaterialCost = 0;
           try {
-            const materialRequirements = await DesignService.getMaterialRequirements(design.id, quantity);
-            actualMaterialCost = materialRequirements.reduce((sum, req) => sum + req.totalCost, 0);
-            console.log(`Actual material cost from requirements for ${design.name}: EGP ${actualMaterialCost}`);
+            // Check if there's an active BOM for this design (BOMs include waste factors)
+            const activeBOM = await BOMService.getActiveBOMForDesign(design.id);
+            
+            if (activeBOM) {
+              console.log(`Using active BOM ${activeBOM.id} for design ${design.name} (includes waste factors)`);
+              const bomRequirements = await BOMService.calculateMaterialRequirements(activeBOM.id, quantity);
+              if (bomRequirements.success && bomRequirements.requirements) {
+                // Sum the total_cost which includes quantity_with_waste
+                actualMaterialCost = bomRequirements.requirements.reduce((sum, req) => sum + req.total_cost, 0);
+              }
+            } else {
+              // Fallback to simple material requirements if no active BOM
+              const materialRequirements = await DesignService.getMaterialRequirements(design.id, quantity);
+              actualMaterialCost = materialRequirements.reduce((sum, req) => sum + req.totalCost, 0);
+            }
+            
+            console.log(`Actual material cost for ${design.name}: EGP ${actualMaterialCost}`);
           } catch (error) {
-            console.warn(`Failed to get material requirements for design ${design.id}, using stored materialCost:`, error);
-            // Fallback to size-specific calculation below
+            console.warn(`Failed to get material requirements for design ${design.id}, using stored materialCost fallback:`, error);
           }
           
           // Calculate size-specific costs
@@ -62,22 +69,14 @@ export class OrderItemDesignService {
           let finalEstimatedCost = sizeSpecificCosts.totalCost;
           
           if (actualMaterialCost > 0) {
-            // Recalculate with actual material cost from current inventory
-            // actualMaterialCost is already calculated for the quantity, so we need to:
-            // 1. Get the base material cost per unit from actual requirements
-            const actualMaterialCostPerUnit = actualMaterialCost / quantity;
-            // 2. Apply size multiplier to get size-specific material cost
-            // The size multiplier is embedded in sizeSpecificCosts, so we calculate it:
-            const baseMaterialCostPerUnit = design.materialCost || 0;
-            const sizeMultiplier = baseMaterialCostPerUnit > 0 
-              ? sizeSpecificCosts.materialCost / (baseMaterialCostPerUnit * quantity)
-              : 1.0;
+            // Use actual material cost from current inventory directly
+            // No size multiplier is applied to actual inventory costs as per requirements
+            finalMaterialCost = actualMaterialCost;
             
-            // Apply size multiplier to actual material cost
-            finalMaterialCost = actualMaterialCost * sizeMultiplier;
-            // Recalculate total with actual material cost
+            // Recalculate total with actual material cost + size-specific labor/overhead
             finalEstimatedCost = finalMaterialCost + sizeSpecificCosts.laborCost + sizeSpecificCosts.overheadCost;
-            console.log(`Using actual material cost EGP ${finalMaterialCost} (from requirements EGP ${actualMaterialCost}, size multiplier: ${sizeMultiplier.toFixed(3)}) instead of EGP ${sizeSpecificCosts.materialCost}`);
+            
+            console.log(`Using actual inventory material cost EGP ${finalMaterialCost} instead of size-multiplied estimate EGP ${sizeSpecificCosts.materialCost}`);
           }
           
           itemCosts.push({
@@ -100,24 +99,26 @@ export class OrderItemDesignService {
         } else {
           console.warn(`No design found for item: ${item.name} (${item.productId})`);
           
-          // Use default costs if no design found
+          // Fallback to 0 if no design found - don't guess costs silently
           const quantity = item.quantity || 1;
-          const defaultCost = (item.basePrice || 0) * 0.3; // 30% of retail price as default cost
+          const defaultCost = 0;
           
           itemCosts.push({
             item,
             designId: undefined,
             designName: undefined,
+            designMatched: false,
             estimatedCost: defaultCost,
-            materialCost: defaultCost * 0.6,
-            laborCost: defaultCost * 0.3,
-            overheadCost: defaultCost * 0.1,
+            materialCost: 0,
+            laborCost: 0,
+            overheadCost: 0,
             quantity
           });
           
+          warnings.push(`Unmatched design for item: ${item.name} (SKU/ID: ${item.productId})`);
           totalEstimatedCost += defaultCost;
           
-          console.log(`Item ${item.name}: Using default cost EGP ${defaultCost}`);
+          console.log(`Item ${item.name}: Using 0 fallback cost (unmatched design)`);
         }
       }
 
@@ -126,7 +127,8 @@ export class OrderItemDesignService {
       return {
         success: true,
         totalEstimatedCost,
-        itemCosts
+        itemCosts,
+        warnings: warnings.length > 0 ? warnings : undefined
       };
 
     } catch (error) {
@@ -267,19 +269,29 @@ export class OrderItemDesignService {
    */
   private static async findDesignByName(itemName: string): Promise<any | null> {
     try {
-      const snapshot = await db.collection(COLLECTIONS.DESIGNS).get();
+      const term = itemName.toLowerCase().trim();
       
-      for (const doc of snapshot.docs) {
-        const design = doc.data();
-        const designName = design.name?.toLowerCase() || '';
-        const itemNameLower = itemName.toLowerCase();
+      // 1. Try exact match on normalized name
+      const exactSnapshot = await db.collection(COLLECTIONS.DESIGNS)
+        .where("name_lower", "==", term)
+        .limit(1)
+        .get();
+      
+      if (!exactSnapshot.empty) {
+        const doc = exactSnapshot.docs[0];
+        return { id: doc.id, ...doc.data() };
+      }
+      
+      // 2. Fallback to prefix match (starts with) using range query
+      const prefixSnapshot = await db.collection(COLLECTIONS.DESIGNS)
+        .where("name_lower", ">=", term)
+        .where("name_lower", "<=", term + "\uf8ff")
+        .limit(1)
+        .get();
         
-        // Check for exact match or partial match
-        if (designName === itemNameLower || 
-            designName.includes(itemNameLower) || 
-            itemNameLower.includes(designName)) {
-          return { id: doc.id, ...design };
-        }
+      if (!prefixSnapshot.empty) {
+        const doc = prefixSnapshot.docs[0];
+        return { id: doc.id, ...doc.data() };
       }
 
       return null;
