@@ -269,7 +269,34 @@ export async function POST(request: NextRequest) {
         }
       } catch (innerError) {
         console.error("❌ Critical failure in work order creation block:", innerError);
-        // We still log the error but don't return 500, allowing the webhook to complete the order update
+        // Create basic fallback work order so the order is not lost (Bug 3 Fix)
+        // Note: orderItems was defined within the try block, let's ensure it's accessible or re-fetch
+        try {
+          const orderDocForFallback = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+          const itemsForFallback = orderDocForFallback.exists ? (orderDocForFallback.data()?.items || []) : [];
+          
+          await db.collection(COLLECTIONS.WORK_ORDERS).add({
+            sales_order_id: orderId,
+            status: "pending",
+            completionPercentage: 0,
+            raw_materials_used: [],
+            materials_issued: [],
+            overhead_cost: 0,
+            labor_cost: 0,
+            total_cost: 0,
+            estimated_cost: 0,
+            created_at: now,
+            updated_at: now,
+            estimated_completion: null,
+            completed_at: null,
+            notes: `Fallback work order (critical error: ${innerError})`,
+            items: itemsForFallback,
+            order_source: "web"
+          });
+          console.log(`✅ Created fallback work order for ${orderId} after critical failure`);
+        } catch (fallbackError) {
+          console.error("❌ Failed to even create fallback work order:", fallbackError);
+        }
       }
     }
 
