@@ -33,11 +33,11 @@ export async function POST(request: Request) {
 
     // 2. Identify P&L accounts (Revenue, COGS, Expense)
     const plAccountTypes = [
-      AccountType.REVENUE, 
-      AccountType.COGS, 
-      AccountType.EXPENSE, 
-      AccountType.OTHER_INCOME, 
-      AccountType.OTHER_EXPENSE
+      AccountType.REVENUE,
+      AccountType.CONTRA_REVENUE,   // catches discounts/returns
+      AccountType.COGS,
+      AccountType.EXPENSE,
+      AccountType.OTHER,            // catches account 7003 (asset disposal)
     ]
     const plAccounts = Object.values(CHART_OF_ACCOUNTS).filter(acc => plAccountTypes.includes(acc.type))
 
@@ -52,9 +52,9 @@ export async function POST(request: Request) {
       
       if (Math.abs(balance) > 0.001) { // Ignore zero balances
         const isDebitNormal = [
-          AccountType.EXPENSE, 
-          AccountType.COGS, 
-          AccountType.OTHER_EXPENSE
+          AccountType.EXPENSE,
+          AccountType.COGS,
+          AccountType.CONTRA_REVENUE,
         ].includes(acc.type)
         
         if (isDebitNormal) {
