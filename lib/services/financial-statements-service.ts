@@ -209,7 +209,11 @@ export class FinancialStatementsService {
 
         // Other Income/Expenses (7xxx)
         const otherItems = await this.getAccountBalancesByType(AccountType.OTHER, startDate, endDate)
-        const otherTotal = otherItems.reduce((sum, item) => sum + item.amount, 0)
+        const otherTotal = otherItems.reduce((sum, item) => {
+            // Treat as net expense (positive = loss, negative = gain)
+            const isDebit = isDebitNormalBalance(item.code)
+            return sum + (isDebit ? item.amount : -item.amount)
+        }, 0)
 
         // Net Income
         const netIncome = operatingIncome - otherTotal
@@ -464,10 +468,16 @@ export class FinancialStatementsService {
         // 3. Financing Activities (Fix-010: Correct Equity Flow)
         const loansChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.LONG_TERM_LOANS, startDate, endDate)
         
-        // Use Owner Capital (3001) for injections and Owner Drawings (3002) for outflows
-        // Retained Earnings (3100) is excluded here as its change (Net Income) is already in Operating
-        const capitalInjections = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.OWNER_CAPITAL, startDate, endDate)
-        const ownerDrawings = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.OWNER_DRAWINGS, startDate, endDate)
+        // Sum all partner capital and drawings accounts (Fix-010: Multi-Partner support)
+        const capitalInjections = 
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_AHMED, startDate, endDate) +
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_IBRAHIM, startDate, endDate) +
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_FATHY, startDate, endDate)
+            
+        const ownerDrawings = 
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_AHMED, startDate, endDate) +
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_IBRAHIM, startDate, endDate) +
+            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_FATHY, startDate, endDate)
         
         const cashFromFinancing = loansChange + capitalInjections - ownerDrawings
         
