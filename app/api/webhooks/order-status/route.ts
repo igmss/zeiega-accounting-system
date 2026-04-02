@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     }
 
     const orderData = orderDoc.data()
+    const currentStatus = orderData?.status || "pending"
 
     if (!orderData) {
       return NextResponse.json(
@@ -104,13 +105,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const STATUS_PRIORITY: Record<string, number> = { 
+      pending: 0, 
+      processing: 1, 
+      producing: 1, 
+      shipped: 2, 
+      completed: 3, 
+      delivered: 3, 
+      cancelled: -1 
+    }
+
+    const currentPriority = STATUS_PRIORITY[currentStatus] ?? 0
+    const newPriority = STATUS_PRIORITY[status] ?? 0
+
     const now = new Date()
 
-    // Update the order status in the main orders collection
-    await orderDoc.ref.update({
-      status: status,
-      updatedAt: now
-    })
+    // 4. Status Regression Protection (Idempotent FIX-007)
+    // Only update the Firestore order status if the new status represents a forward progression
+    if (newPriority >= currentPriority || status === "cancelled") {
+      // Update the order status in the main orders collection
+      await orderDoc.ref.update({
+        status: status,
+        updatedAt: now
+      })
+      console.log(`✅ Progressed status: ${currentStatus} -> ${status}`)
+    } else {
+      console.log(`ℹ️ Status skip: ${currentStatus} is higher priority than ${status}`)
+    }
 
     // Create/Update sales order in accounting system (Idempotent FIX-006)
     const salesOrderRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId);
@@ -130,12 +151,13 @@ export async function POST(request: NextRequest) {
         customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",
         items: orderData.items?.map((item: any) => ({
           sku: item.productId,
+          name: item.name || item.sku || item.productId, // (Bug 2 Fix: Display name)
           qty: item.quantity,
           unit_price: item.basePrice || item.adjustedPrice
         })) || [],
         status: mapOrderStatus(status),
         created_at: orderData.createdAt?.toDate?.() || now,
-        total_amount: orderData.total || 0,
+        total_amount: Number(orderData.total) || Number(orderData.subtotal) || 0, // (Bug 1 Fix: No EGPNaN)
         order_source: "web",
         updated_at: now
       };
@@ -145,114 +167,109 @@ export async function POST(request: NextRequest) {
 
     // If status is "processing", create work order immediately
     if (status === "processing") {
-      // Check if work order already exists
-      const existingWorkOrderSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-        .where("sales_order_id", "==", orderId)
-        .get()
+      // (Bug 3 Fix: Inner try/catch to protect against cost calculation crashes)
+      try {
+        // Check if work order already exists
+        const existingWorkOrderSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
+          .where("sales_order_id", "==", orderId)
+          .get()
 
-      if (existingWorkOrderSnapshot.empty) {
-        console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
+        if (existingWorkOrderSnapshot.empty) {
+          console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
 
-        // Get order items for cost calculation
-        const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
-        const orderItems = orderDoc.exists ? (orderDoc.data()?.items || []) : [];
+          // Get order items for cost calculation
+          const orderDocForWO = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
+          const orderItems = orderDocForWO.exists ? (orderDocForWO.data()?.items || []) : [];
 
-        // Calculate costs from designs FIRST
-        console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
-        const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
+          // Calculate costs from designs FIRST
+          console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
+          const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
-        if (costCalculation.success) {
-          console.log(`✅ Cost calculation successful: EGP ${costCalculation.totalEstimatedCost}`);
-          
-          if (costCalculation.warnings && costCalculation.warnings.length > 0) {
-            console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
-          }
+          if (costCalculation.success) {
+            console.log(`✅ Cost calculation successful: EGP ${costCalculation.totalEstimatedCost}`);
+            
+            if (costCalculation.warnings && costCalculation.warnings.length > 0) {
+              console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
+            }
 
-          // Construct notes including warnings if any
-          let notes = `Work order created with automatic cost calculation (EGP ${costCalculation.totalEstimatedCost})`;
-          if (costCalculation.warnings && costCalculation.warnings.length > 0) {
-            notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map(w => w.split(': ')[1] || w).join(', ')}`;
-          }
+            // Construct notes including warnings if any
+            let notes = `Work order created with automatic cost calculation (EGP ${costCalculation.totalEstimatedCost})`;
+            if (costCalculation.warnings && costCalculation.warnings.length > 0) {
+              notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map(w => w.split(': ')[1] || w).join(', ')}`;
+            }
 
-          // Create work order with calculated costs
-          const workOrder = {
-            sales_order_id: orderId,
-            status: "pending",
-            completionPercentage: 0,
-            raw_materials_used: [],
-            materials_issued: [],
-            overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.overheadCost || 0), 0),
-            labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost || 0), 0),
-            total_cost: 0,
-            estimated_cost: costCalculation.totalEstimatedCost,
-            created_at: now,
-            updated_at: now,
-            estimated_completion: null,
-            completed_at: null,
-            notes: notes,
-            items: orderItems,
-            item_costs: costCalculation.itemCosts,
-            order_source: "web"
-          };
+            // Create work order with calculated costs
+            const workOrder = {
+              sales_order_id: orderId,
+              status: "pending",
+              completionPercentage: 0,
+              raw_materials_used: [],
+              materials_issued: [],
+              overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.overheadCost || 0), 0),
+              labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost || 0), 0),
+              total_cost: 0,
+              estimated_cost: costCalculation.totalEstimatedCost,
+              created_at: now,
+              updated_at: now,
+              estimated_completion: null,
+              completed_at: null,
+              notes: notes,
+              items: orderItems,
+              item_costs: costCalculation.itemCosts,
+              order_source: "web"
+            };
 
-          const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
-          console.log(`✅ Created work order ${workOrderRef.id} with cost EGP ${costCalculation.totalEstimatedCost}`);
+            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
+            console.log(`✅ Created work order ${workOrderRef.id} with cost EGP ${costCalculation.totalEstimatedCost}`);
 
-          // Post WIP journal entry (DR WIP / CR Accrued Liabilities)
-          // Use estimated cost for opening (can be overridden manually later)
-          if (costCalculation.totalEstimatedCost > 0) {
-            const wipResult = await EnhancedAccountingService.recordWIPOpening(
-              workOrderRef.id,
-              costCalculation.totalEstimatedCost
-            );
-            if (wipResult.success) {
-              console.log(`✅ Posted WIP opening journal entry ${wipResult.entryId}`);
+            // Post WIP journal entry (DR WIP / CR Accrued Liabilities)
+            // Use estimated cost for opening (can be overridden manually later)
+            if (costCalculation.totalEstimatedCost > 0) {
+              const wipResult = await EnhancedAccountingService.recordWIPOpening(
+                workOrderRef.id,
+                costCalculation.totalEstimatedCost
+              );
+              if (wipResult.success) {
+                console.log(`✅ Posted WIP opening journal entry ${wipResult.entryId}`);
+              } else {
+                console.error(`❌ Failed to post WIP journal: ${wipResult.error}`);
+              }
             } else {
-              console.error(`❌ Failed to post WIP journal: ${wipResult.error}`);
+              const warningMsg = costCalculation.warnings ? "Unmatched designs" : "Zero estimated cost";
+              console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: ${warningMsg}`);
             }
           } else {
-            const warningMsg = costCalculation.warnings ? "Unmatched designs" : "Zero estimated cost";
-            console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: ${warningMsg}`);
+            console.error(`❌ Cost calculation failed: ${costCalculation.error}`);
+
+            // Fallback: Create basic work order with warning
+            const basicWorkOrder = {
+              sales_order_id: orderId,
+              status: "pending",
+              completionPercentage: 0,
+              raw_materials_used: [],
+              materials_issued: [],
+              overhead_cost: 0,
+              labor_cost: 0,
+              total_cost: 0,
+              estimated_cost: 0,
+              created_at: now,
+              updated_at: now,
+              estimated_completion: null,
+              completed_at: null,
+              notes: `Basic work order for web order ${orderId} (cost calculation failed: ${costCalculation.error})`,
+              items: orderItems,
+              order_source: "web"
+            };
+
+            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
+            console.log(`⚠️ Created basic work order ${workOrderRef.id} without costs - manual update required`);
           }
         } else {
-          console.error(`❌ Cost calculation failed: ${costCalculation.error}`);
-
-          // Fallback: Create basic work order with warning
-          const basicWorkOrder = {
-            sales_order_id: orderId,
-            status: "pending",
-            completionPercentage: 0,
-            raw_materials_used: [],
-            materials_issued: [],
-            overhead_cost: 0,
-            labor_cost: 0,
-            total_cost: 0,
-            estimated_cost: 0,
-            created_at: now,
-            updated_at: now,
-            estimated_completion: null,
-            completed_at: null,
-            notes: `Basic work order for web order ${orderId} (cost calculation failed: ${costCalculation.error})`,
-            items: orderItems,
-            order_source: "web"
-          };
-
-          const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
-          console.log(`⚠️ Created basic work order ${workOrderRef.id} without costs - manual update required`);
-          console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: Cost calculation failed`);
+          console.log(`ℹ️ Work order already exists for order ${orderId}`)
         }
-
-        return NextResponse.json({
-          success: true,
-          message: `Order ${orderId} processed successfully`,
-          orderId,
-          status,
-          timestamp: now.toISOString()
-        }, {
-          headers: getCORSHeaders(request)
-        })
-      } else {
-        console.log(`ℹ️ Work order already exists for order ${orderId}`)
+      } catch (innerError) {
+        console.error("❌ Critical failure in work order creation block:", innerError);
+        // We still log the error but don't return 500, allowing the webhook to complete the order update
       }
     }
 
@@ -266,10 +283,13 @@ export async function POST(request: NextRequest) {
       headers: getCORSHeaders(request)
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error processing order status webhook:", error)
     return NextResponse.json(
-      { error: "Failed to process order status update" },
+      { 
+        error: "Failed to process order status update",
+        detail: error.message || String(error)
+      },
       { status: 500 }
     )
   }
