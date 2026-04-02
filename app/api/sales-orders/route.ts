@@ -134,6 +134,7 @@ export async function POST(request: Request) {
         customer_name: orderData.customer_name || "Manual Customer",
         items: orderData.items?.map((item: any) => ({
           sku: item.product_id,
+          name: item.product_name || item.product_id,
           qty: item.qty || item.quantity,
           unit_price: item.unit_price
         })) || [],

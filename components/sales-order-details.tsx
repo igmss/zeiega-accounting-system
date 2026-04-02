@@ -13,10 +13,12 @@ interface SalesOrderDetailsProps {
     customer_name: string
     items: Array<{
       sku: string
+      name?: string
       qty: number
       unit_price: number
     }>
     total: number
+    total_amount?: number
     status: string
     created_at: Date
   }
@@ -99,7 +101,7 @@ export function SalesOrderDetails({ order }: SalesOrderDetailsProps) {
               <div key={index}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <div className="font-medium">{item.sku}</div>
+                    <div className="font-medium">{item.name || item.sku}</div>
                     <div className="text-sm text-muted-foreground">
                       Quantity: {item.qty} × {formatCurrency(item.unit_price)}
                     </div>
@@ -116,7 +118,7 @@ export function SalesOrderDetails({ order }: SalesOrderDetailsProps) {
 
             <div className="flex justify-between items-center text-lg font-bold">
               <span>Total:</span>
-              <span>{formatCurrency(order.total)}</span>
+              <span>{formatCurrency(order.total_amount ?? order.total ?? 0)}</span>
             </div>
           </div>
         </CardContent>

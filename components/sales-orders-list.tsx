@@ -301,13 +301,13 @@ export function SalesOrdersList() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {order.items
-                        .map((item: any) => `${item.qty}x ${item.sku}`)
+                        .map((item: any) => `${item.qty}x ${item.name || item.sku}`)
                         .join(", ")
                         .slice(0, 30)}
-                      {order.items.map((item: any) => `${item.qty}x ${item.sku}`).join(", ").length > 30 ? "..." : ""}
+                      {order.items.map((item: any) => `${item.qty}x ${item.name || item.sku}`).join(", ").length > 30 ? "..." : ""}
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
+                  <TableCell className="font-medium">{formatCurrency(order.total_amount ?? order.total ?? 0)}</TableCell>
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
                   <TableCell>
                     {order.created_at 
