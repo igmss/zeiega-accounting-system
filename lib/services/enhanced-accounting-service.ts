@@ -125,6 +125,11 @@ export class EnhancedAccountingService {
 
     /**
      * Process website orders (for cron job)
+     * Uses createSalesOrder which is idempotent (skips if SO already exists).
+     * After createSalesOrder, we always attempt to mark the website order as processed.
+     * If marking fails, the next cron run will still work correctly because:
+     *  - createSalesOrder is idempotent (uses website order ID as SO doc ID)
+     *  - re-running will skip the SO creation and retry the processed=true update
      */
     static async syncWebsiteOrders() {
         const processed: string[] = []
@@ -138,7 +143,8 @@ export class EnhancedAccountingService {
                 try {
                     await this.createSalesOrder(order)
 
-                    // Mark as processed only on full success
+                    // Mark website order as processed – even if SO already existed (idempotent skip),
+                    // we still need to mark it. This ensures eventual consistency on retry.
                     await orderDoc.ref.update({
                         processed: true,
                         processed_at: new Date(),
@@ -151,12 +157,17 @@ export class EnhancedAccountingService {
                     console.error(`❌ Error sync process for order ${orderDoc.id}:`, errorMessage)
                     errors.push(`Order ${orderDoc.id}: ${errorMessage}`)
 
-                    // Update order with error details (BUG-Integrity Fix)
-                    await orderDoc.ref.update({
-                        processed: false,
-                        processing_error: errorMessage,
-                        last_processed_at: new Date(),
-                    })
+                    // Update order with error details for debugging
+                    try {
+                        await orderDoc.ref.update({
+                            processed: false,
+                            processing_error: errorMessage,
+                            last_processed_at: new Date(),
+                        })
+                    } catch {
+                        // If even the error update fails, log and continue
+                        console.error(`❌ Could not update error state for order ${orderDoc.id}`)
+                    }
                 }
             }
         } catch (error) {
@@ -217,8 +228,7 @@ export class EnhancedAccountingService {
 
         try {
             const returnId = returnData?.id ?? returnData?.returnId ?? "unknown"
-            const returnAmountRaw = returnData.refundAmount ?? returnData.amount ?? 0 // nullish coalescing (BUG-?)
-            const returnAmount = Number(returnAmountRaw ?? 0)
+            const returnAmount = Number(returnData.refundAmount ?? returnData.amount ?? 0)
 
             if (!Number.isFinite(returnAmount) || returnAmount < 0) {
                 return {
@@ -524,10 +534,20 @@ export class EnhancedAccountingService {
     }
 
     /**
-     * Create sales order and corresponding work order atomically (Atomic Fix)
+     * Create sales order and corresponding work order atomically (Idempotent Fix)
+     * Uses website order ID as the sales order document ID for natural idempotency.
+     * Repeated runs will use the same document path and not create duplicates.
      */
     static async createSalesOrder(websiteOrder: WebsiteOrder) {
-        const salesOrderId = `SO-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`
+        const now = Date.now()
+        const salesOrderId = websiteOrder.id
+
+        // Idempotency check: skip if sales order already exists
+        const existingSO = await db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId).get()
+        if (existingSO.exists) {
+            console.log(`ℹ️ Sales order ${salesOrderId} already exists, skipping`)
+            return
+        }
 
         // Find or create customer (FIX-004: Lookup email if missing)
         let customerEmail = websiteOrder.customer_email
@@ -555,7 +575,7 @@ export class EnhancedAccountingService {
         }
 
         // Generate work order alongside sales order with unique ID
-        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+        const workOrderId = `WO-${now}-${Math.random().toString(36).substr(2, 4)}`
         const workOrder: WorkOrder = {
             id: workOrderId,
             sales_order_id: salesOrderId,
@@ -1379,23 +1399,36 @@ export class EnhancedAccountingService {
                 .limit(10)
                 .get()
 
-            // Fix N+1 query issue for customer reads (Atomic Optimization)
-            const recentOrders = await Promise.all(salesOrdersSnapshot.docs.map(async (doc) => {
+            const orders = salesOrdersSnapshot.docs.map(doc => {
                 const order = doc.data() as any
-                const customerDoc = await db.collection(COLLECTIONS.CUSTOMERS).doc(order.customer_id).get()
-                const customer = customerDoc.data() as Customer
-                
-                const total = order.items?.reduce((sum: number, item: any) => sum + ((item.qty || 1) * (item.unit_price || 0)), 0) || 0
+                const total = order.items?.reduce(
+                    (sum: number, item: any) => sum + ((item.qty || 1) * (item.unit_price || 0)), 0
+                ) || 0
+                return { doc, order, total }
+            })
 
-                return {
-                    id: order.id,
-                    customerName: customer?.name || order.customer_id,
-                    total,
-                    status: order.status,
-                    createdAt: order.created_at,
+            // CHANGED: Batch-read all customers in a single round-trip using getAll
+            const customerIds = [...new Set(orders.map(o => o.order.customer_id).filter(Boolean))]
+            const customerDocs = customerIds.length > 0
+                ? await db.getAll(...customerIds.map(id => db.collection(COLLECTIONS.CUSTOMERS).doc(id)))
+                : []
+
+            const customerMap = new Map<string, string>()
+            for (const cDoc of customerDocs) {
+                if (cDoc.exists) {
+                    const c = cDoc.data() as Customer
+                    customerMap.set(cDoc.id, c?.name || cDoc.id)
                 }
+            }
+
+            const recentOrders = orders.map(({ order }) => ({
+                id: order.id,
+                customerName: customerMap.get(order.customer_id) || order.customer_id,
+                total: orders.find(o => o.order.id === order.id)?.total || 0,
+                status: order.status,
+                createdAt: order.created_at,
             }))
-            
+
             return recentOrders
         } catch (error) {
             console.error("Error getting recent orders:", error)

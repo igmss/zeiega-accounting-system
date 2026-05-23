@@ -75,7 +75,7 @@ export function DashboardOverview() {
           id: wo.id,
           salesOrder: wo.salesOrderId,
           status: wo.status,
-          completion: wo.status === "completed" ? 100 : wo.status === "in_progress" ? Math.floor(Math.random() * 80) + 10 : 0,
+          completion: wo.status === "completed" ? 100 : wo.completionPercentage ?? 0,
         })) || []
 
         setData({

@@ -312,11 +312,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("Error processing order status webhook:", error)
+    // CHANGED: Do not leak internal error details to external callers.
+    // Full error is logged server-side; return a generic message to the client.
     return NextResponse.json(
-      { 
-        error: "Failed to process order status update",
-        detail: error.message || String(error)
-      },
+      { error: "Failed to process order status update" },
       { status: 500 }
     )
   }

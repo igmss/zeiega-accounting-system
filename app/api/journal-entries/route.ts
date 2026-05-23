@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
 import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
+import { authOptions } from "@/lib/auth/auth-options"
 
 /**
  * GET /api/journal-entries
@@ -103,6 +105,14 @@ export async function POST(request: NextRequest) {
             return createErrorResponse(periodValidation.error || "Cannot post to closed period", 400)
         }
 
+        // Extract unique account IDs for indexing (CRITICAL-FIX: was missing, broke trial balance)
+        const accountIds = Array.from(new Set(entries.map((e: any) => e.account_id)))
+
+        // Get authenticated user for audit trail
+        const session = await getServerSession(authOptions)
+        const userId = session?.user?.id || "system"
+        const userName = session?.user?.name || session?.user?.email || "system"
+
         // Generate journal entry ID
         const entryId = `JE-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
 
@@ -120,11 +130,13 @@ export async function POST(request: NextRequest) {
                 debit: e.debit || 0,
                 credit: e.credit || 0,
             })),
+            account_ids: accountIds,
             total_debits: totalDebits,
             total_credits: totalCredits,
             status: "posted",
             created_at: new Date(),
-            created_by: "system", // TODO: Get from session
+            created_by: userId,
+            created_by_name: userName,
         }
 
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
