@@ -1,0 +1,37 @@
+import { NextRequest, NextResponse } from "next/server"
+import { OverheadService } from "@/lib/services/overhead-service"
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const fiscalYear = Number(searchParams.get("fiscalYear") || new Date().getFullYear())
+
+    const configs: any[] = []
+    const bases = ["DLH", "MH", "DL_COST", "UNITS", "MATERIAL_COST"] as const
+    for (const base of bases) {
+      const config = await OverheadService.getActivePOHR(fiscalYear, base)
+      if (config) configs.push(config)
+    }
+
+    return NextResponse.json({ configs })
+  } catch (error) {
+    return NextResponse.json({ error: "Failed to fetch configs" }, { status: 500 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const result = await OverheadService.createOverheadConfig(
+      body.fiscalYear,
+      body.allocationBase,
+      body.estimatedTotalOH,
+      body.estimatedActivityLevel,
+      body.department,
+      body.userId,
+    )
+    return NextResponse.json(result, { status: result.success ? 200 : 400 })
+  } catch (error) {
+    return NextResponse.json({ error: "Failed to create config" }, { status: 500 })
+  }
+}

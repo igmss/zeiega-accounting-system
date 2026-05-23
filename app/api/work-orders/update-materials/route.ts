@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { ACCOUNT_CODES } from "@/lib/accounting/account-types"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -145,35 +146,32 @@ export async function POST(request: Request) {
         }
       }
 
-      // 3. Create journal entry for material usage
+      // 3. Create balanced journal entry for material issue (DR WIP / CR Raw Materials)
       const journalEntry = {
         date: new Date(),
-        entries: materials.map((material: any) => ({
-          account_id: "INVENTORY_RAW",
-          debit: 0,
-          credit: material.qty * material.cost,
-          description: `Material usage: ${material.item_id} - ${material.qty} units`
-        })),
+        entries: materials.flatMap((material: any) => {
+          const cost = material.qty * (material.cost || 0)
+          return [
+            {
+              account_id: ACCOUNT_CODES.INVENTORY_WIP,
+              debit: cost,
+              credit: 0,
+              description: `Material issue: ${material.item_id} - ${material.qty} units to WIP`,
+            },
+            {
+              account_id: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
+              debit: 0,
+              credit: cost,
+              description: `Material consumed: ${material.item_id} - ${material.qty} units`,
+            },
+          ]
+        }),
         linked_doc: workOrderId,
-        created_at: new Date()
+        created_at: new Date(),
+        type: "MATERIAL_ISSUE_TO_WIP",
       }
-      
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
 
-      // 4. Create WIP journal entry
-      const wipJournalEntry = {
-        date: new Date(),
-        entries: materials.map((material: any) => ({
-          account_id: "INVENTORY_WIP",
-          debit: material.qty * material.cost,
-          credit: 0,
-          description: `Material usage: ${material.item_id} - ${material.qty} units`
-        })),
-        linked_doc: workOrderId,
-        created_at: new Date()
-      }
-      
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(wipJournalEntry)
+      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
     }
 
     // Create journal entry for labor
@@ -181,8 +179,8 @@ export async function POST(request: Request) {
       const laborJournalEntry = {
         date: new Date(),
         entries: [
-          { account_id: "INVENTORY_WIP", debit: laborCost, credit: 0, description: `Labor cost for work order ${workOrderId}` },
-          { account_id: "WAGES_PAYABLE", debit: 0, credit: laborCost, description: `Labor cost for work order ${workOrderId}` }
+          { account_id: ACCOUNT_CODES.INVENTORY_WIP, debit: laborCost, credit: 0, description: `Labor cost for work order ${workOrderId}` },
+          { account_id: ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION, debit: 0, credit: laborCost, description: `Labor cost for work order ${workOrderId}` }
         ],
         linked_doc: workOrderId,
         created_at: new Date()

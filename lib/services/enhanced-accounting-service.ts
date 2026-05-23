@@ -39,7 +39,7 @@ export const ACCOUNTS = {
     SALES_DISCOUNTS: ACCOUNT_CODES.SALES_DISCOUNTS,             // "4090"
 
     // Cost of Goods Sold (5xxx)
-    COGS: ACCOUNT_CODES.RAW_MATERIALS_USED,                     // "5001"
+    COGS: ACCOUNT_CODES.COST_OF_GOODS_SOLD,                     // "5301"
     DIRECT_MATERIALS: ACCOUNT_CODES.RAW_MATERIALS_USED,         // "5001"
     DIRECT_LABOR: ACCOUNT_CODES.DIRECT_LABOR,                   // "5002"
     MANUFACTURING_OVERHEAD: ACCOUNT_CODES.MANUFACTURING_OVERHEAD, // "5004"
@@ -554,8 +554,8 @@ export class EnhancedAccountingService {
             created_at: new Date(),
         }
 
-        // Generate work order alongside sales order
-        const workOrderId = `WO-${salesOrderId.split("-").slice(-1)[0]}`
+        // Generate work order alongside sales order with unique ID
+        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
         const workOrder: WorkOrder = {
             id: workOrderId,
             sales_order_id: salesOrderId,
@@ -616,7 +616,7 @@ export class EnhancedAccountingService {
      * Create work order
      */
     static async createWorkOrder(salesOrderId: string) {
-        const workOrderId = `WO-${salesOrderId.split("-").slice(-1)[0]}`
+        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
 
         const workOrder: WorkOrder = {
             id: workOrderId,
@@ -784,8 +784,8 @@ export class EnhancedAccountingService {
 
     /**
      * Record labor applied to WIP
-     * DR: WIP Inventory
-     * CR: Wages Payable/Expense
+     * DR: WIP Inventory (1210)
+     * CR: Wages Payable - Production (2120)
      */
     static async recordLaborApplied(
         workOrderId: string,
@@ -801,17 +801,17 @@ export class EnhancedAccountingService {
         const lines: JournalLine[] = [
             {
                 accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: "Work in Progress Inventory",
+                accountName: getAccountName(ACCOUNTS.INVENTORY_WIP),
                 debit: totalCost,
                 credit: 0,
                 description: `Labor applied: ${laborHours} hours @ EGP ${laborRate}/hr`,
             },
             {
-                accountCode: ACCOUNTS.ACCRUED_LIABILITIES,
-                accountName: "Accrued Wages",
+                accountCode: ACCOUNTS.WAGES_PAYABLE,
+                accountName: getAccountName(ACCOUNTS.WAGES_PAYABLE),
                 debit: 0,
                 credit: totalCost,
-                description: `Labor for WO: ${workOrderId}`,
+                description: `Direct labor for WO: ${workOrderId}`,
             },
         ]
 
@@ -863,9 +863,10 @@ export class EnhancedAccountingService {
     }
 
     /**
-     * Record initial WIP opening balance (accrual)
-     * DR: WIP Inventory (1210)
-     * CR: Accrued Liabilities (2140)
+     * Store estimated cost on work order (NO journal entry).
+     * WIP is built up by actual material issues, labor applied, and overhead applied.
+     * This avoids phantom assets and liabilities that previously inflated WIP and Accrued Liabilities.
+     * Per IAS 2, WIP is valued at actual production cost, not estimated cost.
      */
     static async recordWIPOpening(
         workOrderId: string,
@@ -875,29 +876,17 @@ export class EnhancedAccountingService {
             return { success: false, error: "Estimated cost must be positive" }
         }
 
-        const lines: JournalLine[] = [
-            {
-                accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: getAccountName(ACCOUNTS.INVENTORY_WIP),
-                debit: estimatedCost,
-                credit: 0,
-                description: `Initial WIP accrual for WO: ${workOrderId}`,
-            },
-            {
-                accountCode: ACCOUNTS.ACCRUED_LIABILITIES,
-                accountName: getAccountName(ACCOUNTS.ACCRUED_LIABILITIES),
-                debit: 0,
-                credit: estimatedCost,
-                description: `Estimated production costs for WO: ${workOrderId}`,
-            },
-        ]
-
-        return this.createJournalEntry(
-            JournalEntryType.WIP_OPENING,
-            lines,
-            workOrderId,
-            `WIP opening accrual for work order ${workOrderId}`
-        )
+        try {
+            await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
+                estimated_cost: estimatedCost,
+                updated_at: new Date(),
+            })
+            console.log(`📋 Work order ${workOrderId}: estimated cost recorded as EGP ${estimatedCost} (no journal entry)`)
+            return { success: true, entryId: `EST-${workOrderId}` }
+        } catch (error) {
+            console.error("Error storing estimated cost on work order:", error)
+            return { success: false, error: error instanceof Error ? error.message : "Failed to store estimate" }
+        }
     }
 
     /**
@@ -938,17 +927,39 @@ export class EnhancedAccountingService {
     }
 
     /**
-     * Record sales invoice and COGS
-     * Creates two entries:
-     * 1. DR: Accounts Receivable, CR: Sales Revenue
-     * 2. DR: COGS, CR: Finished Goods Inventory
+     * Record sales invoice and COGS.
+     * If workOrderId is provided, auto-transfers WIP→Finished Goods before the sale.
+     *
+     * Entry 1 (Revenue): DR Accounts Receivable, CR Sales Revenue [+ CR VAT Payable]
+     * Entry 2 (COGS):     DR COGS, CR Finished Goods Inventory
+     * Entry 0 (optional): DR Finished Goods, CR WIP (if workOrderId supplied)
      */
     static async recordSale(
         invoiceId: string,
         salesAmount: number,
         costOfGoodsSold: number,
-        vatAmount: number = 0
-    ): Promise<{ success: boolean; revenueEntryId?: string; cogsEntryId?: string; error?: string }> {
+        vatAmount: number = 0,
+        workOrderId?: string
+    ): Promise<{
+        success: boolean
+        revenueEntryId?: string
+        cogsEntryId?: string
+        wipTransferEntryId?: string
+        error?: string
+    }> {
+        // Auto-transfer WIP→FG if work order is linked (ensures FG is populated before COGS credit)
+        let wipTransferEntryId: string | undefined
+        if (workOrderId && costOfGoodsSold > 0) {
+            const wipTransfer = await this.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold)
+            if (!wipTransfer.success) {
+                return {
+                    success: false,
+                    error: `WIP→FG transfer failed: ${wipTransfer.error}`
+                }
+            }
+            wipTransferEntryId = wipTransfer.entryId
+        }
+
         // Record revenue and AR (including VAT)
         const totalReceivable = salesAmount + vatAmount
         
@@ -993,14 +1004,14 @@ export class EnhancedAccountingService {
         const cogsLines: JournalLine[] = [
             {
                 accountCode: ACCOUNTS.COGS,
-                accountName: "Cost of Goods Sold",
+                accountName: getAccountName(ACCOUNTS.COGS),
                 debit: costOfGoodsSold,
                 credit: 0,
                 description: `COGS for invoice: ${invoiceId}`,
             },
             {
                 accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
-                accountName: "Finished Goods Inventory",
+                accountName: getAccountName(ACCOUNTS.INVENTORY_FINISHED_GOODS),
                 debit: 0,
                 credit: costOfGoodsSold,
                 description: `Goods sold`,
@@ -1017,6 +1028,7 @@ export class EnhancedAccountingService {
             success: cogsResult.success,
             revenueEntryId: revenueResult.entryId,
             cogsEntryId: cogsResult.entryId,
+            wipTransferEntryId,
             error: cogsResult.error
         }
     }
@@ -1098,13 +1110,26 @@ export class EnhancedAccountingService {
     }
 
     /**
-     * Get account balance from journal entries using account_ids index (BUG-014)
+     * Get account balance from journal entries using account_ids index (BUG-014).
+     * Optionally filter by date range for period-specific balances.
      */
-    static async getAccountBalance(accountCode: string): Promise<{ balance: number; error?: string }> {
+    static async getAccountBalance(
+        accountCode: string,
+        startDate?: Date,
+        endDate?: Date
+    ): Promise<{ balance: number; error?: string }> {
         try {
-            const entriesSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("account_ids", "array-contains", accountCode)
-                .get()
+            let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
+                .where("account_ids", "array-contains", accountCode) as FirebaseFirestore.Query
+
+            if (startDate) {
+                query = query.where("date", ">=", startDate)
+            }
+            if (endDate) {
+                query = query.where("date", "<=", endDate)
+            }
+
+            const entriesSnapshot = await query.get()
 
             let totalDebits = 0
             let totalCredits = 0
@@ -1121,9 +1146,7 @@ export class EnhancedAccountingService {
                 }
             }
 
-            // Use the helper from account-types to determine normal balance
             const isDebit = isDebitNormalBalance(accountCode)
-
             const balance = isDebit
                 ? totalDebits - totalCredits
                 : totalCredits - totalDebits
@@ -1138,7 +1161,9 @@ export class EnhancedAccountingService {
     }
 
     /**
-     * Get trial balance (all accounts with balances)
+     * Get trial balance (all accounts with balances).
+     * Uses normal balance detection: debit-normal accounts show debit balances,
+     * credit-normal accounts (liabilities, equity, revenue) show credit balances.
      */
     static async getTrialBalance(): Promise<{
         accounts: Array<{ code: string; name: string; debit: number; credit: number }>
@@ -1155,19 +1180,22 @@ export class EnhancedAccountingService {
             const { balance } = await this.getAccountBalance(code)
 
             if (balance !== 0) {
-                const isDebit = balance > 0
+                // Determine which column the balance belongs in based on NORMAL balance
+                const normalIsDebit = isDebitNormalBalance(code)
+                const isDebit = (balance > 0 && normalIsDebit) || (balance < 0 && !normalIsDebit)
+
+                const debitAmt = isDebit ? Math.abs(balance) : 0
+                const creditAmt = !isDebit ? Math.abs(balance) : 0
+
                 accounts.push({
                     code,
                     name: account.name,
-                    debit: isDebit ? balance : 0,
-                    credit: isDebit ? 0 : Math.abs(balance),
+                    debit: debitAmt,
+                    credit: creditAmt,
                 })
 
-                if (isDebit) {
-                    totalDebits += balance
-                } else {
-                    totalCredits += Math.abs(balance)
-                }
+                totalDebits += debitAmt
+                totalCredits += creditAmt
             }
         }
 

@@ -434,74 +434,109 @@ export class FinancialStatementsService {
 
     /**
      * Generate Cash Flow Statement (Indirect Method)
+     *
+     * Uses proper opening/closing balance comparison:
+     *   Change in WC = Balance(endDate) − Balance(day before startDate)
+     *
+     * This handles opening balances correctly, unlike the previous approach
+     * that only summed activity within the period.
      */
     static async generateCashFlowStatement(startDate: Date, endDate: Date) {
+        // Helper: balance as of a specific date
+        const balAsOf = async (code: string, asOf: Date) => {
+            const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
+                .where("account_ids", "array-contains", code)
+                .where("date", "<=", asOf)
+                .get()
+            let d = 0, c = 0
+            for (const doc of snap.docs) {
+                for (const line of doc.data().entries || []) {
+                    if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
+                }
+            }
+            const isDebit = isDebitNormalBalance(code)
+            return isDebit ? d - c : c - d
+        }
+
+        // Compute opening date (day before start date)
+        const openingDate = new Date(startDate.getTime() - 86400000)
+
+        // Helper: Δ = balance(endDate) − balance(openingDate)
+        const delta = async (code: string) => {
+            return (await balAsOf(code, endDate)) - (await balAsOf(code, openingDate))
+        }
+
         // 1. Operating Activities
-        // Start with Net Income
         const incomeStatement = await FinancialStatementsService.generateIncomeStatement(startDate, endDate)
         const netIncome = incomeStatement.netIncome
-        
-        // Adjusted for non-cash items (Depreciation & Amortization)
-        // Accumulated Depreciation codes 1351 to 1354, 1491
-        const depChange = 
-            await FinancialStatementsService.getAccountBalance("1351", startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance("1352", startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance("1353", startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance("1354", startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance("1491", startDate, endDate)
-        
-        // Adjust for Working Capital changes
-        const arChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, startDate, endDate)
-        const inventoryChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS, startDate, endDate) +
-                                await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.INVENTORY_WIP, startDate, endDate) +
-                                await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.RAW_MATERIALS_FABRIC, startDate, endDate)
-        const apChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.ACCOUNTS_PAYABLE, startDate, endDate)
-        
-        // Depreciation is a credit-normal balance change (increase in Acc. Dep. is cash inflow/add-back)
-        // Since getAccountBalance for Acc. Dep. (Contra-Asset) returns Credit - Debit (increase as positive)
-        const cashFromOperations = netIncome + depChange - arChange - inventoryChange + apChange
-        
+
+        // Depreciation add-back: Δ in accumulated depreciation (contra-asset)
+        const depDelta =
+            await delta("1351") + await delta("1352") +
+            await delta("1353") + await delta("1354") + await delta("1491")
+
+        // Working capital changes
+        const arDelta = await delta(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE)
+        const inventoryDelta = await delta(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS) +
+                               await delta(ACCOUNT_CODES.INVENTORY_WIP) +
+                               await delta(ACCOUNT_CODES.RAW_MATERIALS_FABRIC)
+        const apDelta = await delta(ACCOUNT_CODES.ACCOUNTS_PAYABLE)
+
+        // Indirect method adjustments:
+        //   Depreciation add-back: + (non-cash expense)
+        //   AR increase: − (revenue > cash collected)
+        //   Inventory increase: − (cash spent on inventory)
+        //   AP increase: + (purchases > cash paid)
+        const cashFromOperations = netIncome + depDelta - arDelta - inventoryDelta + apDelta
+
         // 2. Investing Activities
-        const equipmentChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.PRODUCTION_EQUIPMENT, startDate, endDate)
-        const cashFromInvesting = -equipmentChange
-        
-        // 3. Financing Activities (Fix-010: Correct Equity Flow)
-        const loansChange = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.LONG_TERM_LOANS, startDate, endDate)
-        
-        // Sum all partner capital and drawings accounts (Fix-010: Multi-Partner support)
-        const capitalInjections = 
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_AHMED, startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_IBRAHIM, startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CAPITAL_FATHY, startDate, endDate)
-            
-        const ownerDrawings = 
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_AHMED, startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_IBRAHIM, startDate, endDate) +
-            await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.DRAWINGS_FATHY, startDate, endDate)
-        
-        const cashFromFinancing = loansChange + capitalInjections - ownerDrawings
-        
+        const equipmentDelta = await delta(ACCOUNT_CODES.PRODUCTION_EQUIPMENT)
+        const cashFromInvesting = -equipmentDelta
+
+        // 3. Financing Activities
+        const loansDelta = await delta(ACCOUNT_CODES.LONG_TERM_LOANS)
+        const capitalDelta =
+            await delta(ACCOUNT_CODES.CAPITAL_AHMED) +
+            await delta(ACCOUNT_CODES.CAPITAL_IBRAHIM) +
+            await delta(ACCOUNT_CODES.CAPITAL_FATHY)
+        const drawingsDelta =
+            await delta(ACCOUNT_CODES.DRAWINGS_AHMED) +
+            await delta(ACCOUNT_CODES.DRAWINGS_IBRAHIM) +
+            await delta(ACCOUNT_CODES.DRAWINGS_FATHY)
+
+        const cashFromFinancing = loansDelta + capitalDelta - drawingsDelta
+
+        // 4. Net Cash Flow
+        // Verify against actual cash Δ
+        const cashDelta = await delta(ACCOUNT_CODES.CASH_ON_HAND) + await delta(ACCOUNT_CODES.BANK_MAIN)
         const netCashFlow = cashFromOperations + cashFromInvesting + cashFromFinancing
-        
+
+        // If there's a discrepancy, it may be due to non-cash items we didn't capture.
+        // The indirect method's computed net cash flow should ≈ actual cash Δ.
+        const reconciliationGap = Math.round((netCashFlow - cashDelta) * 100) / 100
+
         return {
             operating: {
                 netIncome,
-                depreciation: depChange,
-                arAdjustment: -arChange,
-                inventoryAdjustment: -inventoryChange,
-                apAdjustment: apChange,
+                depreciation: depDelta,
+                arAdjustment: -arDelta,
+                inventoryAdjustment: -inventoryDelta,
+                apAdjustment: apDelta,
                 total: cashFromOperations
             },
             investing: {
-                equipmentAdjustment: -equipmentChange,
+                equipmentAdjustment: -equipmentDelta,
                 total: cashFromInvesting
             },
             financing: {
-                loansAdjustment: loansChange,
-                equityAdjustment: capitalInjections - ownerDrawings,
+                loansAdjustment: loansDelta,
+                equityAdjustment: capitalDelta - drawingsDelta,
                 total: cashFromFinancing
             },
-            netCashFlow
+            netCashFlow,
+            actualCashChange: cashDelta,
+            reconciliationGap,
+            isReconciled: Math.abs(reconciliationGap) < 100,
         }
     }
 }

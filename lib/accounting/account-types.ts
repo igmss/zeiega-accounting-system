@@ -1526,6 +1526,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isCashFlowTracked: false,
         description: "Gain or loss from selling assets",
     },
+    "7004": {
+        code: "7004",
+        name: "FX Gain/Loss",
+        nameAr: "أرباح/خسائر فروق العملة",
+        type: AccountType.OTHER,
+        subType: AccountSubType.FINANCIAL,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Foreign exchange translation gains and losses per IAS 21",
+    },
 }
 
 /**
@@ -1668,6 +1680,7 @@ export const ACCOUNT_CODES = {
     // Other
     INTEREST_EXPENSE: "7001",
     PENALTIES_FINES: "7002",
+    FX_GAIN_LOSS: "7004",
 } as const
 
 /**

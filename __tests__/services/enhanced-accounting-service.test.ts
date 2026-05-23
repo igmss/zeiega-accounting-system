@@ -112,8 +112,8 @@ describe("EnhancedAccountingService", () => {
             expect(ACCOUNTS.SALES_REVENUE).toBe(ACCOUNT_CODES.SALES_RETAIL)  // "4001"
 
             // COGS
-            expect(ACCOUNTS.COGS).toBe(ACCOUNT_CODES.RAW_MATERIALS_USED)     // "5001"
-            expect(ACCOUNTS.DIRECT_LABOR).toBe(ACCOUNT_CODES.DIRECT_LABOR)   // "5002"
+            expect(ACCOUNTS.COGS).toBe(ACCOUNT_CODES.COST_OF_GOODS_SOLD)     // "5301"
+            expect(ACCOUNTS.DIRECT_MATERIALS).toBe(ACCOUNT_CODES.RAW_MATERIALS_USED)   // "5001"
         })
 
         it("should use numeric codes from the new Chart of Accounts", () => {
@@ -122,7 +122,7 @@ describe("EnhancedAccountingService", () => {
             expect(ACCOUNTS.INVENTORY_RAW_MATERIALS).toBe("1201")
             expect(ACCOUNTS.ACCOUNTS_PAYABLE).toBe("2101")
             expect(ACCOUNTS.SALES_REVENUE).toBe("4001")
-            expect(ACCOUNTS.COGS).toBe("5001")
+            expect(ACCOUNTS.COGS).toBe("5301")
         })
     })
 })
