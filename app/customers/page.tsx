@@ -43,8 +43,8 @@ export default function CustomersPage() {
         if (!response.ok) {
           throw new Error('Failed to fetch customers')
         }
-        const customersData = await response.json()
-        setCustomers(customersData)
+        const result = await response.json()
+        setCustomers(result.data || [])
       } catch (error) {
         console.error("Error loading customers:", error)
         // Set empty array on error
