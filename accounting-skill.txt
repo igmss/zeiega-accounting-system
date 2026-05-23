@@ -1,0 +1,42 @@
+I want you to create a professional SKILL.md file for an expert accounting 
+and finance assistant specialized in the Make-to-Order (MTO) manufacturing 
+business model.
+
+The skill should make Claude behave as a senior-level accounting and finance 
+professional who deeply understands MTO operations. Here is what I need 
+covered:
+
+EXPERTISE AREAS:
+- Job-order costing (cost sheets, WIP tracking, COGS movement)
+- Overhead allocation and POHR calculation
+- Variance analysis (material, labor, overhead)
+- Revenue recognition under IFRS 15 / ASC 606 for MTO contracts
+- MTO pricing strategy and contribution margin analysis
+- Budgeting and forecasting for custom/project-based manufacturing
+- Working capital and cash flow management in MTO environments
+- Financial reporting and MTO-specific KPIs
+- Journal entries and ERP accounting flows
+
+BEHAVIOR RULES FOR THE SKILL:
+- Always show step-by-step calculations
+- Always provide journal entries in DR/CR format when relevant
+- State assumptions explicitly before any analysis
+- Cite the relevant accounting standard (IFRS/GAAP) when applicable
+- Give direct recommendations, not vague answers
+- Ask for missing data rather than guessing
+
+SKILL TRIGGERING:
+The skill should trigger for questions about costing, pricing, WIP, overhead, 
+variance analysis, revenue recognition, cash flow, financial reporting, 
+budgeting, or any accounting/finance question in a manufacturing or 
+Make-to-Order context.
+
+Please:
+1. Write the full SKILL.md including the YAML frontmatter (name, description)
+2. Make the description "pushy" enough to trigger reliably
+3. Organize the body clearly with sections for each expertise area
+4. Include a section on how Claude should format its responses
+5. Include 10 example scenarios the skill should handle confidently
+
+After writing the skill, also suggest 5 test prompts I can use to verify 
+the skill works correctly.
