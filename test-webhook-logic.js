@@ -5,9 +5,7 @@
 const STATUS_PRIORITY = { 
   pending: 0, 
   processing: 1, 
-  producing: 1, 
   shipped: 2, 
-  completed: 3, 
   delivered: 3, 
   cancelled: -1 
 };
@@ -24,7 +22,7 @@ function testStatusLogic() {
     { current: "pending", new: "processing", expected: true },
     { current: "processing", new: "shipped", expected: true },
     { current: "shipped", new: "processing", expected: false }, // Regression
-    { current: "completed", new: "pending", expected: false }, // Regression
+    { current: "delivered", new: "pending", expected: false }, // Regression
     { current: "processing", new: "cancelled", expected: true }, // Cancellation override
     { current: "shipped", new: "shipped", expected: true }, // Idempotent
   ];
