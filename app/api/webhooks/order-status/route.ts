@@ -56,17 +56,21 @@ export async function OPTIONS(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const headerSecret = request.headers.get("x-webhook-secret")
+    const body = await request.json()
 
-    // Verify webhook secret for security (must happen before parsing body).
-    if (!headerSecret || headerSecret !== process.env.WEBHOOK_SECRET) {
+    // Accept webhook secret from header (x-webhook-secret) or body (webhookSecret)
+    // Main website sends it in the body per the integration guide.
+    const headerSecret = request.headers.get("x-webhook-secret")
+    const bodySecret = body.webhookSecret
+    const secret = headerSecret || bodySecret
+
+    // Verify webhook secret for security (must happen before processing).
+    if (!secret || secret !== process.env.WEBHOOK_SECRET) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401, headers: getCORSHeaders(request) }
       )
     }
-
-    const body = await request.json()
     const parsed = orderStatusWebhookSchema.safeParse(body)
 
     if (!parsed.success) {
