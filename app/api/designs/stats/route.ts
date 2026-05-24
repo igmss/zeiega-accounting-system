@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/designs/stats - Get design statistics
 export async function GET() {
   try {

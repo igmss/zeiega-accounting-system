@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     // Get dashboard data
