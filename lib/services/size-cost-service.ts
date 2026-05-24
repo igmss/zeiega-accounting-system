@@ -1,10 +1,19 @@
 import type { Design, SizeCostConfiguration, SizeRange } from "../types/designs";
 
 export class SizeCostService {
-  // Standard size ranges based on your mobile app
-  static readonly STANDARD_SIZES = [
+  static readonly STANDARD_KIDS_SIZES = [
     '2Y', '3Y', '4Y', '5Y', '6Y', '7Y', '8Y', '9Y', 
     '10Y', '11Y', '12Y', '13Y', '14Y', '15Y', '16Y'
+  ];
+
+  static readonly STANDARD_ADULT_SIZES = [
+    'XS', 'S', 'M', 'L', 'XL'
+  ];
+
+  // All sizes
+  static readonly STANDARD_SIZES = [
+    ...SizeCostService.STANDARD_KIDS_SIZES,
+    ...SizeCostService.STANDARD_ADULT_SIZES
   ];
 
   // Default size ranges with cost multipliers (based on your mobile app pricing)
@@ -61,11 +70,25 @@ export class SizeCostService {
     totalCost: number;
     manufacturingTime: number;
     complexity: 'low' | 'medium' | 'high';
+    source: 'exact' | 'multiplier';  // how cost was determined
   } {
-    // Get multipliers for this size
+    // 1. Check for exact per-size costs first
+    if (design.sizeCosts?.[size]) {
+      const exact = design.sizeCosts[size];
+      return {
+        materialCost: exact.materialCost * quantity,
+        laborCost: (exact.laborCostPerHour * exact.manufacturingTime) * quantity,
+        overheadCost: exact.overheadCost * quantity,
+        totalCost: exact.totalCost * quantity,
+        manufacturingTime: exact.manufacturingTime,
+        complexity: design.complexity,
+        source: 'exact'
+      };
+    }
+
+    // 2. Fallback: multiplier-based calculation (legacy)
     const multipliers = this.getSizeMultipliers(design, size);
     
-    // Calculate costs with size multipliers
     const materialCost = (design.materialCost * multipliers.materialCostMultiplier) * quantity;
     const laborCostPerHour = design.laborCost * multipliers.laborCostMultiplier;
     const manufacturingTime = design.manufacturingTime * multipliers.manufacturingTimeMultiplier;
@@ -79,7 +102,8 @@ export class SizeCostService {
       overheadCost,
       totalCost,
       manufacturingTime,
-      complexity: multipliers.complexityAdjustment || design.complexity
+      complexity: multipliers.complexityAdjustment || design.complexity,
+      source: 'multiplier'
     };
   }
 
@@ -219,6 +243,57 @@ export class SizeCostService {
         complexityAdjustment: multipliers.complexityAdjustment
       };
     });
+  }
+
+  /**
+   * Auto-populate sizeCosts from design's current single values × default size multipliers.
+   * This is a migration helper — converts legacy multiplier-based designs to exact per-size costs.
+   */
+  static generateSizeCosts(design: Design): Record<string, {
+    materialCost: number;
+    laborCostPerHour: number;
+    manufacturingTime: number;
+    overheadCost: number;
+    totalCost: number;
+  }> {
+    const sizeCosts: Record<string, any> = {};
+
+    // Only generate for kids sizes if design uses kids sizes; adult sizes use unscaled values
+    const isKidsProduct = design.category?.toLowerCase().includes('kids') || 
+                          design.category?.toLowerCase().includes('child') ||
+                          false;
+
+    if (isKidsProduct) {
+      for (const size of this.STANDARD_KIDS_SIZES) {
+        const multipliers = this.getSizeMultipliers(design, size);
+        const matCost = design.materialCost * multipliers.materialCostMultiplier;
+        const labPerHr = design.laborCost * multipliers.laborCostMultiplier;
+        const mfgTime = design.manufacturingTime * multipliers.manufacturingTimeMultiplier;
+        const ovhCost = design.overheadCost * multipliers.overheadCostMultiplier;
+        sizeCosts[size] = {
+          materialCost: matCost,
+          laborCostPerHour: labPerHr,
+          manufacturingTime: mfgTime,
+          overheadCost: ovhCost,
+          totalCost: matCost + (labPerHr * mfgTime) + ovhCost
+        };
+      }
+    } else {
+      // Adult sizes: use same cost for all sizes (no multipliers)
+      for (const size of this.STANDARD_ADULT_SIZES) {
+        const totalLabor = design.laborCost * design.manufacturingTime;
+        const total = design.materialCost + totalLabor + design.overheadCost;
+        sizeCosts[size] = {
+          materialCost: design.materialCost,
+          laborCostPerHour: design.laborCost,
+          manufacturingTime: design.manufacturingTime,
+          overheadCost: design.overheadCost,
+          totalCost: total
+        };
+      }
+    }
+
+    return sizeCosts;
   }
 
   /**

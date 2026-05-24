@@ -38,8 +38,19 @@ export interface Design {
   variants?: DesignVariant[];
   
   // Size-specific cost configuration
-  sizeConfigurations?: SizeCostConfiguration[]; // Individual size configurations
-  sizeRanges?: SizeRange[]; // Range-based configurations (e.g., 2Y-6Y, 7Y-10Y, etc.)
+  sizeConfigurations?: SizeCostConfiguration[]; // Individual size configurations (legacy multipliers)
+  sizeRanges?: SizeRange[]; // Range-based configurations (legacy multipliers)
+  
+  // Exact per-size costs — direct EGP values, no multipliers needed
+  // Key = size label (e.g. "2Y", "M", "XL")
+  sizeCosts?: Record<string, {
+    materialCost: number;
+    laborCostPerHour: number;
+    manufacturingTime: number;
+    overheadCost: number;
+    totalCost: number;
+  }>;
+
   defaultSizeMultipliers?: {
     materialCostMultiplier: number;
     laborCostMultiplier: number;

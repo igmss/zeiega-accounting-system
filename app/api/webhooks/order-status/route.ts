@@ -190,6 +190,14 @@ export async function POST(request: NextRequest) {
           if (costCalculation.success) {
             console.log(`✅ Cost calculation successful: EGP ${costCalculation.totalEstimatedCost}`);
             
+            // Enrich order items with design images from cost calculation
+            const enrichedItems = orderItems.map((item: any) => {
+              const match = costCalculation.itemCosts.find(
+                (ic: any) => ic.designId && (ic.item?.productId === item.productId || ic.item?.name === item.name)
+              );
+              return match?.image ? { ...item, image: match.image } : item;
+            });
+
             if (costCalculation.warnings && costCalculation.warnings.length > 0) {
               console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
             }
@@ -216,7 +224,7 @@ export async function POST(request: NextRequest) {
               estimated_completion: null,
               completed_at: null,
               notes: notes,
-              items: orderItems,
+              items: enrichedItems,
               item_costs: costCalculation.itemCosts,
               order_source: "web"
             };

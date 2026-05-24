@@ -1,4 +1,5 @@
 import { db, COLLECTIONS } from "../firebase";
+import { SizeCostService } from "./size-cost-service";
 import type { 
   Design, 
   DesignFilter, 
@@ -144,6 +145,7 @@ export class DesignService {
       const designDoc = {
         ...designData,
         totalCost: this.calculateTotalCost(designData),
+        sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
         createdAt: now,
         updatedAt: now,
         // store normalized fields to enable fast duplicate lookups
@@ -339,6 +341,8 @@ export class DesignService {
           designData.totalCost = this.calculateTotalCost(designData);
           const payload = {
             ...designData,
+            totalCost: this.calculateTotalCost(designData),
+            sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
             name_lower: (designData.name || "").trim().toLowerCase(),
             category_lower: (designData.category || "").trim().toLowerCase(),
             createdAt: new Date(),
@@ -418,6 +422,92 @@ export class DesignService {
     const totalLaborCost = laborCostPerHour * manufacturingTime;
     
     return materialCost + totalLaborCost + overheadCost;
+  }
+
+  /**
+   * Migrate a design to use per-size costs.
+   * Auto-populates sizeCosts from current single values + size multipliers.
+   */
+  static async migrateToSizeCosts(designId: string): Promise<boolean> {
+    try {
+      const design = await this.getDesign(designId);
+      if (!design) return false;
+
+      const sizeCosts = SizeCostService.generateSizeCosts(design);
+      await db.collection(this.COLLECTION_NAME).doc(designId).update({
+        sizeCosts,
+        updatedAt: new Date()
+      });
+      console.log(`Migrated design ${designId} to per-size costs`);
+      return true;
+    } catch (error) {
+      console.error("Error migrating design to size costs:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Update a single size cost for a design
+   */
+  static async updateSizeCost(
+    designId: string,
+    size: string,
+    costs: { materialCost?: number; laborCostPerHour?: number; manufacturingTime?: number; overheadCost?: number }
+  ): Promise<boolean> {
+    try {
+      const design = await this.getDesign(designId);
+      if (!design) return false;
+
+      const current = design.sizeCosts?.[size] || {
+        materialCost: design.materialCost,
+        laborCostPerHour: design.laborCost,
+        manufacturingTime: design.manufacturingTime,
+        overheadCost: design.overheadCost,
+        totalCost: 0
+      };
+
+      const updated = {
+        materialCost: costs.materialCost ?? current.materialCost,
+        laborCostPerHour: costs.laborCostPerHour ?? current.laborCostPerHour,
+        manufacturingTime: costs.manufacturingTime ?? current.manufacturingTime,
+        overheadCost: costs.overheadCost ?? current.overheadCost,
+        totalCost: 0
+      };
+      updated.totalCost = updated.materialCost + (updated.laborCostPerHour * updated.manufacturingTime) + updated.overheadCost;
+
+      const sizeCosts = { ...design.sizeCosts, [size]: updated };
+      await db.collection(this.COLLECTION_NAME).doc(designId).update({
+        sizeCosts,
+        updatedAt: new Date()
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error updating size cost for ${size}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Bulk migrate all designs that don't have sizeCosts yet
+   */
+  static async migrateAllToSizeCosts(): Promise<{ migrated: number; skipped: number }> {
+    const snapshot = await db.collection(this.COLLECTION_NAME).get();
+    let migrated = 0;
+    let skipped = 0;
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      if (!data.sizeCosts) {
+        const design = { id: doc.id, ...data } as Design;
+        const sizeCosts = SizeCostService.generateSizeCosts(design);
+        await doc.ref.update({ sizeCosts, updatedAt: new Date() });
+        migrated++;
+      } else {
+        skipped++;
+      }
+    }
+    console.log(`Migrated ${migrated} designs to per-size costs, ${skipped} already had them`);
+    return { migrated, skipped };
   }
 
 

@@ -83,6 +83,7 @@ export class OrderItemDesignService {
             item,
             designId: design.id,
             designName: design.name,
+            image: design.image || design.images?.[0] || item.image || null,
             estimatedCost: finalEstimatedCost,
             materialCost: finalMaterialCost,
             laborCost: sizeSpecificCosts.laborCost,
@@ -90,7 +91,8 @@ export class OrderItemDesignService {
             quantity,
             size: size,
             manufacturingTime: sizeSpecificCosts.manufacturingTime,
-            complexity: sizeSpecificCosts.complexity
+            complexity: sizeSpecificCosts.complexity,
+            source: sizeSpecificCosts.source
           });
           
           totalEstimatedCost += finalEstimatedCost;

@@ -151,3 +151,4 @@ scripts/test-order-status-update.js
 # Suspicious files (do not commit)
 t-secret-123*
 h origin main
+.vercel
