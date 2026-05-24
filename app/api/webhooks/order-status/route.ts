@@ -112,9 +112,7 @@ export async function POST(request: NextRequest) {
     const STATUS_PRIORITY: Record<string, number> = { 
       pending: 0, 
       processing: 1, 
-      producing: 1, 
       shipped: 2, 
-      completed: 3, 
       delivered: 3, 
       cancelled: -1 
     }
@@ -330,12 +328,9 @@ function mapOrderStatus(websiteStatus: string): string {
   const statusMap: { [key: string]: string } = {
     "pending": "pending",
     "processing": "producing",
-    "producing": "producing",
-    "completed": "completed",
     "shipped": "completed",
     "delivered": "completed",
-    "cancelled": "cancelled",
-    "refunded": "cancelled"
+    "cancelled": "cancelled"
   }
 
   return statusMap[websiteStatus.toLowerCase()] || "pending"
