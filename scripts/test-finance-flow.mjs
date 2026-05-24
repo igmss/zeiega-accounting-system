@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Finance Flow Test Script
  * Tests the updated financial reports with proper authentication
  */
@@ -71,7 +71,7 @@ async function main() {
     console.log('\n✅ Endpoints responding correctly (auth protection is working)')
     console.log('\nTo fully test with authentication, please:')
     console.log('   1. Open http://localhost:3000 in your browser')
-    console.log('   2. Login with admin@teluasegh.com / admin123')
+    console.log('   2. Login with admin@zeiega.com / admin123')
     console.log('   3. Navigate to Reports section')
 }
 

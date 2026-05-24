@@ -1,4 +1,4 @@
-import type { NextAuthOptions } from "next-auth"
+﻿import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { userStore, getSafeUser, UserRole } from "./user-model"
 
@@ -38,7 +38,7 @@ export const authOptions: NextAuthOptions = {
         CredentialsProvider({
             name: "Credentials",
             credentials: {
-                email: { label: "Email", type: "email", placeholder: "admin@teluasegh.com" },
+                email: { label: "Email", type: "email", placeholder: "admin@zeiega.com" },
                 password: { label: "Password", type: "password" },
             },
             async authorize(credentials) {
