@@ -57,10 +57,11 @@ export async function POST(request: NextRequest) {
     // Accept webhook secret from header (x-webhook-secret) or body (webhookSecret)
     const headerSecret = request.headers.get("x-webhook-secret")
     const bodySecret = body.webhookSecret
-    const secret = headerSecret || bodySecret
+    const secret = (headerSecret || bodySecret || '').trim()
 
     // Verify webhook secret for security (must happen before processing).
-    if (!secret || secret !== process.env.WEBHOOK_SECRET) {
+    const expectedSecret = (process.env.WEBHOOK_SECRET || '').trim()
+    if (!secret || secret !== expectedSecret) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401, headers: getCORSHeaders(request) }
