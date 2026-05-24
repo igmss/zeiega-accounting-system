@@ -253,8 +253,10 @@ export class DesignService {
     try {
       console.log("Starting import of designs from products collection...");
       
-      // Fetch products from main website
-      const productsSnapshot = await db.collection(COLLECTIONS.PRODUCTS).get();
+      // Fetch available products from main website
+      const productsSnapshot = await db.collection(COLLECTIONS.PRODUCTS)
+        .where("isAvailable", "==", true)
+        .get();
       const products = productsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
