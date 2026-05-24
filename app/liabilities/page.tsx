@@ -1,7 +1,9 @@
+import { DashboardLayout } from "@/components/dashboard-layout"
 import { LiabilitiesManagement } from "@/components/liabilities-management"
 
 export default function LiabilitiesPage() {
     return (
+        <DashboardLayout>
         <div className="container mx-auto py-10">
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -12,5 +14,6 @@ export default function LiabilitiesPage() {
 
             <LiabilitiesManagement />
         </div>
+        </DashboardLayout>
     )
 }

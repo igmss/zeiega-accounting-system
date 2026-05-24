@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -126,6 +127,7 @@ export default function OpeningBalancesPage() {
     const projectedEquity = totalAssets - totalLiabilities
 
     return (
+        <DashboardLayout>
         <div className="container mx-auto py-10 max-w-3xl">
             <h1 className="text-3xl font-bold mb-6">System Setup: Opening Balances</h1>
 
@@ -473,5 +475,6 @@ export default function OpeningBalancesPage() {
                 </Button>
             </div>
         </div>
+        </DashboardLayout>
     )
 }
