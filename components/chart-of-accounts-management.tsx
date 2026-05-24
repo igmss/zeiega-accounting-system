@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, Plus, BookOpen, FileText } from "lucide-react"
+import { Search, Plus, BookOpen } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import {
   Dialog,
@@ -38,22 +37,8 @@ interface ChartAccount {
   deprecatedReason?: string
 }
 
-interface JournalEntry {
-  id: string
-  date: Date
-  description: string
-  entries: Array<{
-    account_id: string
-    account_name: string
-    debit: number
-    credit: number
-  }>
-  linked_doc?: string
-}
-
 export function ChartOfAccountsManagement() {
   const [accounts, setAccounts] = useState<ChartAccount[]>([])
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -77,7 +62,6 @@ export function ChartOfAccountsManagement() {
         }
         const data = await response.json()
         setAccounts(data.accounts || [])
-        setJournalEntries(data.journalEntries || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
       } finally {
@@ -241,13 +225,6 @@ export function ChartOfAccountsManagement() {
       </div>
 
       {/* Main Content */}
-      <Tabs defaultValue="accounts" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="accounts">Chart of Accounts</TabsTrigger>
-          <TabsTrigger value="journal">Journal Entries</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="accounts" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -317,79 +294,6 @@ export function ChartOfAccountsManagement() {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="journal" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Journal Entries
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {journalEntries.map((entry) => (
-                  <Card key={entry.id}>
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="font-medium">{entry.id}</div>
-                          <div className="text-sm text-muted-foreground">{entry.description}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm">
-                            {(entry.date as any) 
-                              ? ((entry.date as any).toDate ? (entry.date as any).toDate() : new Date(entry.date)).toLocaleDateString()
-                              : 'N/A'
-                            }
-                          </div>
-                          {entry.linked_doc && (
-                            <div className="text-xs text-muted-foreground">Ref: {entry.linked_doc}</div>
-                          )}
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Account</TableHead>
-                            <TableHead>Debit</TableHead>
-                            <TableHead>Credit</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {entry.entries.map((entryLine, index) => (
-                            <TableRow key={index}>
-                              <TableCell>
-                                <div>
-                                  <div className="font-medium">{entryLine.account_id}</div>
-                                  <div className="text-sm text-muted-foreground">{entryLine.account_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell className={entryLine.debit > 0 ? "font-medium" : "text-muted-foreground"}>
-                                {entryLine.debit > 0 ? formatCurrency(entryLine.debit) : "-"}
-                              </TableCell>
-                              <TableCell className={entryLine.credit > 0 ? "font-medium" : "text-muted-foreground"}>
-                                {entryLine.credit > 0 ? formatCurrency(entryLine.credit) : "-"}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        Total Debits: {formatCurrency(entry.entries.reduce((sum, e) => sum + e.debit, 0))} | Total Credits:
-                        {formatCurrency(entry.entries.reduce((sum, e) => sum + e.credit, 0))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
 
       {/* Add Account Dialog */}
       <Dialog open={isAddAccountOpen} onOpenChange={setIsAddAccountOpen}>
