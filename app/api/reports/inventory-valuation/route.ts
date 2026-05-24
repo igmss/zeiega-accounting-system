@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     // Fetch inventory items
