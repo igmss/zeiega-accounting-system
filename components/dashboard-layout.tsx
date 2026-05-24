@@ -22,6 +22,8 @@ import {
   User,
   Receipt,
   Landmark,
+  Activity,
+  PenLine,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -42,6 +44,8 @@ const navigation = [
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Chart of Accounts", href: "/chart-of-accounts", icon: BookOpen },
+  { name: "Journal Entries", href: "/journal-entries", icon: PenLine },
+  { name: "Background Jobs", href: "/background-jobs", icon: Activity },
   { name: "System Setup", href: "/accounting/setup/opening-balances", icon: Settings },
 ]
 
