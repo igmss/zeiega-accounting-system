@@ -66,6 +66,7 @@ export default function DesignsManagement() {
     loadDesigns();
     loadStats();
     loadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load subcategories when category changes

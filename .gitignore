@@ -138,7 +138,7 @@ coverage/
 .env.development.local
 .env.test.local
 .env.production.local
-
+.agent
 # Firebase service account key (keep this secure!)
 service-account-key.json
 firebase-service-account.json

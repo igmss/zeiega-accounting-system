@@ -51,6 +51,7 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
   // Load inventory items
   useEffect(() => {
     loadInventoryItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType, searchTerm]);
 
   const loadInventoryItems = async () => {
@@ -136,7 +137,7 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
         <CardContent>
           {materials.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No materials added yet. Click "Add Material" to select from inventory.
+              No materials added yet. Click &quot;Add Material&quot; to select from inventory.
             </div>
           ) : (
             <Table>

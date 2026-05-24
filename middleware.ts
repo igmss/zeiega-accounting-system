@@ -30,7 +30,15 @@ const PROTECTED_PATHS = [
     "/api/vendors",
     "/api/purchase-orders",
     "/api/accounting",
-    "/api/debug",
+    "/api/chart-of-accounts",
+    "/api/contracts",
+    "/api/fiscal",
+    "/api/inventory-movements",
+    "/api/loans",
+    "/api/overhead",
+    "/api/variance",
+    "/api/workflow",
+    "/api/real-orders",
 ]
 
 // Paths that are public (no auth required)
@@ -84,6 +92,11 @@ function isProtectedPage(pathname: string): boolean {
         "/reports",
         "/chart-of-accounts",
         "/background-jobs",
+        "/expenses",
+        "/assets",
+        "/liabilities",
+        "/accounting/setup/opening-balances",
+        "/journal-entries",
     ]
     return pathname === "/" || protectedPages.some((p) => pathname.startsWith(p))
 }

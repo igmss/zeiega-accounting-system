@@ -1,0 +1,17 @@
+{
+  "cache": [
+    [
+      "zeiega-accounting:_index_zeiega-accounting",
+      {
+        "value": "{\"value\":[\"setup-verification\"],\"expires\":null}"
+      }
+    ],
+    [
+      "zeiega-accounting:setup-verification",
+      {
+        "value": "{\"value\":{\"id\":\"e11cc866-6ead-4e81-95fe-c15638bb4fcf\",\"projectId\":\"zeiega-accounting\",\"key\":\"setup-verification\",\"type\":\"decision\",\"content\":\"Agent-memory MCP server configured and verified on 2026-05-23. Using local storage with LRU cache (10K entries, 1hr TTL).\",\"tags\":[\"setup\",\"mcp\",\"agent-memory\"],\"relationships\":{\"dependsOn\":[],\"implements\":[]},\"metadata\":{\"accessCount\":0,\"createdBy\":\"agent\"},\"createdAt\":1779519053413,\"updatedAt\":1779519053414},\"expires\":null}"
+      }
+    ]
+  ],
+  "lastExpire": 1779518958345
+}

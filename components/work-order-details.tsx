@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -124,9 +125,11 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
                   <div key={index} className="flex justify-between items-center p-3 border rounded-lg">
                     <div className="flex items-center space-x-3">
                       {item.image && (
-                        <img 
-                          src={item.image} 
-                          alt={productName} 
+                        <Image
+                          src={item.image}
+                          alt={productName}
+                          width={48}
+                          height={48}
                           className="w-12 h-12 object-cover rounded"
                         />
                       )}
