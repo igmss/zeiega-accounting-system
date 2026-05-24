@@ -233,10 +233,10 @@ export class RevenueRecognitionService {
       const now = new Date()
 
       const entries = [
-        // Contract Asset — unbilled revenue
+        // Contract Asset — unbilled revenue (IFRS 15, account 1113)
         {
-          account_id: "1115", // Using Employee Advances temporarily; ideally a dedicated Contract Asset account
-          account_name: "Contract Asset (Unbilled)",
+          account_id: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+          account_name: "Contract Asset (Unbilled Revenue)",
           debit: revenueThisPeriod,
           credit: 0,
           description: `Revenue recognized: ${pctComplete.toFixed(1)}% complete`,
@@ -341,12 +341,12 @@ export class RevenueRecognitionService {
           credit: 0,
           description: `Milestone billing: Invoice ${invoiceId}`,
         },
-        // Credit Contract Asset or Contract Liability
+        // Credit Contract Asset (1113) or Contract Liability (2105)
         {
-          account_id: isOverBilling ? liabilityAccount : "1115", // 1115 = Contract Asset
+          account_id: isOverBilling ? liabilityAccount : ACCOUNT_CODES.CONTRACT_ASSET, // 1113
           account_name: isOverBilling
             ? getAccountName(liabilityAccount)
-            : "Contract Asset",
+            : "Contract Asset (Unbilled Revenue)",
           debit: 0,
           credit: billingAmount,
           description: isOverBilling
@@ -538,6 +538,181 @@ export class RevenueRecognitionService {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Failed to recognize onerous contract"
+      }
+    }
+  }
+
+  /**
+   * Apply a change order / contract modification per IFRS 15.18–21.
+   *
+   * Treatment logic:
+   *  - "new_contract"      → Treat as separate contract (new price/cost do not affect existing %).
+   *  - "cumulative_catchup"→ Update totals and re-calculate revenue to date; record catch-up in current period.
+   *  - "prospective"       → Update totals; apply to remaining performance only (no catch-up).
+   *
+   * The most common MTO/ETO treatment is cumulative_catchup when the modification changes
+   * the remaining performance obligation without adding distinct new goods.
+   */
+  static async applyChangeOrder(
+    contractId: string,
+    description: string,
+    revisedContractPrice: number,
+    revisedEstimatedCost: number,
+    treatment: "new_contract" | "cumulative_catchup" | "prospective",
+    approvedBy: string,
+    userId: string = "system"
+  ): Promise<{
+    success: boolean
+    changeOrderId?: string
+    revenueAdjustment?: number
+    entryId?: string
+    error?: string
+  }> {
+    try {
+      const contract = await this.getContract(contractId)
+      if (!contract) return { success: false, error: "Contract not found" }
+      if (contract.status === "completed" || contract.status === "terminated") {
+        return { success: false, error: `Cannot modify a ${contract.status} contract` }
+      }
+      if (revisedContractPrice <= 0 || revisedEstimatedCost <= 0) {
+        return { success: false, error: "Revised price and cost must be positive" }
+      }
+
+      const originalContractPrice  = contract.contractPrice
+      const originalEstimatedCost  = contract.totalEstimatedCost
+      let revenueAdjustment        = 0
+      let entryId: string | undefined
+
+      const now = new Date()
+
+      if (treatment === "cumulative_catchup") {
+        // Recalculate % complete with revised estimates
+        const newPctComplete = Math.min(
+          (contract.costsIncurredToDate / revisedEstimatedCost) * 100,
+          100
+        )
+        const newRevenueToDate = (newPctComplete / 100) * revisedContractPrice
+        revenueAdjustment = newRevenueToDate - contract.revenueRecognizedToDate
+
+        if (Math.abs(revenueAdjustment) > 0.01) {
+          const isUpward = revenueAdjustment > 0
+          const amount   = Math.abs(revenueAdjustment)
+
+          const lines = isUpward
+            ? [
+                {
+                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+                  accountName: "Contract Asset (Unbilled Revenue)",
+                  debit: amount,
+                  credit: 0,
+                  description: `Change order cumulative catch-up — ${description}`,
+                },
+                {
+                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO, // 4003
+                  accountName: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
+                  debit: 0,
+                  credit: amount,
+                  description: `Revenue uplift from contract modification`,
+                },
+              ]
+            : [
+                {
+                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO, // 4003
+                  accountName: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
+                  debit: amount,
+                  credit: 0,
+                  description: `Revenue reduction from contract modification`,
+                },
+                {
+                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+                  accountName: "Contract Asset (Unbilled Revenue)",
+                  debit: 0,
+                  credit: amount,
+                  description: `Contract asset reduction — ${description}`,
+                },
+              ]
+
+          // Use a simple journal entry structure matching the existing pattern
+          const jeId = `CO-${contractId}-${Date.now()}`
+          const journalEntry = {
+            id: jeId,
+            date: now,
+            type: "GENERAL",
+            reference_doc: contractId,
+            description: `IFRS 15.18 change order catch-up: ${description}`,
+            entries: lines.map(l => ({
+              account_id: l.accountCode,
+              account_name: l.accountName,
+              debit: l.debit,
+              credit: l.credit,
+              description: l.description,
+            })),
+            account_ids: lines.map(l => l.accountCode),
+            total_debits: amount,
+            total_credits: amount,
+            created_at: now,
+            created_by: userId,
+          }
+          await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(jeId).set(journalEntry)
+          entryId = jeId
+        }
+
+        // Update contract with revised values
+        contract.contractPrice           = revisedContractPrice
+        contract.totalEstimatedCost      = revisedEstimatedCost
+        contract.percentageComplete      = newPctComplete
+        contract.revenueRecognizedToDate = newPctComplete / 100 * revisedContractPrice
+        contract.contractAsset           = Math.max(0, contract.revenueRecognizedToDate - contract.amountsBilledToDate)
+        contract.contractLiability       = Math.max(0, contract.amountsBilledToDate - contract.revenueRecognizedToDate)
+
+      } else if (treatment === "prospective") {
+        // No catch-up; just update totals — remaining performance re-priced
+        contract.contractPrice      = revisedContractPrice
+        contract.totalEstimatedCost = revisedEstimatedCost
+
+      } else {
+        // new_contract — do not modify existing contract; caller should create a new one
+        // We still record the change order document for audit trail
+      }
+
+      // Check if revised estimates create an onerous position
+      if (revisedEstimatedCost > revisedContractPrice && !contract.lossProvisionRecognized) {
+        contract.isOnerous    = true
+        contract.expectedLoss = revisedEstimatedCost - revisedContractPrice
+        contract.status       = "onerous"
+      }
+
+      contract.updatedAt = now
+      await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+
+      // Persist change order record
+      const changeOrderId = `CHG-${contractId}-${Date.now()}`
+      await db.collection(COLLECTIONS.CHANGE_ORDERS).doc(changeOrderId).set({
+        id: changeOrderId,
+        contractId,
+        description,
+        originalContractPrice,
+        revisedContractPrice,
+        originalEstimatedCost,
+        revisedEstimatedCost,
+        treatment,
+        revenueAdjustment,
+        journalEntryId: entryId,
+        approvedBy,
+        created_at: now,
+      })
+
+      console.log(
+        `✅ Change order ${changeOrderId}: ${treatment} treatment, ` +
+        `EGP ${originalContractPrice} → EGP ${revisedContractPrice}, ` +
+        `revenue adjustment: EGP ${revenueAdjustment}`
+      )
+      return { success: true, changeOrderId, revenueAdjustment, entryId }
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to apply change order",
       }
     }
   }

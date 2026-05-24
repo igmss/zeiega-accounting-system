@@ -57,4 +57,11 @@ export const COLLECTIONS = {
   RETURNS: "returns",
   PRODUCTS: "products", // Main website products collection
   USERS: "users",       // User profiles collection
+  // Manufacturing gap-fill collections
+  INVENTORY_LAYERS: "acc_inventory_layers",     // FIFO cost layers per SKU (IAS 2.25)
+  SCRAP_RECORDS: "acc_scrap_records",           // Scrap/spoilage events
+  REWORK_ORDERS: "acc_rework_orders",           // Rework job records
+  CHANGE_ORDERS: "acc_change_orders",           // Contract modifications (IFRS 15.18)
+  RETENTION_SCHEDULES: "acc_retention_schedules", // Customer retention holdbacks
+  BUDGET_LINES: "acc_budget_lines",             // Budget vs actual per account/period
 } as const

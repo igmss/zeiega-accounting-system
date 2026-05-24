@@ -171,6 +171,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
     },
 
     // Receivables (1110-1125)
+    "1113": {
+        code: "1113",
+        name: "Contract Asset (Unbilled Revenue)",
+        nameAr: "أصل العقد - إيراد غير مفوتر",
+        type: AccountType.ASSET,
+        subType: AccountSubType.RECEIVABLE,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Revenue earned but not yet billed to customer (IFRS 15 over-time recognition)",
+    },
     "1110": {
         code: "1110",
         name: "Accounts Receivable - Customers",
@@ -194,6 +206,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isSystemAccount: false,
         isCashFlowTracked: false,
         description: "Cash advances given to employees",
+    },
+    "1116": {
+        code: "1116",
+        name: "Retention Receivable",
+        nameAr: "مبالغ محجوزة - مستحقة",
+        type: AccountType.ASSET,
+        subType: AccountSubType.RECEIVABLE,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Customer retention holdbacks withheld until project sign-off",
     },
     "1120": {
         code: "1120",
@@ -398,6 +422,30 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isSystemAccount: true,
         isCashFlowTracked: false,
         description: "Returned goods",
+    },
+    "1240": {
+        code: "1240",
+        name: "Inventory Adjustments",
+        nameAr: "تسويات المخزون",
+        type: AccountType.ASSET,
+        subType: AccountSubType.INVENTORY,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Clearing account for inventory count adjustments",
+    },
+    "1241": {
+        code: "1241",
+        name: "Allowance for Inventory Obsolescence",
+        nameAr: "مخصص هبوط قيمة المخزون",
+        type: AccountType.CONTRA_ASSET,
+        subType: AccountSubType.INVENTORY,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Provision for inventory written down to net realisable value (IAS 2.9)",
     },
     "1230": {
         code: "1230",
@@ -1466,6 +1514,30 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
     // ============================================
     // OTHER INCOME/EXPENSES (7xxx)
     // ============================================
+    "6209": {
+        code: "6209",
+        name: "Rework & Abnormal Spoilage",
+        nameAr: "تكاليف إعادة الإنتاج والهالك غير الطبيعي",
+        type: AccountType.EXPENSE,
+        subType: AccountSubType.OPERATING,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Abnormal spoilage and rework costs expensed as period costs (IAS 2.16)",
+    },
+    "6210": {
+        code: "6210",
+        name: "Inventory Write-down to NRV",
+        nameAr: "هبوط قيمة المخزون إلى صافي القيمة القابلة للتحقق",
+        type: AccountType.EXPENSE,
+        subType: AccountSubType.OPERATING,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Expense when inventory cost exceeds net realisable value (IAS 2.9)",
+    },
     "6207": {
         code: "6207",
         name: "Inventory Shrinkage & Loss",
@@ -1526,6 +1598,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isCashFlowTracked: false,
         description: "Gain or loss from selling assets",
     },
+    "7005": {
+        code: "7005",
+        name: "Income Tax Expense",
+        nameAr: "ضريبة الدخل",
+        type: AccountType.OTHER,
+        subType: AccountSubType.FINANCIAL,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Corporate income tax charge at 22.5% (Egypt standard rate)",
+    },
     "7004": {
         code: "7004",
         name: "FX Gain/Loss",
@@ -1554,8 +1638,10 @@ export const ACCOUNT_CODES = {
     CHEQUES_UNDER_COLLECTION: "1107",
 
     // Receivables
+    CONTRACT_ASSET: "1113",
     ACCOUNTS_RECEIVABLE: "1110",
     EMPLOYEE_ADVANCES: "1115",
+    RETENTION_RECEIVABLE: "1116",
     VAT_RECEIVABLE: "1120",
     PROVISION_DOUBTFUL_DEBTS: "1121",
     // 1122 REMOVED (Duplicate)
@@ -1568,6 +1654,8 @@ export const ACCOUNT_CODES = {
     ACCUM_DEP_INTANGIBLES: "1491",
 
     // Inventory
+    INVENTORY_ADJUSTMENTS: "1240",
+    ALLOWANCE_INVENTORY_OBSOLESCENCE: "1241",
     RAW_MATERIALS_FABRIC: "1201",
     RAW_MATERIALS_ACCESSORIES: "1202",
     PACKAGING_MATERIALS: "1203",
@@ -1581,7 +1669,6 @@ export const ACCOUNT_CODES = {
     FG_RETAIL: "1221",
     FG_WHOLESALE: "1222",
     SAMPLES_PROTOTYPES: "1230",
-    INVENTORY_ADJUSTMENTS: "1240",
 
     // Fixed Assets
     SEWING_MACHINES: "1301",
@@ -1676,9 +1763,12 @@ export const ACCOUNT_CODES = {
     BANK_FEES: "6202",
     INVENTORY_SHRINKAGE_LOSS: "6207",
     INVENTORY_GAIN_SURPLUS: "6208",
+    REWORK_SPOILAGE_EXPENSE: "6209",
+    INVENTORY_WRITEDOWN_NRV: "6210",
 
     // Other
     INTEREST_EXPENSE: "7001",
+    INCOME_TAX_EXPENSE: "7005",
     PENALTIES_FINES: "7002",
     FX_GAIN_LOSS: "7004",
 } as const

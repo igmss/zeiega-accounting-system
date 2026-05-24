@@ -79,6 +79,14 @@ export enum JournalEntryType {
     GENERAL = "GENERAL",
     CLOSING_ENTRY = "CLOSING_ENTRY",
     TAX_PAYMENT = "TAX_PAYMENT",
+    // Manufacturing gap-fill types
+    SCRAP_RECORD = "SCRAP_RECORD",
+    REWORK_COSTS = "REWORK_COSTS",
+    FX_ADJUSTMENT = "FX_ADJUSTMENT",
+    INCOME_TAX_ACCRUAL = "INCOME_TAX_ACCRUAL",
+    INVENTORY_WRITEDOWN = "INVENTORY_WRITEDOWN",
+    RETENTION_INVOICE = "RETENTION_INVOICE",
+    RETENTION_RELEASE = "RETENTION_RELEASE",
 }
 
 interface JournalLine {
@@ -1595,6 +1603,444 @@ export class EnhancedAccountingService {
                 success: false,
                 error: error instanceof Error ? error.message : "Failed to record depreciation"
             }
+        }
+    }
+
+    // ─── Manufacturing gap-fill methods ────────────────────────────────────────
+
+    /**
+     * Record scrap during production (IAS 2.16).
+     *
+     * Normal scrap (isAbnormal=false):
+     *   DR  WIP — Job (1210)               salvageValue   (net cost stays in job)
+     *   DR  Scrap Inventory (1205)          salvageValue
+     *   CR  WIP — Job (1210)               totalCost      (full scrap cost out of WIP)
+     *
+     * Abnormal scrap (isAbnormal=true) — period expense:
+     *   DR  Rework & Abnormal Spoilage (6209)   totalCost − salvageValue
+     *   DR  Scrap Inventory (1205)               salvageValue
+     *   CR  WIP — Job (1210)                     totalCost
+     */
+    static async recordScrap(
+        workOrderId: string,
+        sku: string,
+        quantityScrapped: number,
+        unitCost: number,
+        salvageValue: number,
+        isAbnormal: boolean,
+        reason: string,
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; recordId?: string; error?: string }> {
+        const totalCost = quantityScrapped * unitCost
+        if (totalCost <= 0) return { success: false, error: "Scrap cost must be positive" }
+        if (salvageValue < 0 || salvageValue > totalCost) {
+            return { success: false, error: "Salvage value must be between 0 and total scrap cost" }
+        }
+
+        const netLoss = totalCost - salvageValue
+        const lines: JournalLine[] = []
+
+        if (isAbnormal) {
+            // Period expense — never hits job cost
+            if (netLoss > 0) {
+                lines.push({
+                    accountCode: ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE, // 6209
+                    accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
+                    debit: netLoss,
+                    credit: 0,
+                    description: `Abnormal spoilage: ${sku} × ${quantityScrapped} units (${reason})`,
+                })
+            }
+        } else {
+            // Normal scrap — net cost stays in WIP; only salvage moves to scrap inventory
+            // No additional debit needed — WIP bears the net cost implicitly
+        }
+
+        if (salvageValue > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.SCRAP_INVENTORY, // 1205
+                accountName: getAccountName(ACCOUNT_CODES.SCRAP_INVENTORY),
+                debit: salvageValue,
+                credit: 0,
+                description: `Salvage value: ${sku} scrap`,
+            })
+        }
+
+        // Always credit WIP for the full scrap cost
+        lines.push({
+            accountCode: ACCOUNT_CODES.INVENTORY_WIP, // 1210
+            accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+            debit: 0,
+            credit: totalCost,
+            description: `Scrap from WO ${workOrderId}: ${quantityScrapped} × ${sku}`,
+        })
+
+        // Normal scrap: WIP absorbs net cost — re-debit WIP for net loss portion
+        if (!isAbnormal && netLoss > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.INVENTORY_WIP,
+                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+                debit: netLoss,
+                credit: 0,
+                description: `Normal scrap net cost charged to WO ${workOrderId}`,
+            })
+        }
+
+        const result = await this.createJournalEntry(
+            JournalEntryType.SCRAP_RECORD,
+            lines,
+            workOrderId,
+            `Scrap record: ${quantityScrapped} × ${sku} from WO ${workOrderId}`,
+            userId
+        )
+
+        if (!result.success) return result
+
+        // Persist scrap record document
+        const recordId = `SCRAP-${Date.now()}`
+        await db.collection(COLLECTIONS.SCRAP_RECORDS).doc(recordId).set({
+            id: recordId,
+            workOrderId,
+            sku,
+            quantityScrapped,
+            unitCost,
+            totalCost,
+            salvageValue,
+            isAbnormal,
+            reason,
+            journalEntryId: result.entryId,
+            created_at: new Date(),
+            created_by: userId,
+        })
+
+        return { ...result, recordId }
+    }
+
+    /**
+     * Record rework costs against an original work order.
+     *
+     * Normal rework (isNormal=true) — charged to job:
+     *   DR  WIP — Job (1210)               total rework cost
+     *   CR  Raw Materials Inventory         additionalMaterialCost
+     *   CR  Wages Payable - Production      additionalLaborCost
+     *   CR  Manufacturing Overhead Applied  additionalOverheadCost
+     *
+     * Abnormal rework (isNormal=false) — period expense:
+     *   DR  Rework & Abnormal Spoilage (6209)   total rework cost
+     *   CR  Raw Materials Inventory              additionalMaterialCost
+     *   CR  Wages Payable - Production           additionalLaborCost
+     *   CR  Manufacturing Overhead Applied       additionalOverheadCost
+     */
+    static async recordRework(
+        originalWorkOrderId: string,
+        additionalMaterialCost: number,
+        additionalLaborCost: number,
+        additionalOverheadCost: number,
+        isNormalRework: boolean,
+        reason: string,
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; reworkOrderId?: string; error?: string }> {
+        const totalReworkCost = additionalMaterialCost + additionalLaborCost + additionalOverheadCost
+        if (totalReworkCost <= 0) return { success: false, error: "Rework cost must be positive" }
+
+        const debitAccount = isNormalRework
+            ? ACCOUNT_CODES.INVENTORY_WIP            // Normal → into job
+            : ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE  // Abnormal → period cost
+
+        const lines: JournalLine[] = [
+            {
+                accountCode: debitAccount,
+                accountName: getAccountName(debitAccount),
+                debit: totalReworkCost,
+                credit: 0,
+                description: `Rework for WO ${originalWorkOrderId}: ${reason}`,
+            },
+        ]
+
+        if (additionalMaterialCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.RAW_MATERIALS_FABRIC, // 1201
+                accountName: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
+                debit: 0,
+                credit: additionalMaterialCost,
+                description: `Rework materials`,
+            })
+        }
+        if (additionalLaborCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION, // 2120
+                accountName: getAccountName(ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION),
+                debit: 0,
+                credit: additionalLaborCost,
+                description: `Rework direct labor`,
+            })
+        }
+        if (additionalOverheadCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.MANUFACTURING_OVERHEAD, // 5004
+                accountName: getAccountName(ACCOUNT_CODES.MANUFACTURING_OVERHEAD),
+                debit: 0,
+                credit: additionalOverheadCost,
+                description: `Rework overhead`,
+            })
+        }
+
+        const result = await this.createJournalEntry(
+            JournalEntryType.REWORK_COSTS,
+            lines,
+            originalWorkOrderId,
+            `Rework costs for WO ${originalWorkOrderId}`,
+            userId
+        )
+
+        if (!result.success) return result
+
+        const reworkOrderId = `RWK-${Date.now()}`
+        await db.collection(COLLECTIONS.REWORK_ORDERS).doc(reworkOrderId).set({
+            id: reworkOrderId,
+            originalWorkOrderId,
+            reason,
+            additionalMaterialCost,
+            additionalLaborCost,
+            additionalOverheadCost,
+            totalReworkCost,
+            isNormalRework,
+            journalEntryId: result.entryId,
+            status: "completed",
+            created_at: new Date(),
+            created_by: userId,
+        })
+
+        return { ...result, reworkOrderId }
+    }
+
+    /**
+     * Record detailed labor with regular / overtime / idle-time split.
+     *
+     * Regular & OT hours → DR WIP (product cost).
+     * Idle time → DR Rework & Spoilage (6209) as period cost.
+     *
+     * DR  WIP — Job (1210)               (regularHours × regularRate) + (otHours × otRate)
+     * DR  Rework & Spoilage (6209)        idleHours × regularRate
+     *     CR  Wages Payable - Production           total wages
+     */
+    static async recordLaborDetailed(
+        workOrderId: string,
+        regularHours: number,
+        regularRate: number,
+        overtimeHours: number = 0,
+        overtimeRate: number = 0,
+        idleHours: number = 0,
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
+        const regularCost  = regularHours  * regularRate
+        const overtimeCost = overtimeHours * overtimeRate
+        const idleCost     = idleHours     * regularRate   // idle at base rate
+        const totalWages   = regularCost + overtimeCost + idleCost
+
+        if (totalWages <= 0) return { success: false, error: "Total wages must be positive" }
+
+        const productiveCost = regularCost + overtimeCost
+        const lines: JournalLine[] = []
+
+        if (productiveCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.INVENTORY_WIP,
+                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+                debit: productiveCost,
+                credit: 0,
+                description: `Labor: ${regularHours}h regular + ${overtimeHours}h OT on WO ${workOrderId}`,
+            })
+        }
+        if (idleCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE, // 6209 — idle time is period cost
+                accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
+                debit: idleCost,
+                credit: 0,
+                description: `Idle time: ${idleHours}h @ EGP ${regularRate}/hr`,
+            })
+        }
+        lines.push({
+            accountCode: ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION,
+            accountName: getAccountName(ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION),
+            debit: 0,
+            credit: totalWages,
+            description: `Total wages payable for WO ${workOrderId}`,
+        })
+
+        return {
+            ...await this.createJournalEntry(
+                JournalEntryType.LABOR_APPLIED,
+                lines,
+                workOrderId,
+                `Detailed labor for WO ${workOrderId}`,
+                userId
+            ),
+            totalCost: productiveCost,
+        }
+    }
+
+    /**
+     * Record FX gain or loss on a foreign-currency transaction (IAS 21.28).
+     *
+     * Gain:  DR  Cash/AR/AP account          exchangeDiff
+     *            CR  FX Gain/Loss (7004)              exchangeDiff
+     *
+     * Loss:  DR  FX Gain/Loss (7004)         exchangeDiff
+     *            CR  Cash/AR/AP account               exchangeDiff
+     */
+    static async recordFXGainLoss(
+        referenceDoc: string,
+        accountCode: string,         // the monetary asset/liability revalued
+        exchangeDifference: number,  // positive = gain, negative = loss
+        description: string,
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; error?: string }> {
+        if (exchangeDifference === 0) return { success: true }
+
+        const isGain = exchangeDifference > 0
+        const amount  = Math.abs(exchangeDifference)
+
+        const lines: JournalLine[] = isGain
+            ? [
+                {
+                    accountCode,
+                    accountName: getAccountName(accountCode),
+                    debit: amount,
+                    credit: 0,
+                    description,
+                },
+                {
+                    accountCode: ACCOUNT_CODES.FX_GAIN_LOSS, // 7004
+                    accountName: getAccountName(ACCOUNT_CODES.FX_GAIN_LOSS),
+                    debit: 0,
+                    credit: amount,
+                    description: `FX gain on ${referenceDoc}`,
+                },
+            ]
+            : [
+                {
+                    accountCode: ACCOUNT_CODES.FX_GAIN_LOSS, // 7004
+                    accountName: getAccountName(ACCOUNT_CODES.FX_GAIN_LOSS),
+                    debit: amount,
+                    credit: 0,
+                    description: `FX loss on ${referenceDoc}`,
+                },
+                {
+                    accountCode,
+                    accountName: getAccountName(accountCode),
+                    debit: 0,
+                    credit: amount,
+                    description,
+                },
+            ]
+
+        return this.createJournalEntry(
+            JournalEntryType.FX_ADJUSTMENT,
+            lines,
+            referenceDoc,
+            `FX ${isGain ? "gain" : "loss"} EGP ${amount} on ${referenceDoc} (IAS 21.28)`,
+            userId
+        )
+    }
+
+    /**
+     * Accrue corporate income tax for a fiscal period (Egypt rate: 22.5%).
+     *
+     * DR  Income Tax Expense (7005)        taxAmount
+     *     CR  Tax Payable (2130)                    taxAmount
+     */
+    static async recordIncomeTaxAccrual(
+        fiscalPeriodId: string,
+        taxableIncome: number,
+        taxRate: number = 0.225,    // Egypt standard rate 22.5%
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; taxAmount?: number; error?: string }> {
+        if (taxableIncome <= 0) {
+            return { success: true, taxAmount: 0 } // No tax on a loss
+        }
+
+        const taxAmount = Math.round(taxableIncome * taxRate * 100) / 100
+
+        const lines: JournalLine[] = [
+            {
+                accountCode: ACCOUNT_CODES.INCOME_TAX_EXPENSE, // 7005
+                accountName: getAccountName(ACCOUNT_CODES.INCOME_TAX_EXPENSE),
+                debit: taxAmount,
+                credit: 0,
+                description: `Income tax @ ${(taxRate * 100).toFixed(1)}% on EGP ${taxableIncome} taxable income`,
+            },
+            {
+                accountCode: ACCOUNT_CODES.TAX_PAYABLE, // 2130
+                accountName: getAccountName(ACCOUNT_CODES.TAX_PAYABLE),
+                debit: 0,
+                credit: taxAmount,
+                description: `Income tax payable for period ${fiscalPeriodId}`,
+            },
+        ]
+
+        return {
+            ...await this.createJournalEntry(
+                JournalEntryType.INCOME_TAX_ACCRUAL,
+                lines,
+                fiscalPeriodId,
+                `Income tax accrual for ${fiscalPeriodId} (EGP ${taxAmount})`,
+                userId
+            ),
+            taxAmount,
+        }
+    }
+
+    /**
+     * Write down inventory to net realisable value (IAS 2.9).
+     * Must be called when NRV < cost for a specific SKU.
+     *
+     * DR  Inventory Write-down to NRV (6210)         writeDownAmount
+     *     CR  Allowance for Inventory Obsolescence (1241)     writeDownAmount
+     */
+    static async recordInventoryWriteDown(
+        sku: string,
+        currentCost: number,
+        netRealisableValue: number,
+        quantityOnHand: number,
+        userId: string = "system"
+    ): Promise<{ success: boolean; entryId?: string; writeDownAmount?: number; error?: string }> {
+        if (netRealisableValue >= currentCost) {
+            return { success: true, writeDownAmount: 0 } // No write-down needed
+        }
+        if (quantityOnHand <= 0) {
+            return { success: false, error: "Quantity on hand must be positive" }
+        }
+
+        const writeDownAmount = Math.round((currentCost - netRealisableValue) * quantityOnHand * 100) / 100
+
+        const lines: JournalLine[] = [
+            {
+                accountCode: ACCOUNT_CODES.INVENTORY_WRITEDOWN_NRV, // 6210
+                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WRITEDOWN_NRV),
+                debit: writeDownAmount,
+                credit: 0,
+                description: `NRV write-down: ${sku} — cost EGP ${currentCost}/unit, NRV EGP ${netRealisableValue}/unit × ${quantityOnHand} units`,
+            },
+            {
+                accountCode: ACCOUNT_CODES.ALLOWANCE_INVENTORY_OBSOLESCENCE, // 1241
+                accountName: getAccountName(ACCOUNT_CODES.ALLOWANCE_INVENTORY_OBSOLESCENCE),
+                debit: 0,
+                credit: writeDownAmount,
+                description: `Provision for inventory obsolescence: ${sku}`,
+            },
+        ]
+
+        return {
+            ...await this.createJournalEntry(
+                JournalEntryType.INVENTORY_WRITEDOWN,
+                lines,
+                `NRV-${sku}-${Date.now()}`,
+                `IAS 2.9 NRV write-down for ${sku}: EGP ${writeDownAmount}`,
+                userId
+            ),
+            writeDownAmount,
         }
     }
 
