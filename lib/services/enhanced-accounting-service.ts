@@ -674,8 +674,9 @@ export class EnhancedAccountingService {
             const now = new Date()
             // FEAT-001: Validate fiscal period is open
             const entryDate = customDate || new Date()
+            // Firestore forbids inequality filters on two different fields.
+            // Query by endDate >= entryDate, then filter startDate <= entryDate client-side.
             const periodSnapshot = await db.collection(COLLECTIONS.FISCAL_PERIODS)
-                .where("startDate", "<=", entryDate)
                 .where("endDate", ">=", entryDate)
                 .get()
             
@@ -683,12 +684,19 @@ export class EnhancedAccountingService {
             let periodName = "Unknown"
 
             if (!periodSnapshot.empty) {
-                // Find the correct period if overlapping (though they shouldn't)
-                const doc = periodSnapshot.docs[0]
-                const period = doc.data()
-                periodName = doc.id
-                if (period.status === "closed" || period.status === "locked") {
-                    isClosed = true
+                // Find the period where startDate <= entryDate (Firestore can't dual-inequality)
+                const matchingPeriod = periodSnapshot.docs.find(doc => {
+                    const p = doc.data()
+                    const start = p.startDate?.toDate ? p.startDate.toDate() : new Date(p.startDate)
+                    return start <= entryDate
+                })
+
+                if (matchingPeriod) {
+                    const period = matchingPeriod.data()
+                    periodName = matchingPeriod.id
+                    if (period.status === "closed" || period.status === "locked") {
+                        isClosed = true
+                    }
                 }
             }
 
