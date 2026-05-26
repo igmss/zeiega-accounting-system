@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server"
 import { PurchaseOrderService } from "@/lib/services/purchase-order-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 // GET /api/purchase-orders - Get all purchase orders
 export async function GET(request: NextRequest) {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
     try {
         const { searchParams } = new URL(request.url)
         const vendorId = searchParams.get("vendorId") || undefined
@@ -20,6 +23,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/purchase-orders - Create a new purchase order
 export async function POST(request: NextRequest) {
+    const auth = await requirePermission("purchase-orders:create")
+    if (!auth.authorized) return auth.response
     try {
         const body = await request.json()
 

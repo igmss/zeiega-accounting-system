@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, COLLECTIONS } from "@/lib/firebase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { requirePermission } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     console.log("🔄 Starting batch update of work orders with zero costs...");
 
     // Get all work orders (we'll filter for missing or zero estimated costs)

@@ -1,4 +1,4 @@
-import { db, COLLECTIONS } from "../firebase"
+import { db, COLLECTIONS, FieldValue } from "../firebase"
 import type { Customer, SalesOrder, WorkOrder, Invoice, Payment, JournalEntry, WebsiteOrder } from "../types"
 import { ACCOUNT_CODES, CHART_OF_ACCOUNTS, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { FinancialStatementsService } from "./financial-statements-service"
@@ -87,6 +87,26 @@ export enum JournalEntryType {
     INVENTORY_WRITEDOWN = "INVENTORY_WRITEDOWN",
     RETENTION_INVOICE = "RETENTION_INVOICE",
     RETENTION_RELEASE = "RETENTION_RELEASE",
+}
+
+interface ReturnItem {
+    sku?: string
+    productId?: string
+    id?: string
+    quantity?: number
+    qty?: number
+}
+
+interface ReturnData {
+    id?: string
+    returnId?: string
+    orderId?: string
+    invoiceId?: string
+    refundAmount?: number
+    amount?: number
+    items?: ReturnItem[]
+    paymentMethod?: string
+    payment_method?: string
 }
 
 interface JournalLine {
@@ -230,89 +250,71 @@ export class EnhancedAccountingService {
      * Process individual return
      */
     public static async processReturn(
-        returnData: any
+        returnData: ReturnData
     ): Promise<{ success: boolean; creditMemoId?: string; error?: string }> {
         const creditMemoId = `CM-${Date.now()}`
+        const returnId = returnData?.id ?? returnData?.returnId ?? "unknown"
+        const returnAmount = Number(returnData.refundAmount ?? returnData.amount ?? 0)
 
-        try {
-            const returnId = returnData?.id ?? returnData?.returnId ?? "unknown"
-            const returnAmount = Number(returnData.refundAmount ?? returnData.amount ?? 0)
+        if (!Number.isFinite(returnAmount) || returnAmount < 0) {
+            return { success: false, error: `Invalid return amount for return ${returnId}` }
+        }
 
-            if (!Number.isFinite(returnAmount) || returnAmount < 0) {
-                return {
-                    success: false,
-                    error: `Invalid return amount for return ${returnId}`,
-                }
-            }
-
-            // 1) Look up original invoice using returnData.orderId or returnData.invoiceId
+        // CHANGED: Wrap all reads and writes in a Firestore transaction for atomicity
+        return db.runTransaction(async (tx) => {
+            // ── Phase 1: All reads ──────────────────────────────────────────
             const orderId = returnData?.orderId
             const invoiceIdFromReturn = returnData?.invoiceId
 
-            let invoiceDoc:
-                | { exists: boolean; id: string; data: () => any }
-                | undefined
+            let invoiceData: Record<string, unknown> | null = null
+            let invoiceDocId: string | null = null
 
+            // Try direct invoice ID lookup first, then fall back to orderId
             if (invoiceIdFromReturn && typeof invoiceIdFromReturn === "string") {
-                const doc = await db.collection(COLLECTIONS.INVOICES).doc(invoiceIdFromReturn).get()
+                const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(invoiceIdFromReturn))
                 if (doc.exists) {
-                    invoiceDoc = { exists: doc.exists, id: doc.id, data: () => doc.data() }
-                } else if (orderId && typeof orderId === "string") {
-                    // If invoiceId was provided but is stale/incorrect, fall back to orderId lookup.
-                    const snapshot = await db
-                        .collection(COLLECTIONS.INVOICES)
-                        .where("sales_order_id", "==", orderId)
-                        .limit(1)
-                        .get()
-
-                    if (!snapshot.empty) {
-                        const first = snapshot.docs[0]
-                        invoiceDoc = { exists: first.exists, id: first.id, data: () => first.data() }
-                    }
+                    invoiceData = doc.data() as Record<string, unknown>
+                    invoiceDocId = doc.id
                 }
-            } else if (orderId && typeof orderId === "string") {
-                const derivedInvoiceId = `INV-${orderId.slice(-8)}`
-                const doc = await db.collection(COLLECTIONS.INVOICES).doc(derivedInvoiceId).get()
-
-                if (doc.exists) {
-                    invoiceDoc = { exists: doc.exists, id: doc.id, data: () => doc.data() }
-                } else {
-                    // Fallback: query invoices by sales_order_id
-                    const snapshot = await db
-                        .collection(COLLECTIONS.INVOICES)
-                        .where("sales_order_id", "==", orderId)
-                        .limit(1)
-                        .get()
-
-                    if (!snapshot.empty) {
-                        const first = snapshot.docs[0]
-                        invoiceDoc = { exists: first.exists, id: first.id, data: () => first.data() }
+            }
+            
+            if (!invoiceData && orderId && typeof orderId === "string") {
+                const snapshot = await tx.get(
+                    db.collection(COLLECTIONS.INVOICES).where("sales_order_id", "==", orderId).limit(1)
+                )
+                if (!snapshot.empty) {
+                    const first = snapshot.docs[0]
+                    invoiceData = first.data() as Record<string, unknown>
+                    invoiceDocId = first.id
+                }
+                // Also try derivedInvoiceId
+                if (!invoiceData) {
+                    const derivedId = `INV-${orderId.slice(-8)}`
+                    const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(derivedId))
+                    if (doc.exists) {
+                        invoiceData = doc.data() as Record<string, unknown>
+                        invoiceDocId = doc.id
                     }
                 }
             }
 
-            if (!invoiceDoc?.exists) {
-                return {
-                    success: false,
-                    error: `Original invoice not found for return ${returnId}`,
-                }
+            if (!invoiceData || !invoiceDocId) {
+                throw new Error(`Original invoice not found for return ${returnId}`)
             }
 
-            const invoiceData = invoiceDoc.data() as any
-            const invoiceStatus = invoiceData?.status
+            const rawStatus = invoiceData.status
+            const invoiceStatus: string | undefined = typeof rawStatus === 'string' ? rawStatus : undefined
 
-            // 2) Determine correct credit account based on invoice status and payment method
+            // Determine credit account based on original payment method for paid invoices
             let creditAccountCode: string = ACCOUNTS.ACCOUNTS_RECEIVABLE
-            let creditAccountName: string = getAccountName(ACCOUNTS.ACCOUNTS_RECEIVABLE)
+            let creditAccountName = getAccountName(ACCOUNTS.ACCOUNTS_RECEIVABLE)
 
             if (invoiceStatus === "paid") {
-                // Payments collection is where payment_method is stored.
-                const paymentsSnapshot = await db
-                    .collection(COLLECTIONS.PAYMENTS)
-                    .where("invoice_id", "==", invoiceDoc.id)
-                    .limit(1)
-                    .get()
-
+                const paymentsSnapshot = await tx.get(
+                    db.collection(COLLECTIONS.PAYMENTS)
+                        .where("invoice_id", "==", invoiceDocId)
+                        .limit(1)
+                )
                 const paymentDoc = paymentsSnapshot.docs[0]
                 const paymentData = paymentDoc?.data?.() as any
 
@@ -324,10 +326,7 @@ export class EnhancedAccountingService {
                     paymentData?.paymentMethod
 
                 if (!paymentMethod || typeof paymentMethod !== "string") {
-                    return {
-                        success: false,
-                        error: `Unable to determine original payment method for paid invoice ${invoiceDoc.id} (return ${returnId})`,
-                    }
+                    throw new Error(`Unable to determine original payment method for paid invoice ${invoiceDocId}`)
                 }
 
                 const isCash = paymentMethod.toLowerCase() === "cash"
@@ -335,15 +334,47 @@ export class EnhancedAccountingService {
                 creditAccountName = getAccountName(creditAccountCode)
             }
 
-            // unpaid / partial (and unknown statuses) => credit AR
-
-            // 3) Validate items existence before posting anything
+            // Validate return items and read inventory costs
             const items = Array.isArray(returnData?.items) ? returnData.items : []
             if (items.length === 0) {
-                return { success: false, creditMemoId, error: `Return ${returnId} has no items to restore inventory value` }
+                throw new Error(`Return ${returnId} has no items to restore inventory value`)
             }
 
-            // 4) Post sales return / credit memo journal entry
+            let inventoryRestorationValue = 0
+            const restorationLinesByItem: Array<{ sku: string; quantity: number }> = []
+
+            for (const item of items) {
+                const sku: string | undefined = item?.sku ?? item?.productId ?? item?.id
+                const quantityRaw = item?.quantity ?? item?.qty
+                const quantity = Number(quantityRaw ?? 0)
+
+                if (!sku || !Number.isFinite(quantity) || quantity <= 0) {
+                    throw new Error(`Invalid return item (sku=${String(sku)}, qty=${String(quantityRaw)})`)
+                }
+
+                const invDoc = await tx.get(db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku))
+                if (!invDoc.exists) {
+                    throw new Error(`Inventory item not found: ${sku}`)
+                }
+
+                const invData = invDoc.data() as any
+                const unitCostRaw = invData?.unit_cost ?? invData?.cost_per_unit ?? invData?.unitCost ?? 0
+                const unitCost = Number(unitCostRaw ?? 0)
+
+                if (!Number.isFinite(unitCost) || unitCost < 0) {
+                    throw new Error(`Invalid unit cost for inventory restoration (sku=${sku})`)
+                }
+
+                inventoryRestorationValue += unitCost * quantity
+                restorationLinesByItem.push({ sku, quantity })
+            }
+
+            if (inventoryRestorationValue < 0) {
+                throw new Error(`Unable to compute inventory restoration value for return ${returnId}`)
+            }
+
+            // ── Phase 2: All writes ─────────────────────────────────────────
+            // 1. Sales return / credit memo journal entry
             const salesReturnLines: JournalLine[] = [
                 {
                     accountCode: ACCOUNTS.SALES_RETURNS,
@@ -365,65 +396,17 @@ export class EnhancedAccountingService {
                 JournalEntryType.SALES_RETURN,
                 salesReturnLines,
                 creditMemoId,
-                `Credit memo / return ${returnId}`
+                `Credit memo / return ${returnId}`,
+                "system",
+                undefined,
+                tx
             )
 
             if (!memoResult.success) {
-                return { success: false, creditMemoId, error: memoResult.error || "Failed to create credit memo" }
+                throw new Error(memoResult.error || "Failed to create credit memo")
             }
 
-            // 5) Always restore inventory value onto the books:
-            // DR Finished Goods Inventory (1220) / CR COGS (5001)
-
-            let inventoryRestorationValue = 0
-            const restorationLinesByItem: Array<{ sku: string; quantity: number }> = []
-
-            for (const item of items) {
-                const sku: string | undefined = item?.sku ?? item?.productId ?? item?.id
-                const quantityRaw = item?.quantity ?? item?.qty
-                const quantity = Number(quantityRaw ?? 0)
-
-                if (!sku || !Number.isFinite(quantity) || quantity <= 0) {
-                    return {
-                        success: false,
-                        creditMemoId,
-                        error: `Invalid return item for return ${returnId} (sku=${String(sku)}, quantity=${String(quantityRaw)})`,
-                    }
-                }
-
-                const invDoc = await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku).get()
-                if (!invDoc.exists) {
-                    return {
-                        success: false,
-                        creditMemoId,
-                        error: `Inventory item not found for return ${returnId} (sku=${sku})`,
-                    }
-                }
-
-                const invData = invDoc.data() as any
-                const unitCostRaw = invData?.unit_cost ?? invData?.cost_per_unit ?? invData?.unitCost ?? 0
-                const unitCost = Number(unitCostRaw ?? 0)
-
-                if (!Number.isFinite(unitCost) || unitCost < 0) {
-                    return {
-                        success: false,
-                        creditMemoId,
-                        error: `Invalid unit cost for inventory restoration (return ${returnId}, sku=${sku})`,
-                    }
-                }
-
-                inventoryRestorationValue += unitCost * quantity
-                restorationLinesByItem.push({ sku, quantity })
-            }
-
-            if (inventoryRestorationValue < 0) {
-                return {
-                    success: false,
-                    creditMemoId,
-                    error: `Unable to compute inventory restoration value for return ${returnId}`,
-                }
-            }
-
+            // 2. Inventory restoration journal entry (DR FG / CR COGS)
             const inventoryLines: JournalLine[] = [
                 {
                     accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
@@ -445,27 +428,31 @@ export class EnhancedAccountingService {
                 JournalEntryType.INVENTORY_ADJUSTMENT,
                 inventoryLines,
                 creditMemoId,
-                `Inventory restoration journal for return ${returnId}`
+                `Inventory restoration journal for return ${returnId}`,
+                "system",
+                undefined,
+                tx
             )
 
             if (!inventoryResult.success) {
-                return { success: false, creditMemoId, error: inventoryResult.error || "Failed to create inventory restoration journal entry" }
+                throw new Error(inventoryResult.error || "Failed to create inventory restoration journal entry")
             }
 
-            // 5) Update inventory physical quantity after journaling
+            // 3. Update inventory physical quantities (within same tx)
             for (const item of restorationLinesByItem) {
-                await this.adjustInventory(item.sku, item.quantity, "return")
+                const invRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(item.sku)
+                tx.update(invRef, {
+                    quantity_on_hand: FieldValue.increment(item.quantity),
+                    updated_at: new Date(),
+                })
             }
 
             return { success: true, creditMemoId }
-        } catch (error) {
-            console.error("processReturn failed:", error)
-            return {
-                success: false,
-                creditMemoId,
-                error: error instanceof Error ? error.message : "Unknown error while processing return",
-            }
-        }
+        }).catch(error => ({
+            success: false,
+            creditMemoId,
+            error: error instanceof Error ? error.message : "Transaction failed during return processing"
+        }))
     }
 
     /**
@@ -668,49 +655,14 @@ export class EnhancedAccountingService {
         referenceDoc: string,
         notes?: string,
         userId: string = "system",
-        customDate?: Date
+        customDate?: Date,
+        tx?: FirebaseFirestore.Transaction
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         try {
             const now = new Date()
-            // FEAT-001: Validate fiscal period is open
             const entryDate = customDate || new Date()
-            // Firestore forbids inequality filters on two different fields.
-            // Query by endDate >= entryDate, then filter startDate <= entryDate client-side.
-            const periodSnapshot = await db.collection(COLLECTIONS.FISCAL_PERIODS)
-                .where("endDate", ">=", entryDate)
-                .get()
-            
-            let isClosed = false
-            let periodName = "Unknown"
 
-            if (!periodSnapshot.empty) {
-                // Find the period where startDate <= entryDate (Firestore can't dual-inequality)
-                const matchingPeriod = periodSnapshot.docs.find(doc => {
-                    const p = doc.data()
-                    const start = p.startDate?.toDate ? p.startDate.toDate() : new Date(p.startDate)
-                    return start <= entryDate
-                })
-
-                if (matchingPeriod) {
-                    const period = matchingPeriod.data()
-                    periodName = matchingPeriod.id
-                    if (period.status === "closed" || period.status === "locked") {
-                        isClosed = true
-                    }
-                }
-            }
-
-            // CLOSING_ENTRY is allowed to be posted to a closed year if it's the final entry
-            // but for simplicity here we assume the user reopens the period if needed, 
-            // OR we allow CLOSING_ENTRY to bypass if it's specific.
-            // For now, let's stick to the requirement: "Closed fiscal periods reject new journal entries"
-            if (isClosed && entryType !== JournalEntryType.CLOSING_ENTRY) {
-                return {
-                    success: false,
-                    error: `Cannot post to a closed or locked fiscal period: ${periodName}`
-                }
-            }
-            // Validate balanced entry
+            // Validate balanced entry (pure logic, no DB reads needed)
             const totalDebits = lines.reduce((sum, l) => sum + l.debit, 0)
             const totalCredits = lines.reduce((sum, l) => sum + l.credit, 0)
 
@@ -721,7 +673,7 @@ export class EnhancedAccountingService {
                 }
             }
 
-            // Validate no line has both debit and credit
+            // Validate no line has both debit and credit, and no negative amounts
             for (const line of lines) {
                 if (line.debit > 0 && line.credit > 0) {
                     return {
@@ -737,10 +689,51 @@ export class EnhancedAccountingService {
                 }
             }
 
-            const entryId = `JE-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+            // Validate fiscal period is open (reads via tx when available)
+            const periodQuery = db.collection(COLLECTIONS.FISCAL_PERIODS)
+                .where("endDate", ">=", entryDate)
+            const periodSnapshot = tx
+                ? await tx.get(periodQuery)
+                : await periodQuery.get()
 
-            // Extract unique account IDs for indexing (BUG-014)
+            let isClosed = false
+            let periodName = "Unknown"
+
+            if (!periodSnapshot.empty) {
+                const matchingPeriod = periodSnapshot.docs.find(doc => {
+                    const p = doc.data()
+                    const start = p.startDate?.toDate ? p.startDate.toDate() : new Date(p.startDate)
+                    return start <= entryDate
+                })
+
+                if (matchingPeriod) {
+                    const period = matchingPeriod.data()
+                    periodName = matchingPeriod.id
+                    if (period.status === "closed" || period.status === "locked") {
+                        isClosed = true
+                    }
+                }
+            }
+
+            if (isClosed && entryType !== JournalEntryType.CLOSING_ENTRY) {
+                return {
+                    success: false,
+                    error: `Cannot post to a closed or locked fiscal period: ${periodName}`
+                }
+            }
+
+            // CHANGED: Use crypto.randomUUID() for collision-resistant ID generation
+            const entryId = `JE-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`
+
             const accountIds = Array.from(new Set(lines.map(l => l.accountCode)))
+
+            // CHANGED: Read existing balance cache docs BEFORE writing (required by Firestore tx)
+            const balanceSnapshots: Map<string, FirebaseFirestore.DocumentSnapshot> = new Map()
+            for (const accountCode of accountIds) {
+                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
+                const balDoc = tx ? await tx.get(balRef) : await balRef.get()
+                balanceSnapshots.set(accountCode, balDoc)
+            }
 
             const journalEntry = {
                 id: entryId,
@@ -762,7 +755,41 @@ export class EnhancedAccountingService {
                 created_by: userId,
             }
 
-            await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+            // Write journal entry
+            const jeRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId)
+            if (tx) {
+                tx.set(jeRef, journalEntry)
+            } else {
+                await jeRef.set(journalEntry)
+            }
+
+            // CHANGED: Update balance cache for each affected account (atomic with JE)
+            for (const line of lines) {
+                const balDoc = balanceSnapshots.get(line.accountCode)
+                const existing = balDoc?.exists ? balDoc.data()! : { totalDebits: 0, totalCredits: 0 }
+                const newTotalDebits = (existing.totalDebits || 0) + line.debit
+                const newTotalCredits = (existing.totalCredits || 0) + line.credit
+                const isDebit = isDebitNormalBalance(line.accountCode)
+                const balance = isDebit
+                    ? newTotalDebits - newTotalCredits
+                    : newTotalCredits - newTotalDebits
+
+                const balanceData = {
+                    accountCode: line.accountCode,
+                    totalDebits: newTotalDebits,
+                    totalCredits: newTotalCredits,
+                    balance,
+                    lastEntryId: entryId,
+                    updatedAt: now,
+                }
+
+                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(line.accountCode)
+                if (tx) {
+                    tx.set(balRef, balanceData)
+                } else {
+                    await balRef.set(balanceData)
+                }
+            }
 
             console.log(`✅ Journal entry ${entryId} created: ${entryType}`)
             return { success: true, entryId }
@@ -932,7 +959,8 @@ export class EnhancedAccountingService {
      */
     static async recordWIPToFinishedGoods(
         workOrderId: string,
-        totalCost: number
+        totalCost: number,
+        tx?: FirebaseFirestore.Transaction
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         if (totalCost <= 0) {
             return { success: false, error: "Total cost must be positive" }
@@ -955,10 +983,15 @@ export class EnhancedAccountingService {
             },
         ]
 
+        // CHANGED: Pass tx through for transactional atomicity
         return this.createJournalEntry(
             JournalEntryType.WIP_TO_FINISHED_GOODS,
             lines,
-            workOrderId
+            workOrderId,
+            undefined,
+            "system",
+            undefined,
+            tx
         )
     }
 
@@ -983,90 +1016,105 @@ export class EnhancedAccountingService {
         wipTransferEntryId?: string
         error?: string
     }> {
-        // Auto-transfer WIP→FG if work order is linked (ensures FG is populated before COGS credit)
-        let wipTransferEntryId: string | undefined
-        if (workOrderId && costOfGoodsSold > 0) {
-            const wipTransfer = await this.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold)
-            if (!wipTransfer.success) {
-                return {
-                    success: false,
-                    error: `WIP→FG transfer failed: ${wipTransfer.error}`
+        // CHANGED: Wrap all writes in a Firestore transaction for atomicity.
+        // If WIP→FG transfer fails, revenue and COGS entries are never created.
+        return db.runTransaction(async (tx) => {
+            // Auto-transfer WIP→FG if work order is linked
+            let wipTransferEntryId: string | undefined
+            if (workOrderId && costOfGoodsSold > 0) {
+                const wipTransfer = await this.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold, tx)
+                if (!wipTransfer.success) {
+                    throw new Error(`WIP→FG transfer failed: ${wipTransfer.error}`)
                 }
+                wipTransferEntryId = wipTransfer.entryId
             }
-            wipTransferEntryId = wipTransfer.entryId
-        }
 
-        // Record revenue and AR (including VAT)
-        const totalReceivable = salesAmount + vatAmount
-        
-        const revenueLines: JournalLine[] = [
-            {
-                accountCode: ACCOUNTS.ACCOUNTS_RECEIVABLE,
-                accountName: "Accounts Receivable",
-                debit: totalReceivable,
-                credit: 0,
-                description: `Invoice: ${invoiceId} (Total: ${totalReceivable})`,
-            },
-            {
-                accountCode: ACCOUNTS.SALES_REVENUE,
-                accountName: "Sales Revenue",
-                debit: 0,
-                credit: salesAmount,
-                description: `Sale net revenue`,
-            },
-        ]
-        
-        if (vatAmount > 0) {
-            revenueLines.push({
-                accountCode: ACCOUNTS.VAT_PAYABLE,
-                accountName: "VAT Payable",
-                debit: 0,
-                credit: vatAmount,
-                description: "Sales VAT (14%)",
-            })
-        }
+            // Record revenue and AR (including VAT)
+            const totalReceivable = salesAmount + vatAmount
+            
+            const revenueLines: JournalLine[] = [
+                {
+                    accountCode: ACCOUNTS.ACCOUNTS_RECEIVABLE,
+                    accountName: "Accounts Receivable",
+                    debit: totalReceivable,
+                    credit: 0,
+                    description: `Invoice: ${invoiceId} (Total: ${totalReceivable})`,
+                },
+                {
+                    accountCode: ACCOUNTS.SALES_REVENUE,
+                    accountName: "Sales Revenue",
+                    debit: 0,
+                    credit: salesAmount,
+                    description: `Sale net revenue`,
+                },
+            ]
+            
+            if (vatAmount > 0) {
+                revenueLines.push({
+                    accountCode: ACCOUNTS.VAT_PAYABLE,
+                    accountName: "VAT Payable",
+                    debit: 0,
+                    credit: vatAmount,
+                    description: "Sales VAT (14%)",
+                })
+            }
 
-        const revenueResult = await this.createJournalEntry(
-            JournalEntryType.SALES_INVOICE,
-            revenueLines,
-            invoiceId
-        )
+            const revenueResult = await this.createJournalEntry(
+                JournalEntryType.SALES_INVOICE,
+                revenueLines,
+                invoiceId,
+                undefined,
+                "system",
+                undefined,
+                tx
+            )
 
-        if (!revenueResult.success) {
-            return revenueResult
-        }
+            if (!revenueResult.success) {
+                throw new Error(revenueResult.error || "Revenue JE creation failed")
+            }
 
-        // Record COGS
-        const cogsLines: JournalLine[] = [
-            {
-                accountCode: ACCOUNTS.COGS,
-                accountName: getAccountName(ACCOUNTS.COGS),
-                debit: costOfGoodsSold,
-                credit: 0,
-                description: `COGS for invoice: ${invoiceId}`,
-            },
-            {
-                accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
-                accountName: getAccountName(ACCOUNTS.INVENTORY_FINISHED_GOODS),
-                debit: 0,
-                credit: costOfGoodsSold,
-                description: `Goods sold`,
-            },
-        ]
+            // Record COGS
+            const cogsLines: JournalLine[] = [
+                {
+                    accountCode: ACCOUNTS.COGS,
+                    accountName: getAccountName(ACCOUNTS.COGS),
+                    debit: costOfGoodsSold,
+                    credit: 0,
+                    description: `COGS for invoice: ${invoiceId}`,
+                },
+                {
+                    accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
+                    accountName: getAccountName(ACCOUNTS.INVENTORY_FINISHED_GOODS),
+                    debit: 0,
+                    credit: costOfGoodsSold,
+                    description: `Goods sold`,
+                },
+            ]
 
-        const cogsResult = await this.createJournalEntry(
-            JournalEntryType.SALES_COGS,
-            cogsLines,
-            invoiceId
-        )
+            const cogsResult = await this.createJournalEntry(
+                JournalEntryType.SALES_COGS,
+                cogsLines,
+                invoiceId,
+                undefined,
+                "system",
+                undefined,
+                tx
+            )
 
-        return {
-            success: cogsResult.success,
-            revenueEntryId: revenueResult.entryId,
-            cogsEntryId: cogsResult.entryId,
-            wipTransferEntryId,
-            error: cogsResult.error
-        }
+            if (!cogsResult.success) {
+                throw new Error(cogsResult.error || "COGS JE creation failed")
+            }
+
+            return {
+                success: true,
+                revenueEntryId: revenueResult.entryId,
+                cogsEntryId: cogsResult.entryId,
+                wipTransferEntryId,
+            }
+        }).catch(error => ({
+            success: false,
+            error: error instanceof Error ? error.message : "Transaction failed during sale recording"
+        }))
     }
 
     /**
@@ -1155,6 +1203,17 @@ export class EnhancedAccountingService {
         endDate?: Date
     ): Promise<{ balance: number; error?: string }> {
         try {
+            // CHANGED: Use cached balance for "all time" queries (most common case)
+            if (!startDate && !endDate) {
+                const balDoc = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode).get()
+                if (balDoc.exists) {
+                    const data = balDoc.data()!
+                    return { balance: data.balance || 0 }
+                }
+                // Fallback to full scan if cache not yet populated (post-migration)
+            }
+
+            // Full scan for date-filtered or cache-miss queries
             let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
                 .where("account_ids", "array-contains", accountCode) as FirebaseFirestore.Query
 

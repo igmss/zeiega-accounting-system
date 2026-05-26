@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, COLLECTIONS } from "@/lib/firebase";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/inventory/items - Get all inventory items for material selection
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type'); // Filter by type: 'raw', 'finished', etc.
     const search = searchParams.get('search'); // Search by name or SKU

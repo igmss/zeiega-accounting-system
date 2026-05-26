@@ -108,7 +108,7 @@ export function PaymentManagement() {
                 <div className="text-2xl font-bold">{formatCurrency(totalPayments)}</div>
                 <div className="text-sm text-muted-foreground">Total Received</div>
               </div>
-              <DollarSign className="h-8 w-8 text-green-500" />
+              <DollarSign className="h-8 w-8 text-green-500 dark:text-green-400" />
             </div>
           </CardContent>
         </Card>
@@ -120,7 +120,7 @@ export function PaymentManagement() {
                 <div className="text-2xl font-bold">{formatCurrency(todayPayments)}</div>
                 <div className="text-sm text-muted-foreground">Today</div>
               </div>
-              <TrendingUp className="h-8 w-8 text-blue-500" />
+              <TrendingUp className="h-8 w-8 text-blue-500 dark:text-blue-400" />
             </div>
           </CardContent>
         </Card>
@@ -132,7 +132,7 @@ export function PaymentManagement() {
                 <div className="text-2xl font-bold">{formatCurrency(thisWeekPayments)}</div>
                 <div className="text-sm text-muted-foreground">This Week</div>
               </div>
-              <TrendingUp className="h-8 w-8 text-orange-500" />
+              <TrendingUp className="h-8 w-8 text-orange-500 dark:text-orange-400" />
             </div>
           </CardContent>
         </Card>
@@ -196,7 +196,8 @@ export function PaymentManagement() {
               <p className="text-muted-foreground mt-4">Loading payments...</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Payment ID</TableHead>
@@ -214,7 +215,7 @@ export function PaymentManagement() {
                   <TableCell className="font-medium">{payment.id}</TableCell>
                   <TableCell>{payment.invoice_id}</TableCell>
                   <TableCell>{payment.customer_name}</TableCell>
-                  <TableCell className="font-medium text-green-600">{formatCurrency(payment.amount)}</TableCell>
+                  <TableCell className="font-medium text-green-600 dark:text-green-400">{formatCurrency(payment.amount)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {getMethodIcon(payment.method)}
@@ -242,6 +243,7 @@ export function PaymentManagement() {
               ))}
             </TableBody>
           </Table>
+            </div>
           )}
         </CardContent>
       </Card>

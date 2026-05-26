@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requireAuth } from "@/lib/auth/auth-helpers"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     console.log("Fetching real orders from Firestore...")
 

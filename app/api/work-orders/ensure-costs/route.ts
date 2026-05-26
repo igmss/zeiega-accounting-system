@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, COLLECTIONS } from "@/lib/firebase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { requirePermission } from "@/lib/auth";
 
 /**
  * This API ensures all work orders have automatic cost calculation
@@ -8,6 +9,9 @@ import { OrderItemDesignService } from "@/lib/services/order-item-design-service
  */
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     console.log("🔄 Ensuring all work orders have automatic cost calculation...");
 
     // Get all work orders that don't have estimated costs

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
+import { requirePermission, requireAuth } from "@/lib/auth";
 
 // GET /api/designs/[id] - Get a single design
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     const designId = params.id;
     
@@ -39,6 +43,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission("designs:create");
+  if (!auth.authorized) return auth.response;
+
   try {
     const designId = params.id;
     const updates = await request.json();
@@ -66,6 +73,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requirePermission("designs:create");
+  if (!auth.authorized) return auth.response;
+
   try {
     const designId = params.id;
     

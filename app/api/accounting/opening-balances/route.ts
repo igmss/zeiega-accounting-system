@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { getAccountName } from "@/lib/accounting/account-types"
+import { requirePermission } from "@/lib/auth"
 
 export async function POST(request: Request) {
     try {
+        const auth = await requirePermission("accounting:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
         const { 
             date, 

@@ -2,14 +2,13 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 import { EnhancedAccountingService, JournalEntryType, ACCOUNTS } from "@/lib/services/enhanced-accounting-service"
+import { requirePermission } from "@/lib/auth"
 
-/**
- * POST /api/accounting/vat/pay
- * Accepts { amount, paymentMethod, periodDescription }
- * Returns success and the journal entry ID
- */
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("accounting:create")
+    if (!auth.authorized) return auth.response
+
     const { amount, paymentMethod, periodDescription } = await request.json()
 
     if (!amount || amount <= 0 || !paymentMethod) {

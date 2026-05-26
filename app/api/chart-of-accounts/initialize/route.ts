@@ -2,9 +2,13 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { CHART_OF_ACCOUNTS, AccountType } from "@/lib/accounting/account-types"
 import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
+import { requireAdmin } from "@/lib/auth"
 
 export async function POST() {
   try {
+    const auth = await requireAdmin()
+    if (!auth.authorized) return auth.response
+
     console.log("Initializing chart of accounts with enhanced structure...")
 
     // Get expected account count from our new structure

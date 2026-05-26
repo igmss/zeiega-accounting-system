@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 export async function GET(request: Request) {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
@@ -70,6 +73,8 @@ function mapOrderStatus(status: string): string {
 }
 
 export async function POST(request: Request) {
+  const auth = await requirePermission("sales-orders:create")
+  if (!auth.authorized) return auth.response
   try {
     const orderData = await request.json()
 
@@ -164,6 +169,8 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const auth = await requirePermission("sales-orders:create")
+  if (!auth.authorized) return auth.response
   try {
     const { orderId, status } = await request.json()
 

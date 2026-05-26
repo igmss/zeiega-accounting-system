@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requireAuth } from "@/lib/auth"
 
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     const movementsSnapshot = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).get()
     const movements = movementsSnapshot.docs.map(doc => ({
       id: doc.id,

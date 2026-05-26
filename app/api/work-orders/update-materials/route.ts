@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { ACCOUNT_CODES } from "@/lib/accounting/account-types"
+import { requirePermission } from "@/lib/auth"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -87,6 +88,9 @@ async function syncCashBalance() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     const { workOrderId, materials, laborHours, laborCost } = await request.json()
     
     if (!workOrderId) {

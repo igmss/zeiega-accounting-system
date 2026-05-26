@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { requireAuth } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     const { designId, sizeQuantities } = await request.json();
     

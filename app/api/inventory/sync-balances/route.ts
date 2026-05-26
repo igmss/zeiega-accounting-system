@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission } from "@/lib/auth"
 
 export async function POST() {
   try {
+    const auth = await requirePermission("inventory:create")
+    if (!auth.authorized) return auth.response
+
     console.log("Starting inventory balance sync...")
 
     // Fetch all inventory items

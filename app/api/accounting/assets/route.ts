@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { getAccountName } from "@/lib/accounting/account-types"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
-// API endpoint for recording asset acquisitions with automatic balance synchronization
 export async function POST(request: Request) {
     try {
+        const auth = await requirePermission("accounting:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
         const { amount, description, assetAccount, paymentMethod, useful_life_years, salvage_value, depreciation_method } = body
 
@@ -106,9 +109,11 @@ export async function POST(request: Request) {
     }
 }
 
-// GET endpoint to fetch assets
 export async function GET() {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         // Fetch journal entries relevant to assets
         const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
             .orderBy('date', 'desc')

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -18,6 +19,8 @@ interface JournalDocument {
 
 
 export async function GET() {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
     const inventoryItems = inventorySnapshot.docs.map(doc => ({
@@ -36,6 +39,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requirePermission("inventory:create")
+  if (!auth.authorized) return auth.response
   try {
     const itemData = await request.json()
     const { paymentSource, ...itemDataWithoutSource } = itemData
@@ -111,6 +116,8 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const auth = await requirePermission("inventory:create")
+  if (!auth.authorized) return auth.response
   try {
     const { id, ...itemData } = await request.json()
     
@@ -134,6 +141,8 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requirePermission("inventory:create")
+  if (!auth.authorized) return auth.response
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')

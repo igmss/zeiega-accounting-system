@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
+import { requirePermission, requireAuth } from "@/lib/auth";
 
 // GET /api/work-orders/[id] - Get work order with design information
 export async function GET(
@@ -7,6 +8,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     console.log(`Getting work order ${params.id} with design information...`);
     
     const result = await WorkOrderService.getWorkOrderWithDesign(params.id);
@@ -42,6 +46,9 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     const updates = await request.json();
     
     console.log(`Updating work order ${params.id} with:`, updates);

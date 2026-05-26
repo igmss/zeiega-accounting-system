@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { BarChart3, TrendingDown, TrendingUp, Minus } from "lucide-react"
 
 interface VarianceData {
@@ -68,7 +68,7 @@ export function VarianceReport() {
 
   const analyzeVariance = async () => {
     if (!workOrderId) {
-      toast({ title: "Missing work order", description: "Enter a work order ID", variant: "destructive" })
+      toast.error("Missing work order: Enter a work order ID")
       return
     }
     setLoading(true)
@@ -82,10 +82,10 @@ export function VarianceReport() {
       if (data.success) {
         setVariance(data.variance)
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to analyze variances", variant: "destructive" })
+      toast.error("Failed to analyze variances")
     } finally {
       setLoading(false)
     }
@@ -93,7 +93,7 @@ export function VarianceReport() {
 
   const saveStandardCost = async () => {
     if (!designId) {
-      toast({ title: "Missing design", description: "Enter a design ID", variant: "destructive" })
+      toast.error("Missing design: Enter a design ID")
       return
     }
     setLoading(true)
@@ -119,12 +119,12 @@ export function VarianceReport() {
       })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "Standard costs saved", description: `Design: ${designId}` })
+        toast.success(`Standard costs saved for Design: ${designId}`)
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to save standard costs", variant: "destructive" })
+      toast.error("Failed to save standard costs")
     } finally {
       setLoading(false)
     }
@@ -136,10 +136,10 @@ export function VarianceReport() {
       const res = await fetch("/api/variance/close", { method: "POST" })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "Variances closed", description: `EGP ${data.totalClosed} closed to COGS` })
+        toast.success(`Variances closed: EGP ${data.totalClosed} closed to COGS`)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to close variances", variant: "destructive" })
+      toast.error("Failed to close variances")
     } finally {
       setLoading(false)
     }

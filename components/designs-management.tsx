@@ -449,6 +449,7 @@ export default function DesignsManagement() {
                           size="sm"
                           variant="outline"
                           onClick={() => handleEditDesign(design)}
+                          aria-label="Edit design"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -456,6 +457,7 @@ export default function DesignsManagement() {
                           size="sm"
                           variant="outline"
                           onClick={() => handleDeleteDesign(design.id)}
+                          aria-label="Delete design"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

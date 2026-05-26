@@ -122,10 +122,10 @@ export function InvoiceManagement() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-green-600">{formatCurrency(paidAmount)}</div>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{formatCurrency(paidAmount)}</div>
                 <div className="text-sm text-muted-foreground">Paid</div>
               </div>
-              <CheckCircle className="h-8 w-8 text-green-500" />
+              <CheckCircle className="h-8 w-8 text-green-500 dark:text-green-400" />
             </div>
           </CardContent>
         </Card>
@@ -134,10 +134,10 @@ export function InvoiceManagement() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-orange-600">{formatCurrency(unpaidAmount)}</div>
+                <div className="text-2xl font-bold text-orange-500 dark:text-orange-400">{formatCurrency(unpaidAmount)}</div>
                 <div className="text-sm text-muted-foreground">Outstanding</div>
               </div>
-              <DollarSign className="h-8 w-8 text-orange-500" />
+              <DollarSign className="h-8 w-8 text-orange-500 dark:text-orange-400" />
             </div>
           </CardContent>
         </Card>
@@ -146,10 +146,10 @@ export function InvoiceManagement() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-red-600">{overdueCount}</div>
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{overdueCount}</div>
                 <div className="text-sm text-muted-foreground">Overdue</div>
               </div>
-              <Clock className="h-8 w-8 text-red-500" />
+              <Clock className="h-8 w-8 text-red-500 dark:text-red-400" />
             </div>
           </CardContent>
         </Card>
@@ -203,7 +203,8 @@ export function InvoiceManagement() {
               <p className="text-muted-foreground mt-4">Loading invoices...</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Invoice ID</TableHead>
@@ -234,7 +235,7 @@ export function InvoiceManagement() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className={new Date() > (invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600" : ""}>
+                    <div className={new Date() > (invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600 dark:text-red-400" : ""}>
                       {(invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())).toLocaleDateString()}
                     </div>
                   </TableCell>
@@ -249,7 +250,7 @@ export function InvoiceManagement() {
                     <div className="flex gap-2">
                       <Dialog>
                         <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => setSelectedInvoice(invoice)}>
+                          <Button variant="outline" size="sm" onClick={() => setSelectedInvoice(invoice)} aria-label="View invoice details">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
@@ -265,11 +266,11 @@ export function InvoiceManagement() {
                         <RecordPaymentDialog invoice={invoice} />
                       )}
 
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label="Download invoice">
                         <Download className="h-4 w-4" />
                       </Button>
 
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" aria-label="Send invoice">
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
@@ -278,6 +279,7 @@ export function InvoiceManagement() {
               ))}
             </TableBody>
           </Table>
+            </div>
           )}
         </CardContent>
       </Card>

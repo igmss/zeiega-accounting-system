@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 export async function GET(request: Request) {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
@@ -43,6 +46,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requirePermission("invoices:create")
+  if (!auth.authorized) return auth.response
   try {
     const body = await request.json()
     const { 

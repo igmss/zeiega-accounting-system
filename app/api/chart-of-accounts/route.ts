@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requireAuth } from "@/lib/auth"
 
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     // Fetch chart of accounts from Firestore
     const accountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
     const accounts = accountsSnapshot.docs.map(doc => ({

@@ -1,53 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
+import { getCORSHeaders, handlePreflight } from "@/lib/cors"
 
-// Get allowed origins from environment variable
-function getAllowedOrigins(): string[] {
-  const origins = process.env.ALLOWED_ORIGINS || ""
-  const list = origins.split(",").map((o) => o.trim()).filter(Boolean)
-  
-  // Always include Cloud Functions domain for webhooks (FIX-005)
-  // Note: Firestore triggers/functions don't always send an 'origin' header, 
-  // but for those that do, we should permit this pattern.
-  // The actual verification is handled by the webhookSecret.
-
-  // In development, allow localhost
-  if (process.env.NODE_ENV === "development") {
-    list.push("http://localhost:3000", "http://localhost:3001")
-  }
-  return list
-}
-
-// Apply CORS headers safely
-function getCORSHeaders(request: NextRequest): Record<string, string> {
-  const origin = request.headers.get("origin") || ""
-  const allowedOrigins = getAllowedOrigins()
-
-  // Only allow specific origins
-  if (allowedOrigins.includes(origin)) {
-    return {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-webhook-secret",
-    }
-  }
-
-  return {}
-}
-
-// Handle CORS preflight requests
 export async function OPTIONS(request: NextRequest) {
-  const corsHeaders = getCORSHeaders(request)
-
-  if (Object.keys(corsHeaders).length === 0) {
-    return new NextResponse(null, { status: 403 })
-  }
-
-  return new NextResponse(null, {
-    status: 200,
-    headers: corsHeaders,
-  })
+  return handlePreflight(request, ["x-webhook-secret"]) ?? new NextResponse(null, { status: 204 })
 }
 
 export async function POST(request: NextRequest) {
@@ -64,7 +21,7 @@ export async function POST(request: NextRequest) {
     if (!secret || secret !== expectedSecret) {
       return NextResponse.json(
         { error: "Unauthorized" },
-        { status: 401, headers: getCORSHeaders(request) }
+        { status: 401, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
       )
     }
 
@@ -73,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (!returnId || !status) {
       return NextResponse.json(
         { error: "Return ID and status are required" },
-        { status: 400, headers: getCORSHeaders(request) }
+        { status: 400, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
       )
     }
 
@@ -123,7 +80,7 @@ export async function POST(request: NextRequest) {
         console.error(`❌ Accounting failed for return ${returnId}: ${result?.error || "Unknown error"}`)
         return NextResponse.json(
           { error: result?.error || `Failed to process return accounting for return ${returnId}` },
-          { status: 500, headers: getCORSHeaders(request) }
+          { status: 500, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
         )
       }
 
@@ -137,7 +94,7 @@ export async function POST(request: NextRequest) {
       status,
       timestamp: now.toISOString()
     }, {
-      headers: getCORSHeaders(request)
+      headers: getCORSHeaders(request, ["x-webhook-secret"])
     })
 
   } catch (error) {

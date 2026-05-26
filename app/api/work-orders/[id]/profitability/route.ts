@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
+import { requireAuth } from "@/lib/auth";
 
 // GET /api/work-orders/[id]/profitability - Get work order profitability
 export async function GET(
@@ -7,6 +8,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     console.log(`Calculating profitability for work order ${params.id}...`);
     
     const profitability = await WorkOrderService.calculateWorkOrderProfitability(params.id);

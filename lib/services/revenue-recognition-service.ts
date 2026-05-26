@@ -93,7 +93,7 @@ export class RevenueRecognitionService {
         return { success: false, error: "Contract price and estimated cost must be positive" }
       }
 
-      const contractId = `CTR-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+      const contractId = `CTR-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
       const now = new Date()
 
       const contract: Contract = {

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Search, Plus, BookOpen } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 import {
   Dialog,
   DialogContent,
@@ -122,7 +123,7 @@ export function ChartOfAccountsManagement() {
           throw new Error('Failed to initialize accounts')
         }
 
-        alert("Chart of accounts initialized successfully!")
+        toast.success("Chart of accounts initialized successfully!")
         
         // Refresh data
         const dataResponse = await fetch('/api/chart-of-accounts')
@@ -132,7 +133,7 @@ export function ChartOfAccountsManagement() {
         }
       } catch (error) {
         console.error("Error initializing accounts:", error)
-        alert("Failed to initialize accounts. Please try again.")
+        toast.error("Failed to initialize accounts")
       }
     }
   }

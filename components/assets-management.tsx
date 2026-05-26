@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Plus, Search, Landmark, Calendar, PlusCircle } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 // Import both CHART_OF_ACCOUNTS and enums
 import { CHART_OF_ACCOUNTS, AccountType, AccountSubType } from "@/lib/accounting/account-types"
 
@@ -121,10 +122,10 @@ export function AssetsManagement() {
             if (response.ok) {
                 fetchAssets()
                 setIsDepreciationDialogOpen(false)
-                alert("Depreciation recorded successfully")
+                toast.success("Depreciation recorded successfully")
             } else {
                 const error = await response.json()
-                alert(error.error || "Failed to record depreciation")
+                toast.error("Failed to record depreciation")
             }
         } catch (error) {
             console.error("Failed to record depreciation:", error)

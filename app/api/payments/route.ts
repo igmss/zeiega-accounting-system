@@ -59,98 +59,106 @@ export async function POST(request: Request) {
 
     const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
-    // 1. Fetch and validate invoice (BUG-5)
-    const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc(invoice_id)
-    const invoiceDoc = await invoiceRef.get()
-    
-    if (!invoiceDoc.exists) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 })
-    }
-
-    const invoiceData = invoiceDoc.data() as any
-    const remainingBalance = (invoiceData.total_amount || 0) - (invoiceData.paid_amount || 0)
-
-    if (remainingBalance <= 0) {
-      return NextResponse.json({ error: "Invoice is already fully paid" }, { status: 400 })
-    }
-
-    if (amount > remainingBalance + 0.01) { // Small buffer for rounding
-      return NextResponse.json({ 
-        error: `Overpayment not allowed. Remaining balance is ${remainingBalance.toLocaleString()}` 
-      }, { status: 400 })
-    }
-
-    // 2. Map payment method to account (BUG-5)
-    let paymentAccount = "1101" // Cash on Hand default
-    let accountName = "Cash on Hand"
-
-    if (payment_method === "bank" || payment_method === "transfer" || payment_method === "card") {
-      paymentAccount = "1103" // Bank - Main
-      accountName = "Bank Account"
-    }
-
-    // Generate payment ID
+    // CHANGED: Wrap JE creation + invoice update + payment record in a Firestore transaction
     const paymentId = `PAY-${Date.now()}`
 
-    // 3. Create journal entry via service
-    const lines = [
-      {
-        accountCode: paymentAccount,
-        accountName: accountName,
-        debit: amount,
-        credit: 0,
-        description: `Payment ${paymentId} received for invoice ${invoice_id}`
-      },
-      {
-        accountCode: "1110", // Accounts Receivable
-        accountName: "Accounts Receivable",
-        debit: 0,
-        credit: amount,
-        description: `AR reduction for invoice ${invoice_id}`
+    const result = await db.runTransaction(async (tx) => {
+      // ── Phase 1: Read invoice ──────────────────────────────────────────
+      const invoiceRef = db.collection(COLLECTIONS.INVOICES).doc(invoice_id)
+      const invoiceDoc = await tx.get(invoiceRef)
+      
+      if (!invoiceDoc.exists) {
+        throw new Error("Invoice not found")
       }
-    ]
 
-    const result = await EnhancedAccountingService.createJournalEntry(
-      JournalEntryType.PAYMENT_RECEIVED,
-      lines,
-      paymentId,
-      `Payment receipt for invoice ${invoice_id}. Ref: ${reference_number || 'N/A'}`
-    )
+      const invoiceData = invoiceDoc.data() as any
+      const remainingBalance = (invoiceData.total_amount || 0) - (invoiceData.paid_amount || 0)
 
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
-    }
+      if (remainingBalance <= 0) {
+        throw new Error("Invoice is already fully paid")
+      }
 
-    // 4. Update Invoice (increment paid_amount, update status)
-    const newPaidAmount = (invoiceData.paid_amount || 0) + amount
-    const isFullyPaid = newPaidAmount >= (invoiceData.total_amount || 0) - 0.01
+      if (amount > remainingBalance + 0.01) {
+        throw new Error(`Overpayment not allowed. Remaining balance is ${remainingBalance.toLocaleString()}`)
+      }
 
-    await invoiceRef.update({
-      paid_amount: newPaidAmount,
-      status: isFullyPaid ? "paid" : "partial",
-      last_payment_at: new Date()
+      // ── Phase 1 (continued): Prepare payment account mapping ───────────
+      let paymentAccount = "1101"
+      let accountName = "Cash on Hand"
+
+      if (payment_method === "bank" || payment_method === "transfer" || payment_method === "card") {
+        paymentAccount = "1103"
+        accountName = "Bank Account"
+      }
+
+      // ── Phase 2: Create journal entry within transaction ────────────────
+      const lines = [
+        {
+          accountCode: paymentAccount,
+          accountName: accountName,
+          debit: amount,
+          credit: 0,
+          description: `Payment ${paymentId} received for invoice ${invoice_id}`
+        },
+        {
+          accountCode: "1110",
+          accountName: "Accounts Receivable",
+          debit: 0,
+          credit: amount,
+          description: `AR reduction for invoice ${invoice_id}`
+        }
+      ]
+
+      const jeResult = await EnhancedAccountingService.createJournalEntry(
+        JournalEntryType.PAYMENT_RECEIVED,
+        lines,
+        paymentId,
+        `Payment receipt for invoice ${invoice_id}. Ref: ${reference_number || 'N/A'}`,
+        "system",
+        undefined,
+        tx
+      )
+
+      if (!jeResult.success) {
+        throw new Error(jeResult.error || "Failed to create journal entry")
+      }
+
+      // ── Phase 2: Update invoice and save payment record ────────────────
+      const newPaidAmount = (invoiceData.paid_amount || 0) + amount
+      const isFullyPaid = newPaidAmount >= (invoiceData.total_amount || 0) - 0.01
+
+      tx.update(invoiceRef, {
+        paid_amount: newPaidAmount,
+        status: isFullyPaid ? "paid" : "partial",
+        last_payment_at: new Date()
+      })
+
+      const payment = {
+        id: paymentId,
+        invoice_id,
+        amount,
+        payment_method,
+        reference_number: reference_number || "",
+        date: date || new Date().toISOString(),
+        journal_entry_id: jeResult.entryId,
+        created_at: new Date()
+      }
+      tx.set(db.collection(COLLECTIONS.PAYMENTS).doc(paymentId), payment)
+
+      return { success: true, paymentId, ...payment }
     })
 
-    // Save payment record
-    const payment = {
-      id: paymentId,
-      invoice_id,
-      amount,
-      payment_method,
-      reference_number: reference_number || "",
-      date: date || new Date().toISOString(),
-      journal_entry_id: result.entryId,
-      created_at: new Date()
-    }
-    await db.collection(COLLECTIONS.PAYMENTS).doc(paymentId).set(payment)
-
-    return NextResponse.json({ success: true, paymentId, ...payment })
+    return NextResponse.json(result)
   } catch (error) {
     console.error("Error creating payment:", error)
-    return NextResponse.json(
-      { error: "Failed to create payment" },
-      { status: 500 }
-    )
+    const rawMessage = error instanceof Error ? error.message : ""
+    if (rawMessage === "Invoice not found") {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 })
+    }
+    if (rawMessage.includes("fully paid") || rawMessage.includes("Overpayment")) {
+      return NextResponse.json({ error: rawMessage }, { status: 400 })
+    }
+    return NextResponse.json({ error: "Failed to create payment" }, { status: 500 })
   }
 }
 

@@ -40,7 +40,7 @@ export class VendorService {
     ): Promise<{ success: boolean; vendorId?: string; error?: string }> {
         try {
             const now = new Date()
-            const vendorId = `VND-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+            const vendorId = `VND-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
             const vendor: Vendor = {
                 ...data,

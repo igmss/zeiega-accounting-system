@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { Calculator, RotateCcw, TrendingUp } from "lucide-react"
 
 type AllocationBase = "DLH" | "MH" | "DL_COST" | "UNITS" | "MATERIAL_COST"
@@ -44,7 +44,7 @@ export function OverheadConfigPanel() {
     const oh = Number(estimatedOH)
     const activity = Number(estimatedActivity)
     if (oh <= 0 || activity <= 0) {
-      toast({ title: "Invalid input", description: "Both values must be positive", variant: "destructive" })
+      toast.error("Invalid input: Both values must be positive")
       return
     }
     const rate = Math.round((oh / activity) * 100) / 100
@@ -66,14 +66,14 @@ export function OverheadConfigPanel() {
       })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "POHR saved", description: `Rate: EGP ${data.pohr} per ${allocationBase}` })
+        toast.success(`POHR saved: EGP ${data.pohr} per ${allocationBase}`)
         setPohr(data.pohr)
         fetchConfigs()
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to save POHR config", variant: "destructive" })
+      toast.error("Failed to save POHR config")
     } finally {
       setLoading(false)
     }
@@ -96,12 +96,12 @@ export function OverheadConfigPanel() {
       })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "OH applied", description: `EGP ${data.appliedOH} applied to ${workOrderId}` })
+        toast.success(`OH applied: EGP ${data.appliedOH} applied to ${workOrderId}`)
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to apply overhead", variant: "destructive" })
+      toast.error("Failed to apply overhead")
     }
   }
 

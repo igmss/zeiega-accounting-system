@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission } from "@/lib/auth/auth-helpers"
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  const auth = await requirePermission("work-orders:create")
+  if (!auth.authorized) return auth.response
   try {
     const { orderId } = await request.json()
 

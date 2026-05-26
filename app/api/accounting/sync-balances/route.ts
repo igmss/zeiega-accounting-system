@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission } from "@/lib/auth"
 
 import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
-// API endpoint for systematic balance synchronization
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("accounting:create")
+    if (!auth.authorized) return auth.response
+
     const body = await request.json()
     const { accountIds, syncAll } = body
     

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, COLLECTIONS } from "@/lib/firebase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { requirePermission } from "@/lib/auth";
 
 /**
  * Background job to ensure all work orders have automatic cost calculation
@@ -8,6 +9,9 @@ import { OrderItemDesignService } from "@/lib/services/order-item-design-service
  */
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     console.log("🔄 Background job: Ensuring all work orders have automatic costs...");
 
     // Get all work orders

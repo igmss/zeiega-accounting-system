@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
+import { requireAuth } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const { searchParams } = new URL(request.url)
         const fromDate = searchParams.get("from") || new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0]
         const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]

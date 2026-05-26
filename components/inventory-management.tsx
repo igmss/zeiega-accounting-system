@@ -15,6 +15,7 @@ import { Search, Package, TrendingDown, TrendingUp, AlertTriangle, History } fro
 import { InventoryMovements } from "./inventory-movements"
 import { AddInventoryDialog } from "./add-inventory-dialog"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 
 interface InventoryItem {
   id: string
@@ -41,6 +42,7 @@ export function InventoryManagement() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Fetch inventory items from Firestore
   useEffect(() => {
@@ -61,7 +63,7 @@ export function InventoryManagement() {
     }
     
     fetchInventoryItems()
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
     let filtered = items
@@ -118,11 +120,10 @@ export function InventoryManagement() {
           throw new Error('Failed to delete inventory item')
         }
 
-        // Refresh the inventory list
-        window.location.reload()
+        setRefreshKey(prev => prev + 1)
       } catch (error) {
         console.error("Error deleting inventory item:", error)
-        alert("Failed to delete inventory item. Please try again.")
+        toast.error("Failed to delete inventory item")
       }
     }
   }
@@ -164,10 +165,10 @@ export function InventoryManagement() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-orange-600">{lowStockItems.length}</div>
+                <div className="text-2xl font-bold text-orange-500 dark:text-orange-400">{lowStockItems.length}</div>
                 <div className="text-sm text-muted-foreground">Low Stock</div>
               </div>
-              <TrendingDown className="h-8 w-8 text-orange-500" />
+              <TrendingDown className="h-8 w-8 text-orange-500 dark:text-orange-400" />
             </div>
           </CardContent>
         </Card>
@@ -176,10 +177,10 @@ export function InventoryManagement() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold text-red-600">{outOfStockItems.length}</div>
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{outOfStockItems.length}</div>
                 <div className="text-sm text-muted-foreground">Out of Stock</div>
               </div>
-              <AlertTriangle className="h-8 w-8 text-red-500" />
+              <AlertTriangle className="h-8 w-8 text-red-500 dark:text-red-400" />
             </div>
           </CardContent>
         </Card>
@@ -231,7 +232,8 @@ export function InventoryManagement() {
           {/* Inventory Table */}
           <Card>
             <CardContent className="p-0">
-              <Table>
+              <div className="overflow-x-auto">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>SKU</TableHead>
@@ -324,6 +326,7 @@ export function InventoryManagement() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -340,7 +343,7 @@ export function InventoryManagement() {
           onClose={() => setEditingItem(null)}
           onSave={() => {
             setEditingItem(null)
-            window.location.reload()
+            setRefreshKey(prev => prev + 1)
           }}
         />
       )}
@@ -352,7 +355,7 @@ export function InventoryManagement() {
           onClose={() => setAdjustingItem(null)}
           onSave={() => {
             setAdjustingItem(null)
-            window.location.reload()
+            setRefreshKey(prev => prev + 1)
           }}
         />
       )}
@@ -521,7 +524,7 @@ function EditInventoryDialog({ item, onClose, onSave }: {
       onSave()
     } catch (error) {
       console.error("Error updating inventory item:", error)
-      alert("Failed to update inventory item. Please try again.")
+      toast.error("Failed to update inventory item")
     }
   }
 
@@ -707,7 +710,7 @@ function AdjustInventoryDialog({ item, onClose, onSave }: {
       onSave()
     } catch (error) {
       console.error("Error adjusting inventory:", error)
-      alert("Failed to adjust inventory. Please try again.")
+      toast.error("Failed to adjust inventory")
     }
   }
 

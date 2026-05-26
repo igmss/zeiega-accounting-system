@@ -151,11 +151,27 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
     // Prevent MIME type sniffing
     response.headers.set("X-Content-Type-Options", "nosniff")
 
-    // XSS protection
+    // XSS protection (legacy header for older browsers)
     response.headers.set("X-XSS-Protection", "1; mode=block")
 
     // Referrer policy
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+    // CHANGED: Content-Security-Policy — baseline policy
+    // 'unsafe-inline' needed for shadcn/ui inline styles; tighten over time
+    response.headers.set(
+        "Content-Security-Policy",
+        [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: https:",
+            "font-src 'self' data:",
+            "connect-src 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+        ].join("; ")
+    )
 
     return response
 }

@@ -172,7 +172,8 @@ export function InventoryMovements() {
               <p className="text-muted-foreground mt-4">Loading inventory movements...</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Date/Time</TableHead>
@@ -226,6 +227,7 @@ export function InventoryMovements() {
               ))}
             </TableBody>
           </Table>
+            </div>
           )}
         </CardContent>
       </Card>

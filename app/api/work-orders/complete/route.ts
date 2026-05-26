@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission } from "@/lib/auth"
 
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     const { workOrderId } = await request.json()
     
     if (!workOrderId) {

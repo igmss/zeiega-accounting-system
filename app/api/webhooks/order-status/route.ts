@@ -3,54 +3,10 @@ import { db, COLLECTIONS } from "@/lib/firebase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { orderStatusWebhookSchema } from "@/lib/validation/schemas"
+import { getCORSHeaders, handlePreflight } from "@/lib/cors"
 
-// Get allowed origins from environment variable
-function getAllowedOrigins(): string[] {
-  const origins = process.env.ALLOWED_ORIGINS || ""
-  const list = origins.split(",").map((o) => o.trim()).filter(Boolean)
-  
-  // Always include Cloud Functions domain for webhooks (FIX-005)
-  // Note: Firestore triggers/functions don't always send an 'origin' header, 
-  // but for those that do, we should permit this pattern.
-  // The actual verification is handled by the webhookSecret.
-  
-  // In development, allow localhost
-  if (process.env.NODE_ENV === "development") {
-    list.push("http://localhost:3000", "http://localhost:3001")
-  }
-  return list
-}
-
-// Apply CORS headers safely
-function getCORSHeaders(request: NextRequest): Record<string, string> {
-  const origin = request.headers.get("origin") || ""
-  const allowedOrigins = getAllowedOrigins()
-
-  // Only allow specific origins
-  if (allowedOrigins.includes(origin)) {
-    return {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-webhook-secret",
-    }
-  }
-
-  // Default: no CORS headers (browser will block)
-  return {}
-}
-
-// Handle CORS preflight requests
 export async function OPTIONS(request: NextRequest) {
-  const corsHeaders = getCORSHeaders(request)
-
-  if (Object.keys(corsHeaders).length === 0) {
-    return new NextResponse(null, { status: 403 })
-  }
-
-  return new NextResponse(null, {
-    status: 200,
-    headers: corsHeaders,
-  })
+  return handlePreflight(request, ["x-webhook-secret"]) ?? new NextResponse(null, { status: 204 })
 }
 
 
@@ -68,7 +24,7 @@ export async function POST(request: NextRequest) {
     if (!secret || secret !== expectedSecret) {
       return NextResponse.json(
         { error: "Unauthorized" },
-        { status: 401, headers: getCORSHeaders(request) }
+        { status: 401, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
       )
     }
     const parsed = orderStatusWebhookSchema.safeParse(body)
@@ -81,7 +37,7 @@ export async function POST(request: NextRequest) {
           message,
           issues: parsed.error.issues,
         },
-        { status: 400, headers: getCORSHeaders(request) }
+        { status: 400, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
       )
     }
 
@@ -100,6 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     const orderData = orderDoc.data()
+    const orderItems: Array<Record<string, unknown>> = orderData?.items || []
     const currentStatus = orderData?.status || "pending"
 
     if (!orderData) {
@@ -179,11 +136,7 @@ export async function POST(request: NextRequest) {
         if (existingWorkOrderSnapshot.empty) {
           console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
 
-          // Get order items for cost calculation
-          const orderDocForWO = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
-          const orderItems = orderDocForWO.exists ? (orderDocForWO.data()?.items || []) : [];
-
-          // Calculate costs from designs FIRST
+          // Calculate costs from designs FIRST (reusing orderItems from top of handler)
           console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
           const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
@@ -280,11 +233,8 @@ export async function POST(request: NextRequest) {
       } catch (innerError) {
         console.error("❌ Critical failure in work order creation block:", innerError);
         // Create basic fallback work order so the order is not lost (Bug 3 Fix)
-        // Note: orderItems was defined within the try block, let's ensure it's accessible or re-fetch
+        // orderItems is available from outer scope (single read at top of handler)
         try {
-          const orderDocForFallback = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
-          const itemsForFallback = orderDocForFallback.exists ? (orderDocForFallback.data()?.items || []) : [];
-          
           await db.collection(COLLECTIONS.WORK_ORDERS).add({
             sales_order_id: orderId,
             status: "pending",
@@ -300,7 +250,7 @@ export async function POST(request: NextRequest) {
             estimated_completion: null,
             completed_at: null,
             notes: `Fallback work order (critical error: ${innerError})`,
-            items: itemsForFallback,
+            items: orderItems,
             order_source: "web"
           });
           console.log(`✅ Created fallback work order for ${orderId} after critical failure`);
@@ -317,7 +267,7 @@ export async function POST(request: NextRequest) {
       status,
       timestamp: now.toISOString()
     }, {
-      headers: getCORSHeaders(request)
+      headers: getCORSHeaders(request, ["x-webhook-secret"])
     })
 
   } catch (error: any) {

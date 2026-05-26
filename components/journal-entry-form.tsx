@@ -292,6 +292,7 @@ export function JournalEntryForm({ onSuccess, onCancel }: JournalEntryFormProps)
                                             size="icon"
                                             onClick={() => removeLine(line.id)}
                                             disabled={lines.length <= 2}
+                                            aria-label="Delete line"
                                         >
                                             <Trash2 className="h-4 w-4 text-muted-foreground" />
                                         </Button>
@@ -322,7 +323,7 @@ export function JournalEntryForm({ onSuccess, onCancel }: JournalEntryFormProps)
                         <div className="border-t pt-2">
                             <div className="flex justify-between text-sm">
                                 <span>Difference:</span>
-                                <span className={`font-medium ${isBalanced ? "text-green-600" : "text-red-600"}`}>
+                                <span className={`font-medium ${isBalanced ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                                     {formatCurrency(difference)}
                                 </span>
                             </div>
@@ -339,9 +340,9 @@ export function JournalEntryForm({ onSuccess, onCancel }: JournalEntryFormProps)
                 )}
 
                 {success && (
-                    <Alert className="bg-green-50 border-green-200">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <AlertDescription className="text-green-800">
+                    <Alert className="bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800">
+                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <AlertDescription className="text-green-800 dark:text-green-300">
                             Journal entry created successfully!
                         </AlertDescription>
                     </Alert>

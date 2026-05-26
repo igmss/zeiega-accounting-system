@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 // API endpoint for recording loans with automatic balance synchronization
 export async function POST(request: Request) {
+  const auth = await requirePermission("accounting:create")
+  if (!auth.authorized) return auth.response
   try {
     const body = await request.json()
     const { amount, description, lenderName, loanType, receivedVia } = body
@@ -70,6 +73,8 @@ export async function POST(request: Request) {
 
 // GET endpoint to fetch loans
 export async function GET() {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     const { db, COLLECTIONS } = await import("@/lib/firebase")
     

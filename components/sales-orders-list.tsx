@@ -14,6 +14,7 @@ import { Search, Plus, Eye, Play, CheckCircle } from "lucide-react"
 import { SalesOrderDetails } from "./sales-order-details"
 import { ProcessOrdersDialog } from "./process-orders-dialog"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 
 export function SalesOrdersList() {
   const [orders, setOrders] = useState<any[]>([])
@@ -157,14 +158,14 @@ export function SalesOrdersList() {
         )
         
         // Show success message
-        alert(`Order completed! Invoice ${result.invoiceId} generated.`)
+        toast.success('Order completed!')
       } else {
         console.error('Failed to complete order')
-        alert('Failed to complete order. Please try again.')
+        toast.error('Failed to complete order')
       }
     } catch (error) {
       console.error('Error completing order:', error)
-      alert('Error completing order. Please try again.')
+      toast.error('Failed to complete order')
     }
   }
 
@@ -271,7 +272,8 @@ export function SalesOrdersList() {
       {/* Orders Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
+          <div className="overflow-x-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Order ID</TableHead>
@@ -319,7 +321,7 @@ export function SalesOrdersList() {
                     <div className="flex gap-2">
                       <Dialog>
                         <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)}>
+                          <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)} aria-label="View order details">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
@@ -332,13 +334,13 @@ export function SalesOrdersList() {
                       </Dialog>
 
                       {order.status === "pending" && order.order_source === "manual" && (
-                        <Button size="sm" onClick={() => handleStartProduction(order.id)}>
+                        <Button size="sm" onClick={() => handleStartProduction(order.id)} aria-label="Start production">
                           <Play className="h-4 w-4" />
                         </Button>
                       )}
 
                       {order.status === "producing" && order.order_source === "manual" && (
-                        <Button size="sm" onClick={() => handleCompleteOrder(order.id)}>
+                        <Button size="sm" onClick={() => handleCompleteOrder(order.id)} aria-label="Complete order">
                           <CheckCircle className="h-4 w-4" />
                         </Button>
                       )}
@@ -348,6 +350,7 @@ export function SalesOrdersList() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 

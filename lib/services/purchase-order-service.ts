@@ -86,7 +86,7 @@ export class PurchaseOrderService {
             const totalAmount = subtotal + taxAmount + shippingCost
 
             const now = new Date()
-            const poId = `PO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+            const poId = `PO-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
             const purchaseOrder: PurchaseOrder = {
                 id: poId,

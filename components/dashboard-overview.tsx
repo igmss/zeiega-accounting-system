@@ -303,11 +303,11 @@ export function DashboardOverview() {
                       </div>
                       <div className="flex items-center gap-2">
                         {wo.status === "completed" ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />
                         ) : wo.status === "in_progress" ? (
-                          <Wrench className="h-4 w-4 text-blue-500" />
+                          <Wrench className="h-4 w-4 text-blue-500 dark:text-blue-400" />
                         ) : (
-                          <AlertCircle className="h-4 w-4 text-orange-500" />
+                          <AlertCircle className="h-4 w-4 text-orange-500 dark:text-orange-400" />
                         )}
                         <span className="text-sm">{wo.completion}%</span>
                       </div>

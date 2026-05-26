@@ -92,7 +92,7 @@ export class BOMService {
             const totalCost = totalMaterialCost + totalLaborCost + totalOverheadCost
 
             const now = new Date()
-            const bomId = `BOM-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+            const bomId = `BOM-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
             const bom: BOM = {
                 id: bomId,

@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
+import { requireAuth } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     // Get dashboard data
     const [kpiData, monthlyRevenue, topCustomers, recentOrders, inventoryAlerts, workOrderStatus] = await Promise.all([
       EnhancedAccountingService.getKPIData(),

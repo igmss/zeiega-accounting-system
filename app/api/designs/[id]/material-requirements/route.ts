@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
+import { requireAuth } from "@/lib/auth";
 
 // GET /api/designs/[id]/material-requirements - Get material requirements for a design
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const quantity = parseInt(searchParams.get('quantity') || '1');

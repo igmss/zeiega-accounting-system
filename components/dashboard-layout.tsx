@@ -40,7 +40,7 @@ const navigation = [
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Expenses", href: "/expenses", icon: Receipt },
   { name: "Assets", href: "/assets", icon: Landmark },
-  { name: "Liabilities", href: "/liabilities", icon: CreditCard }, // Using CreditCard icon
+  { name: "Liabilities", href: "/liabilities", icon: Landmark },
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Chart of Accounts", href: "/chart-of-accounts", icon: BookOpen },
@@ -62,7 +62,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Mobile sidebar */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetTrigger asChild>
-          <Button variant="outline" size="icon" className="fixed top-4 left-4 z-40 md:hidden bg-transparent">
+          <Button variant="outline" size="icon" className="fixed top-4 left-4 z-40 md:hidden bg-transparent" aria-label="Toggle sidebar">
             <Menu className="h-4 w-4" />
           </Button>
         </SheetTrigger>
@@ -78,7 +78,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Main content */}
       <div className="md:pl-64">
-        <header className="bg-card border-b border-border px-4 py-4 md:px-6">
+        <header className="sticky top-0 z-30 bg-card border-b border-border px-4 py-4 md:px-6">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-card-foreground">Accounting & Finance System</h1>
             <div className="flex items-center gap-4">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DesignService } from '@/lib/services/design-service';
+import { requirePermission } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,10 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
     
     for (const design of designs) {
-      try {
+  const auth = await requirePermission("designs:create");
+  if (!auth.authorized) return auth.response;
+
+  try {
         // Calculate correct total cost
         // Labor cost = cost per hour × manufacturing time
         const laborCostPerHour = design.laborCost || 0;

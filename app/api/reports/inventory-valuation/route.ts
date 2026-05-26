@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requireAuth } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     // Fetch inventory items
     const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
     const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({

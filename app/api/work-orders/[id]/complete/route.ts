@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderMaterialService } from "@/lib/services/work-order-material-service";
+import { requirePermission } from "@/lib/auth";
 
 // POST /api/work-orders/[id]/complete - Complete a work order
 export async function POST(
@@ -7,6 +8,9 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     const { designId, quantity = 1 } = await request.json();
 
     if (!designId) {

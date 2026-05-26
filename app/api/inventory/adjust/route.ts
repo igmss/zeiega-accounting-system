@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission } from "@/lib/auth"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -19,6 +20,9 @@ interface JournalDocument {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("inventory:create")
+    if (!auth.authorized) return auth.response
+
     const { itemId, adjustmentQty, reason, adjustmentType } = await request.json()
 
     if (!itemId || adjustmentQty === undefined || !reason) {

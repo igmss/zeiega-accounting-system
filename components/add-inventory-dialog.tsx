@@ -9,10 +9,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 
 export function AddInventoryDialog() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
     sku: "",
@@ -66,11 +69,10 @@ export function AddInventoryDialog() {
       })
       setIsOpen(false)
       
-      // Refresh the page to show the new item
-      window.location.reload()
+      router.refresh()
     } catch (error) {
       console.error("Error adding inventory item:", error)
-      alert("Failed to add inventory item. Please try again.")
+      toast.error("Failed to add inventory item")
     }
   }
 

@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
 import { db, COLLECTIONS } from "@/lib/firebase";
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
 // GET /api/work-orders - Get all work orders with design information
 export async function GET() {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     console.log("Fetching work orders with design information...");
 
@@ -19,7 +22,7 @@ export async function GET() {
   } catch (error) {
     console.error("Error fetching work orders:", error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { success: false, error: "Failed to fetch work orders" },
       { status: 500 }
     );
   }
@@ -27,6 +30,8 @@ export async function GET() {
 
 // POST /api/work-orders - Create a new work order with design integration
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission("work-orders:create")
+  if (!auth.authorized) return auth.response
   try {
     const workOrderData = await request.json();
 
@@ -128,13 +133,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating work order:", error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { success: false, error: "Failed to create work order" },
       { status: 500 }
     );
   }
 }
 
 export async function PUT(request: Request) {
+  const auth = await requirePermission("work-orders:create")
+  if (!auth.authorized) return auth.response
   try {
     const { id, ...workOrderData } = await request.json()
 

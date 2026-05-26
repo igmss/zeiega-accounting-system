@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
-// API endpoint for recording expenses with automatic balance synchronization
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("accounting:create")
+    if (!auth.authorized) return auth.response
+
     const body = await request.json()
     const { amount, description, expenseAccount, paymentMethod } = body
 
@@ -88,9 +91,11 @@ export async function POST(request: Request) {
   }
 }
 
-// GET endpoint to fetch expenses
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     // Get all journal entries that represent expenses
     // We look for entries of type 'EXPENSE' OR entries that hit 5xxx/6xxx accounts
     const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)

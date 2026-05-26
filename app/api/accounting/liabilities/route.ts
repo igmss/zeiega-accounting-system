@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
-// API endpoint for recording liabilities (Loans, Payables) matching Assets API structure
 export async function POST(request: Request) {
     try {
+        const auth = await requirePermission("accounting:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
         const { amount, description, liabilityAccount, offsetAccount, transactionType } = body
         // transactionType: 'incur' (New Loan/Payable) or 'repay' (Repayment)
@@ -74,6 +77,9 @@ export async function POST(request: Request) {
 
 export async function GET() {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
             .where('type', 'in', ['LIABILITY_INCURED', 'LIABILITY_REPAYMENT', 'OPENING_BALANCE']) // Include Opening?
             .orderBy('date', 'desc')

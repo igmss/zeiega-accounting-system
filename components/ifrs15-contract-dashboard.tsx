@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { FileText, AlertTriangle, DollarSign, CheckCircle2, Clock } from "lucide-react"
 
 interface Contract {
@@ -72,14 +72,14 @@ export function IFRS15ContractDashboard() {
       })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "Contract created", description: data.contractId })
+        toast.success(`Contract created: ${data.contractId}`)
         fetchContracts()
         setNewContract({ salesOrderId: "", customerName: "", description: "", contractPrice: "", totalEstimatedCost: "", estimatedMonths: "12" })
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to create contract", variant: "destructive" })
+      toast.error("Failed to create contract")
     } finally {
       setLoading(false)
     }
@@ -94,13 +94,13 @@ export function IFRS15ContractDashboard() {
       })
       const data = await res.json()
       if (data.success) {
-        toast({ title: "Revenue recognized", description: `EGP ${data.recognition?.revenueThisPeriod?.toLocaleString()}` })
+        toast.success(`Revenue recognized: EGP ${data.recognition?.revenueThisPeriod?.toLocaleString()}`)
         fetchContracts()
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Failed to recognize revenue", variant: "destructive" })
+      toast.error("Failed to recognize revenue")
     }
   }
 
@@ -113,12 +113,12 @@ export function IFRS15ContractDashboard() {
       })
       const data = await res.json()
       if (data.isOnerous) {
-        toast({ title: "⚠ Onerous Contract", description: `Expected loss: EGP ${data.expectedLoss?.toLocaleString()}`, variant: "destructive" })
+        toast.error(`Onerous Contract: Expected loss EGP ${data.expectedLoss?.toLocaleString()}`)
       } else {
-        toast({ title: "Contract healthy", description: "No onerous contract detected" })
+        toast.success("Contract healthy: No onerous contract detected")
       }
     } catch {
-      toast({ title: "Error", description: "Failed to check contract", variant: "destructive" })
+      toast.error("Failed to check contract")
     }
   }
 

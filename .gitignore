@@ -152,3 +152,4 @@ scripts/test-order-status-update.js
 t-secret-123*
 h origin main
 .vercel
+.env*.local

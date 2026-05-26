@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RevenueRecognitionService } from "@/lib/services/revenue-recognition-service"
+import { requireAuth } from "@/lib/auth"
 
 export async function GET() {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     const contracts = await RevenueRecognitionService.getActiveContracts()
     return NextResponse.json({ contracts })
   } catch (error) {

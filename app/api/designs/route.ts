@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
 import type { DesignFilter } from "@/lib/types/designs";
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
 // GET /api/designs - Get all designs with optional filtering
 export async function GET(request: NextRequest) {
+  const auth = await requireAuth()
+  if (!auth.authenticated) return auth.response
   try {
     console.log("Starting designs API request...");
     
@@ -55,6 +58,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/designs - Create a new design
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission("designs:create")
+  if (!auth.authorized) return auth.response
   try {
     const designData = await request.json();
     

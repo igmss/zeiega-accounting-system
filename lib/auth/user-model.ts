@@ -39,15 +39,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
         "journal-entries:*",
         "invoices:*",
         "payments:*",
-        "reports:*",
+        "reports:view",
         "customers:view",
         "sales-orders:view",
+        "chart-of-accounts:view",
+        "accounting:*",
+        "work-orders:view",
     ],
     [UserRole.WAREHOUSE]: [
         "dashboard:view",
         "inventory:*",
         "purchase-orders:*",
-        "vendors:view",
+        "vendors:*",
         "work-orders:view",
         "bom:view",
     ],
@@ -153,7 +156,7 @@ export class UserStore {
                 return { success: false, error: "Email already exists" }
             }
 
-            const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+            const userId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
             const hashedPassword = await bcrypt.hash(data.password, 12)
             const now = new Date()
 

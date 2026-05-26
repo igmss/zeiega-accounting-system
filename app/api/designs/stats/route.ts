@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/designs/stats - Get design statistics
 export async function GET() {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     console.log("Fetching design statistics");
 

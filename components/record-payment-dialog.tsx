@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useRouter } from "next/navigation"
 import { DollarSign } from "lucide-react"
+import { toast } from "sonner"
 
 interface RecordPaymentDialogProps {
   invoice: {
@@ -20,6 +22,7 @@ interface RecordPaymentDialogProps {
 }
 
 export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [paymentData, setPaymentData] = useState({
     amount: invoice.total_amount.toString(),
@@ -64,19 +67,18 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
         })
 
         if (invoiceResponse.ok) {
-          alert('Payment recorded successfully! Invoice marked as paid.')
+          toast.success('Payment recorded successfully! Invoice marked as paid.')
           setIsOpen(false)
-          // Refresh the page or trigger a refresh
-          window.location.reload()
+          router.refresh()
         } else {
-          alert('Payment recorded but failed to update invoice status.')
+          toast.warning('Payment recorded but failed to update invoice status')
         }
       } else {
-        alert('Failed to record payment. Please try again.')
+        toast.error('Failed to record payment')
       }
     } catch (error) {
       console.error('Error recording payment:', error)
-      alert('Error recording payment. Please try again.')
+      toast.error('Failed to record payment')
     }
   }
 

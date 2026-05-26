@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DesignService } from "@/lib/services/design-service";
+import { requirePermission } from "@/lib/auth";
 
 // POST /api/designs/import - Import designs from products collection
 export async function POST() {
+  const auth = await requirePermission("designs:create");
+  if (!auth.authorized) return auth.response;
+
   try {
     console.log("Starting design import from products collection");
 

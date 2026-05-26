@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { BOMService } from "@/lib/services/bom-service"
 import { validateRequestBody, createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
 import { bomSchema } from "@/lib/validation/schemas"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 // GET /api/bom - Get all BOMs
 export async function GET(request: NextRequest) {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
     try {
         const { searchParams } = new URL(request.url)
         const designId = searchParams.get("designId") || undefined
@@ -21,6 +24,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/bom - Create a new BOM
 export async function POST(request: NextRequest) {
+    const auth = await requirePermission("bom:create")
+    if (!auth.authorized) return auth.response
     try {
         const body = await request.json()
 

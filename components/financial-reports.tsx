@@ -89,7 +89,7 @@ export function FinancialReports() {
       <Tabs defaultValue="profit-loss" className="space-y-4">
         <div className="space-y-2">
           {/* Row 1 - Core Financial Statements */}
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
             <TabsTrigger value="profit-loss">P&L</TabsTrigger>
             <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
             <TabsTrigger value="trial-balance">Trial Balance</TabsTrigger>
@@ -97,7 +97,7 @@ export function FinancialReports() {
             <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
           </TabsList>
           {/* Row 2 - Operational Reports */}
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
             <TabsTrigger value="cogm">COGM</TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
             <TabsTrigger value="ar-aging">AR Aging</TabsTrigger>

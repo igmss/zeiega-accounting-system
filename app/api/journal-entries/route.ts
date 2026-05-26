@@ -4,12 +4,15 @@ import { db, COLLECTIONS } from "@/lib/firebase"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
 import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
 import { authOptions } from "@/lib/auth/auth-options"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 /**
  * GET /api/journal-entries
  * Get all journal entries with optional filtering
  */
 export async function GET(request: NextRequest) {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
     try {
         const searchParams = request.nextUrl.searchParams
         const limit = parseInt(searchParams.get("limit") || "50")
@@ -52,9 +55,8 @@ export async function GET(request: NextRequest) {
             count: filteredEntries.length,
         })
     } catch (error) {
-        return createErrorResponse(
-            error instanceof Error ? error.message : "Failed to fetch journal entries"
-        )
+        console.error("Error fetching journal entries:", error instanceof Error ? error.message : error)
+        return createErrorResponse("Failed to fetch journal entries")
     }
 }
 
@@ -63,6 +65,8 @@ export async function GET(request: NextRequest) {
  * Create a new journal entry
  */
 export async function POST(request: NextRequest) {
+    const auth = await requirePermission("journal-entries:create")
+    if (!auth.authorized) return auth.response
     try {
         const body = await request.json()
         const { date, memo, reference, entries, type } = body
@@ -152,8 +156,6 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error("Error creating journal entry:", error)
-        return createErrorResponse(
-            error instanceof Error ? error.message : "Failed to create journal entry"
-        )
+        return createErrorResponse("Failed to create journal entry")
     }
 }

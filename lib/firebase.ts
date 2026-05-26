@@ -1,36 +1,46 @@
 import { initializeApp, getApps, cert } from "firebase-admin/app"
 import { getFirestore, FieldValue } from "firebase-admin/firestore"
 
-// Validate required environment variables
-const requiredEnvVars = [
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_CLIENT_EMAIL',
-  'FIREBASE_PRIVATE_KEY'
-] as const
+let _db: ReturnType<typeof getFirestore> | null = null
 
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}. Please check your .env.local file.`)
+function getDb(): ReturnType<typeof getFirestore> {
+  if (_db) return _db
+  _db = getFirestore()
+  return _db
+}
+
+function ensureInitialized() {
+  if (getApps().length) return
+  const requiredEnvVars = [
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_PRIVATE_KEY'
+  ] as const
+  for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+      throw new Error(`Missing required environment variable: ${envVar}. Please check your .env.local file.`)
+    }
   }
-}
-
-// Service account configuration from environment variables
-const serviceAccount = {
-  type: "service_account",
-  project_id: process.env.FIREBASE_PROJECT_ID!,
-  private_key: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL!,
-}
-
-// Initialize Firebase Admin SDK
-if (!getApps().length) {
   initializeApp({
-    credential: cert(serviceAccount as any),
+    credential: cert({
+      type: "service_account",
+      project_id: process.env.FIREBASE_PROJECT_ID!,
+      private_key: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL!,
+    } as any),
     projectId: process.env.FIREBASE_PROJECT_ID,
   })
 }
 
-export const db = getFirestore()
+export const db = new Proxy({} as ReturnType<typeof getFirestore>, {
+  get(_target, prop: string) {
+    ensureInitialized()
+    const real = getDb()
+    const value = (real as any)[prop]
+    return typeof value === "function" ? value.bind(real) : value
+  },
+}) as ReturnType<typeof getFirestore>
+
 export { FieldValue }
 
 
@@ -64,4 +74,5 @@ export const COLLECTIONS = {
   CHANGE_ORDERS: "acc_change_orders",           // Contract modifications (IFRS 15.18)
   RETENTION_SCHEDULES: "acc_retention_schedules", // Customer retention holdbacks
   BUDGET_LINES: "acc_budget_lines",             // Budget vs actual per account/period
+  ACCOUNT_BALANCES: "acc_account_balances",     // Running balance cache per account
 } as const

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { toast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { Lock, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
 
 export function YearEndClosePanel() {
@@ -17,7 +17,7 @@ export function YearEndClosePanel() {
 
   const executeClose = async () => {
     if (!confirmed) {
-      toast({ title: "Confirmation required", description: "Check the confirmation box first", variant: "destructive" })
+      toast.error("Confirmation required: Check the confirmation box first")
       return
     }
     setLoading(true)
@@ -31,12 +31,12 @@ export function YearEndClosePanel() {
       const data = await res.json()
       if (data.success) {
         setResult(data)
-        toast({ title: "Year closed", description: `FY${fiscalYear} closed. Net Income: EGP ${data.netIncome?.toLocaleString()}` })
+        toast.success(`FY${fiscalYear} closed. Net Income: EGP ${data.netIncome?.toLocaleString()}`)
       } else {
-        toast({ title: "Error", description: data.error, variant: "destructive" })
+        toast.error(data.error)
       }
     } catch {
-      toast({ title: "Error", description: "Year-end close failed", variant: "destructive" })
+      toast.error("Year-end close failed")
     } finally {
       setLoading(false)
       setConfirmed(false)

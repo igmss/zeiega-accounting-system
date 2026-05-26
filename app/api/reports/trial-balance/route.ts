@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
+import { requireAuth } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest) {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const { searchParams } = new URL(request.url)
         const asOf = searchParams.get("asOf")
 

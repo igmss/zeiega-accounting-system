@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server"
 import { VendorService } from "@/lib/services/vendor-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
+import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 // GET /api/vendors - Get all vendors
 export async function GET(request: NextRequest) {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
     try {
         const { searchParams } = new URL(request.url)
         const status = searchParams.get("status") as "active" | "inactive" | undefined
@@ -20,6 +23,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/vendors - Create a new vendor
 export async function POST(request: NextRequest) {
+    const auth = await requirePermission("vendors:create")
+    if (!auth.authorized) return auth.response
     try {
         const body = await request.json()
 

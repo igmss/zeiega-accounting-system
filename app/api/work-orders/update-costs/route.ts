@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, COLLECTIONS } from "@/lib/firebase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { requirePermission } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requirePermission("work-orders:create")
+    if (!auth.authorized) return auth.response
+
     const { workOrderId, orderId } = await request.json();
 
     if (!workOrderId || !orderId) {

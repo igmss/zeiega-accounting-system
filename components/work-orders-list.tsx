@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Play, CheckCircle, Clock, Wrench } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 import { WorkOrderDetails } from "./work-order-details"
 
 export function WorkOrdersList() {
@@ -78,14 +79,14 @@ export function WorkOrdersList() {
           setWorkOrders(Array.isArray(workOrdersData) ? workOrdersData : [])
         }
         setIsUpdateDialogOpen(false)
-        alert('Materials and labor updated successfully!')
+        toast.success('Materials and labor updated successfully!')
       } else {
         console.error('Failed to update materials')
-        alert('Failed to update materials. Please try again.')
+        toast.error('Failed to update materials')
       }
     } catch (error) {
       console.error('Error updating materials:', error)
-      alert('Error updating materials. Please try again.')
+      toast.error('Failed to update materials')
     }
   }
 
@@ -181,10 +182,10 @@ export function WorkOrdersList() {
           if (completeResponse.ok) {
             const result = await completeResponse.json()
             console.log('Order completed:', result)
-            alert(`Work order completed! Order ${workOrder.sales_order_id} completed and invoice ${result.invoiceId} generated.`)
+            toast.success('Work order completed!')
           } else {
             console.error('Failed to complete order workflow')
-            alert('Work order completed but failed to complete order workflow.')
+            toast.warning('Work order completed but failed to complete order workflow')
           }
         }
 
@@ -211,11 +212,11 @@ export function WorkOrdersList() {
         }
       } else {
         console.error('Failed to update work order status')
-        alert('Failed to complete work order. Please try again.')
+        toast.error('Failed to complete work order')
       }
     } catch (error) {
       console.error('Error completing work order:', error)
-      alert('Error completing work order. Please try again.')
+      toast.error('Failed to complete work order')
     }
   }
 
@@ -253,7 +254,8 @@ export function WorkOrdersList() {
           <CardTitle>Active Work Orders</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <div className="overflow-x-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Work Order ID</TableHead>
@@ -295,13 +297,13 @@ export function WorkOrdersList() {
                         ? (
                           <>
                             <span>{formatCurrency(totalMaterialCost(workOrder.raw_materials_used))}</span>
-                            <span className="text-xs text-green-600">Actual</span>
+                            <span className="text-xs text-green-600 dark:text-green-400">Actual</span>
                           </>
                         )
                         : (
                           <>
                             <span>{formatCurrency(workOrder.estimated_cost || 0)}</span>
-                            <span className="text-xs text-blue-600">Estimated</span>
+                            <span className="text-xs text-blue-600 dark:text-blue-400">Estimated</span>
                           </>
                         )
                       }
@@ -328,13 +330,13 @@ export function WorkOrdersList() {
                       </Dialog>
 
                       {workOrder.status === "pending" && (
-                        <Button size="sm" onClick={() => handleStartWorkOrder(workOrder.id)}>
+                        <Button size="sm" onClick={() => handleStartWorkOrder(workOrder.id)} aria-label="Start work order">
                           <Play className="h-4 w-4" />
                         </Button>
                       )}
 
                       {workOrder.status === "in_progress" && (
-                        <Button size="sm" onClick={() => handleCompleteWorkOrder(workOrder.id)}>
+                        <Button size="sm" onClick={() => handleCompleteWorkOrder(workOrder.id)} aria-label="Complete work order">
                           <CheckCircle className="h-4 w-4" />
                         </Button>
                       )}
@@ -347,6 +349,7 @@ export function WorkOrdersList() {
                             setSelectedWorkOrder(workOrder)
                             setIsUpdateDialogOpen(true)
                           }}
+                          aria-label="Manage work order"
                         >
                           <Wrench className="h-4 w-4" />
                         </Button>
@@ -357,6 +360,7 @@ export function WorkOrdersList() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
