@@ -161,8 +161,8 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
     response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 
     const scriptSrc = process.env.NODE_ENV === "development"
-        ? `'self' 'nonce-${nonce}' 'unsafe-inline' 'unsafe-eval'`
-        : `'self' 'nonce-${nonce}' 'unsafe-inline'`
+        ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
+        : `'self' 'nonce-${nonce}' 'strict-dynamic'`
 
     response.headers.set(
         "Content-Security-Policy",
