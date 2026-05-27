@@ -4,6 +4,7 @@ import { OrderItemDesignService } from "@/lib/services/order-item-design-service
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { orderStatusWebhookSchema } from "@/lib/validation/schemas"
 import { getCORSHeaders, handlePreflight } from "@/lib/cors"
+import { formatCurrency } from "@/lib/utils"
 
 export async function OPTIONS(request: NextRequest) {
   return handlePreflight(request, ["x-webhook-secret"]) ?? new NextResponse(null, { status: 204 })

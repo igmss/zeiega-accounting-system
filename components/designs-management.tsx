@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { formatCurrency } from "@/lib/utils";
 import { 
   Plus, 
   Edit, 

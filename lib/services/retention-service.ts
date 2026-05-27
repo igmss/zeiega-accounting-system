@@ -21,6 +21,7 @@ import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import type { RetentionSchedule } from "../types"
 import { EnhancedAccountingService, JournalEntryType } from "./enhanced-accounting-service"
+import { formatCurrency } from "@/lib/utils"
 
 export class RetentionService {
   private static readonly COLLECTION = COLLECTIONS.RETENTION_SCHEDULES

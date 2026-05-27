@@ -3,6 +3,12 @@ import { getToken } from "next-auth/jwt"
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 
+function generateNonce(): string {
+    const array = new Uint8Array(16)
+    crypto.getRandomValues(array)
+    return btoa(String.fromCharCode(...array))
+}
+
 // Get allowed origins from environment variable
 const getAllowedOrigins = (): string[] => {
     const origins = process.env.ALLOWED_ORIGINS || ""
@@ -104,13 +110,16 @@ function isProtectedPage(pathname: string): boolean {
 /**
  * Check rate limiting using Redis
  */
-async function checkRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number }> {
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number; reset: number; redisAvailable: boolean }> {
     if (!process.env.UPSTASH_REDIS_REST_URL) {
-        // Fallback or skip if not configured (should be documented)
-        return { allowed: true, remaining: 100 }
+        return { allowed: false, remaining: 0, reset: 0, redisAvailable: false }
     }
-    const { success, remaining } = await ratelimit.limit(ip)
-    return { allowed: success, remaining }
+    try {
+        const { success, remaining, reset } = await ratelimit.limit(ip)
+        return { allowed: success, remaining, reset, redisAvailable: true }
+    } catch {
+        return { allowed: false, remaining: 0, reset: 0, redisAvailable: false }
+    }
 }
 
 /**
@@ -144,32 +153,29 @@ function applyCORSHeaders(response: NextResponse, origin: string | null): NextRe
 /**
  * Apply security headers
  */
-function applySecurityHeaders(response: NextResponse): NextResponse {
-    // Prevent clickjacking
+function applySecurityHeaders(response: NextResponse, nonce: string): NextResponse {
     response.headers.set("X-Frame-Options", "DENY")
-
-    // Prevent MIME type sniffing
     response.headers.set("X-Content-Type-Options", "nosniff")
-
-    // XSS protection (legacy header for older browsers)
     response.headers.set("X-XSS-Protection", "1; mode=block")
-
-    // Referrer policy
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 
-    // CHANGED: Content-Security-Policy — baseline policy
-    // 'unsafe-inline' needed for shadcn/ui inline styles; tighten over time
+    const scriptSrc = process.env.NODE_ENV === "development"
+        ? `'self' 'nonce-${nonce}' 'unsafe-inline' 'unsafe-eval'`
+        : `'self' 'nonce-${nonce}' 'unsafe-inline'`
+
     response.headers.set(
         "Content-Security-Policy",
         [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            `script-src ${scriptSrc}`,
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",
             "connect-src 'self'",
             "object-src 'none'",
             "base-uri 'self'",
+            "frame-ancestors 'none'",
         ].join("; ")
     )
 
@@ -180,6 +186,7 @@ export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
     const origin = request.headers.get("origin")
     const ip = getClientIP(request)
+    const nonce = generateNonce()
 
     // Handle preflight requests
     if (request.method === "OPTIONS") {
@@ -187,23 +194,41 @@ export async function middleware(request: NextRequest) {
         return applyCORSHeaders(response, origin)
     }
 
+    let rateLimitInfo: { remaining: number; reset: number } | null = null
+
     // Apply rate limiting to API routes
     if (pathname.startsWith("/api/")) {
         const rateLimit = await checkRateLimit(ip)
+
+        if (!rateLimit.redisAvailable) {
+            const response = NextResponse.json(
+                { success: false, error: "Service temporarily unavailable" },
+                { status: 503 }
+            )
+            response.headers.set("Retry-After", "30")
+            response.headers.set("X-RateLimit-Warning", "Redis unavailable")
+            return response
+        }
+
+        rateLimitInfo = { remaining: rateLimit.remaining, reset: rateLimit.reset }
+
         if (!rateLimit.allowed) {
             const response = NextResponse.json(
                 { success: false, error: "Too many requests. Please try again later." },
                 { status: 429 }
             )
             response.headers.set("Retry-After", "60")
+            response.headers.set("X-RateLimit-Limit", "100")
+            response.headers.set("X-RateLimit-Remaining", "0")
+            response.headers.set("X-RateLimit-Reset", String(rateLimit.reset))
             return response
         }
     }
 
-    // Check for NextAuth session token
+    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
     const token = await getToken({
         req: request,
-        secret: process.env.NEXTAUTH_SECRET
+        secret: process.env.MIDDLEWARE_SECRET || process.env.NEXTAUTH_SECRET
     })
 
     // Handle protected pages - redirect to login if not authenticated
@@ -221,12 +246,25 @@ export async function middleware(request: NextRequest) {
         )
     }
 
+    // Propagate nonce to server components via request header
+    request.headers.set("x-csp-nonce", nonce)
+
     // Continue with the request
     const response = NextResponse.next()
 
     // Apply headers
     applyCORSHeaders(response, origin)
-    applySecurityHeaders(response)
+    applySecurityHeaders(response, nonce)
+
+    // Apply rate limit info headers to API responses
+    if (rateLimitInfo) {
+        response.headers.set("X-RateLimit-Limit", "100")
+        response.headers.set("X-RateLimit-Remaining", String(rateLimitInfo.remaining))
+        response.headers.set("X-RateLimit-Reset", String(rateLimitInfo.reset))
+    }
+
+    // Expose nonce to client for inline scripts
+    response.headers.set("X-CSP-Nonce", nonce)
 
     return response
 }

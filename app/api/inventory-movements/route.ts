@@ -25,6 +25,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     const movementData = await request.json()
     
     // Add timestamps

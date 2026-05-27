@@ -2,6 +2,7 @@ import { db, COLLECTIONS, FieldValue } from "../firebase";
 import { DesignService } from "./design-service";
 import { EnhancedAccountingService } from "./enhanced-accounting-service";
 import type { MaterialRequirement } from "../types/designs";
+import { formatCurrency } from "@/lib/utils";
 
 export class WorkOrderMaterialService {
   /**

@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { timingSafeEqual } from "crypto"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { requireAdmin } from "@/lib/auth/auth-helpers"
 
@@ -8,9 +9,15 @@ export async function GET(request: NextRequest) {
   const auth = await requireAdmin()
   if (!auth.authorized) return auth.response
   try {
-    // Verify cron secret for security
     const authHeader = request.headers.get("authorization")
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const expected = process.env.CRON_SECRET
+    if (!authHeader || !expected || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    const provided = authHeader.slice(7)
+    const bufA = Buffer.from(provided)
+    const bufB = Buffer.from(expected)
+    if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 

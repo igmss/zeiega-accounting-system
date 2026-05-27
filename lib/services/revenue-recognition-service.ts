@@ -1,5 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
+import { formatCurrency } from "@/lib/utils"
 
 /**
  * Contract for IFRS 15 over-time revenue recognition.

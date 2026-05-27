@@ -7,7 +7,10 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-    "test": "jest"
+    "test": "jest",
+    "audit": "npm audit --audit-level=moderate",
+    "audit:fix": "npm audit fix",
+    "security": "npm run audit && npm run lint"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

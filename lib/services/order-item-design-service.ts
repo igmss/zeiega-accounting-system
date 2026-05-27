@@ -3,7 +3,6 @@ import { DesignService } from "./design-service";
 import { SizeCostService } from "./size-cost-service";
 import { BOMService } from "./bom-service";
 import { formatCurrency } from "@/lib/utils"
-import { formatCurrency } from "@/lib/utils"
 
 export class OrderItemDesignService {
   /**

@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { DesignService } from "@/lib/services/design-service";
-import { requirePermission, requireAuth } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
+
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requirePermission("designs:create");
   if (!auth.authorized) return auth.response;
 
   try {
-    const secret = request.headers.get("x-cron-secret") || request.headers.get("x-webhook-secret");
-    const expected = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
-    if (!secret || secret !== expected) {
+    const secret = request.headers.get("x-cron-secret");
+    const expected = process.env.CRON_SECRET;
+    if (!secret || !expected || !safeCompare(secret, expected)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

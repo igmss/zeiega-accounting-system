@@ -15,6 +15,7 @@
 import { db, COLLECTIONS } from "../firebase"
 import type { InventoryLayer } from "../types"
 import { FieldValue } from "../firebase"
+import { formatCurrency } from "@/lib/utils"
 
 export interface FIFOIssueResult {
   success: boolean
