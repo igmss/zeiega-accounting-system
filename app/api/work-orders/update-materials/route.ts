@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { formatCurrency } from "@/lib/utils"
 import { ACCOUNT_CODES } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 
@@ -45,7 +46,7 @@ async function syncInventoryWithChartOfAccounts() {
     // Also update CASH account balance based on journal entries
     await syncCashBalance()
     
-    console.log(`✅ Auto-synced INVENTORY_RAW balance to EGP ${totalInventoryValue.toLocaleString()}`)
+    console.log(`✅ Auto-synced INVENTORY_RAW balance to ${formatCurrency(totalInventoryValue)}`)
   } catch (error) {
     console.error("Error auto-syncing inventory with Chart of Accounts:", error)
   }
@@ -80,7 +81,7 @@ async function syncCashBalance() {
       last_updated: now
     })
     
-    console.log(`✅ Auto-synced CASH balance to EGP ${cashBalance.toLocaleString()}`)
+    console.log(`✅ Auto-synced CASH balance to ${formatCurrency(cashBalance)}`)
   } catch (error) {
     console.error("Error auto-syncing CASH balance:", error)
   }

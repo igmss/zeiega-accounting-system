@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { formatCurrency, formatNumber } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -173,10 +174,10 @@ export function OverheadConfigPanel() {
             <div className="rounded-lg bg-muted p-4">
               <div className="text-sm text-muted-foreground">POHR Result</div>
               <div className="text-2xl font-bold">
-                EGP {pohr.toLocaleString()} / {allocationBase}
+                {formatCurrency(pohr)} / {allocationBase}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Formula: EGP {Number(estimatedOH).toLocaleString()} ÷ {Number(estimatedActivity).toLocaleString()} {allocationBase}
+                Formula: {formatCurrency(estimatedOH)} ÷ {formatNumber(estimatedActivity)} {allocationBase}
               </div>
             </div>
           )}
@@ -206,9 +207,9 @@ export function OverheadConfigPanel() {
                 {configs.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{BASE_LABELS[c.allocationBase]}</TableCell>
-                    <TableCell>EGP {c.estimatedTotalOH.toLocaleString()}</TableCell>
-                    <TableCell>{c.estimatedActivityLevel.toLocaleString()}</TableCell>
-                    <TableCell>EGP {c.pohr}/unit</TableCell>
+                    <TableCell>{formatCurrency(c.estimatedTotalOH)}</TableCell>
+                    <TableCell>{formatNumber(c.estimatedActivityLevel)}</TableCell>
+                    <TableCell>{formatCurrency(c.pohr)}/unit</TableCell>
                     <TableCell>
                       <Badge variant={c.isActive ? "default" : "secondary"}>
                         {c.isActive ? "Active" : "Inactive"}

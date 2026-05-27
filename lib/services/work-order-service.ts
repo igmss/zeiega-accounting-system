@@ -2,6 +2,7 @@ import { db, COLLECTIONS } from "../firebase";
 import { DesignService } from "./design-service";
 import { OrderItemDesignService } from "./order-item-design-service";
 import type { WorkOrder } from "../types";
+import { formatCurrency } from "@/lib/utils"
 
 export class WorkOrderService {
   /**
@@ -64,7 +65,7 @@ export class WorkOrderService {
       // Save work order to database
       const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
 
-      console.log(`✅ Created work order ${workOrderRef.id} with estimated cost EGP ${estimatedTotalCost}`);
+      console.log(`✅ Created work order ${workOrderRef.id} with estimated cost ${formatCurrency(estimatedTotalCost)}`);
 
       return {
         success: true,
@@ -106,7 +107,7 @@ export class WorkOrderService {
         updated_at: new Date()
       });
 
-      console.log(`Updated work order ${workOrderId} costs: Materials EGP ${materialCosts}, Labor EGP ${laborCost}, Total EGP ${totalCost}`);
+      console.log(`Updated work order ${workOrderId} costs: Materials ${formatCurrency(materialCosts)}, Labor ${formatCurrency(laborCost)}, Total ${formatCurrency(totalCost)}`);
     } catch (error) {
       console.error("Error updating work order costs:", error);
       throw new Error("Failed to update work order costs");
@@ -261,7 +262,7 @@ export class WorkOrderService {
             workOrder.labor_cost = costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0);
             workOrder.overhead_cost = costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0);
 
-            console.log(`Recalculated costs for work order ${workOrderId}: Total EGP ${costCalculation.totalEstimatedCost}`);
+            console.log(`Recalculated costs for work order ${workOrderId}: Total ${formatCurrency(costCalculation.totalEstimatedCost)}`);
           }
         } catch (error) {
           console.warn(`Failed to recalculate costs for work order ${workOrderId}:`, error);

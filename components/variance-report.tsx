@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { formatCurrency } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,7 +40,7 @@ function VarianceRow({ label, amount }: { label: string; amount: number }) {
       <div className="flex items-center gap-2">
         <span className={`text-sm font-medium ${isZero ? "text-muted-foreground" : isFav ? "text-green-600" : "text-red-600"}`}>
           {isFav ? "(F) " : isZero ? "" : "(U) "}
-          EGP {absAmount.toLocaleString()}
+          {formatCurrency(absAmount)}
         </span>
         {isZero ? <Minus className="h-4 w-4 text-muted-foreground" /> :
          isFav ? <TrendingDown className="h-4 w-4 text-green-600" /> :
@@ -222,7 +223,7 @@ export function VarianceReport() {
                   {variance.isFavorable ? "FAVORABLE" : "UNFAVORABLE"}
                 </Badge>
                 <span className="text-lg font-bold">
-                  Total: EGP {Math.abs(variance.totalVariance).toLocaleString()}
+                  Total: {formatCurrency(Math.abs(variance.totalVariance))}
                 </span>
               </div>
 

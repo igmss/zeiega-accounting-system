@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
           const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
           if (costCalculation.success) {
-            console.log(`✅ Cost calculation successful: EGP ${costCalculation.totalEstimatedCost}`);
+            console.log(`✅ Cost calculation successful: ${formatCurrency(costCalculation.totalEstimatedCost)}`);
             
             // Enrich order items with design images from cost calculation
             const enrichedItems = orderItems.map((item: any) => {
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Construct notes including warnings if any
-            let notes = `Work order created with automatic cost calculation (EGP ${costCalculation.totalEstimatedCost})`;
+            let notes = `Work order created with automatic cost calculation (${formatCurrency(costCalculation.totalEstimatedCost)})`;
             if (costCalculation.warnings && costCalculation.warnings.length > 0) {
               notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map(w => w.split(': ')[1] || w).join(', ')}`;
             }
@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
             };
 
             const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
-            console.log(`✅ Created work order ${workOrderRef.id} with cost EGP ${costCalculation.totalEstimatedCost}`);
+            console.log(`✅ Created work order ${workOrderRef.id} with cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
 
             // Post WIP journal entry (DR WIP / CR Accrued Liabilities)
             // Use estimated cost for opening (can be overridden manually later)

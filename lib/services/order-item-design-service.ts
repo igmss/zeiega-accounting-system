@@ -2,6 +2,8 @@ import { db, COLLECTIONS } from "../firebase";
 import { DesignService } from "./design-service";
 import { SizeCostService } from "./size-cost-service";
 import { BOMService } from "./bom-service";
+import { formatCurrency } from "@/lib/utils"
+import { formatCurrency } from "@/lib/utils"
 
 export class OrderItemDesignService {
   /**
@@ -52,7 +54,7 @@ export class OrderItemDesignService {
               actualMaterialCost = materialRequirements.reduce((sum, req) => sum + req.totalCost, 0);
             }
             
-            console.log(`Actual material cost for ${design.name}: EGP ${actualMaterialCost}`);
+            console.log(`Actual material cost for ${design.name}: ${formatCurrency(actualMaterialCost)}`);
           } catch (error) {
             console.warn(`Failed to get material requirements for design ${design.id}, using stored materialCost fallback:`, error);
           }
@@ -76,7 +78,7 @@ export class OrderItemDesignService {
             // Recalculate total with actual material cost + size-specific labor/overhead
             finalEstimatedCost = finalMaterialCost + sizeSpecificCosts.laborCost + sizeSpecificCosts.overheadCost;
             
-            console.log(`Using actual inventory material cost EGP ${finalMaterialCost} instead of size-multiplied estimate EGP ${sizeSpecificCosts.materialCost}`);
+                console.log(`Using actual inventory material cost ${formatCurrency(finalMaterialCost)} instead of size-multiplied estimate ${formatCurrency(sizeSpecificCosts.materialCost)}`);
           }
           
           itemCosts.push({
@@ -97,7 +99,7 @@ export class OrderItemDesignService {
           
           totalEstimatedCost += finalEstimatedCost;
           
-          console.log(`Item ${item.name} (Size ${size}): Estimated cost EGP ${finalEstimatedCost} (Material: ${finalMaterialCost}, Labor: ${sizeSpecificCosts.laborCost}, Overhead: ${sizeSpecificCosts.overheadCost})`);
+          console.log(`Item ${item.name} (Size ${size}): Estimated cost ${formatCurrency(finalEstimatedCost)} (Material: ${formatCurrency(finalMaterialCost)}, Labor: ${formatCurrency(sizeSpecificCosts.laborCost)}, Overhead: ${formatCurrency(sizeSpecificCosts.overheadCost)})`);
         } else {
           console.warn(`No design found for item: ${item.name} (${item.productId})`);
           
@@ -124,7 +126,7 @@ export class OrderItemDesignService {
         }
       }
 
-      console.log(`Total estimated cost for order: EGP ${totalEstimatedCost}`);
+      console.log(`Total estimated cost for order: ${formatCurrency(totalEstimatedCost)}`);
 
       return {
         success: true,
@@ -187,7 +189,7 @@ export class OrderItemDesignService {
 
       const result = SizeCostService.calculateMultiSizeOrderCosts(design, sizeQuantities);
       
-      console.log(`Multi-size calculation complete. Total cost: EGP ${result.totalCost}`);
+      console.log(`Multi-size calculation complete. Total cost: ${formatCurrency(result.totalCost)}`);
       
       return {
         success: true,
@@ -365,7 +367,7 @@ export class OrderItemDesignService {
         created_at: new Date(),
         updated_at: new Date(),
         completionPercentage: 0,
-        notes: `Auto-generated work order with design-based costs (EGP ${costCalculation.totalEstimatedCost})`,
+        notes: `Auto-generated work order with design-based costs (${formatCurrency(costCalculation.totalEstimatedCost)})`,
         items: orderItems,
         item_costs: costCalculation.itemCosts, // Store item-level cost breakdown
         ...additionalData
@@ -374,7 +376,7 @@ export class OrderItemDesignService {
       // Save work order to database
       const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
 
-      console.log(`✅ Created work order ${workOrderRef.id} with auto-calculated cost EGP ${costCalculation.totalEstimatedCost}`);
+      console.log(`✅ Created work order ${workOrderRef.id} with auto-calculated cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
 
       return {
         success: true,

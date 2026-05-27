@@ -288,10 +288,8 @@ export default function DesignsManagement() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">EGP {stats.averageCost.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">
-                Per design
-              </p>
+              <div className="text-2xl font-bold">{formatCurrency(stats.averageCost)}</div>
+              <p className="text-xs text-muted-foreground">Per design</p>
             </CardContent>
           </Card>
           
@@ -301,10 +299,8 @@ export default function DesignsManagement() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">EGP {stats.totalCostValue.toFixed(0)}</div>
-              <p className="text-xs text-muted-foreground">
-                Inventory cost value
-              </p>
+              <div className="text-2xl font-bold">{formatCurrency(stats.totalCostValue)}</div>
+              <p className="text-xs text-muted-foreground">Inventory cost value</p>
             </CardContent>
           </Card>
         </div>
@@ -432,7 +428,7 @@ export default function DesignsManagement() {
                         {design.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>EGP {design.totalCost.toFixed(2)}</TableCell>
+                     <TableCell>{formatCurrency(design.totalCost)}</TableCell>
                     <TableCell>
                       <Badge 
                         variant={

@@ -98,7 +98,7 @@ export class RetentionService {
       JournalEntryType.RETENTION_INVOICE,
       lines,
       invoiceId,
-      `Retention invoice: EGP ${totalInvoiceAmount} total, ${retentionPct}% held (EGP ${retentionAmount})`,
+      `Retention invoice: ${formatCurrency(totalInvoiceAmount)} total, ${retentionPct}% held (${formatCurrency(retentionAmount)})`,
       userId
     )
 
@@ -123,8 +123,8 @@ export class RetentionService {
     await db.collection(this.COLLECTION).doc(scheduleId).set(schedule)
 
     console.log(
-      `✅ Retention invoice: EGP ${billedAmount} billed, ` +
-      `EGP ${retentionAmount} withheld (${retentionPct}%)`
+      `✅ Retention invoice: ${formatCurrency(billedAmount)} billed, ` +
+      `${formatCurrency(retentionAmount)} withheld (${retentionPct}%)`
     )
     return { success: true, scheduleId, entryId: result.entryId }
   }

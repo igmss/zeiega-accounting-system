@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Calculator, Package, Clock, DollarSign } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface SizeQuantity {
@@ -183,27 +184,19 @@ export default function MultiSizeCostCalculator() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  EGP {result.totalEstimatedCost.toFixed(0)}
-                </div>
+                <div className="text-2xl font-bold text-green-600">{formatCurrency(result.totalEstimatedCost)}</div>
                 <p className="text-sm text-muted-foreground">Total Cost</p>
               </div>
               <div className="text-center">
-                <div className="text-xl font-semibold">
-                  EGP {result.totalMaterialCost.toFixed(0)}
-                </div>
+                  <div className="text-xl font-semibold">{formatCurrency(result.totalMaterialCost)}</div>
                 <p className="text-sm text-muted-foreground">Material</p>
               </div>
               <div className="text-center">
-                <div className="text-xl font-semibold">
-                  EGP {result.totalLaborCost.toFixed(0)}
-                </div>
+                  <div className="text-xl font-semibold">{formatCurrency(result.totalLaborCost)}</div>
                 <p className="text-sm text-muted-foreground">Labor</p>
               </div>
               <div className="text-center">
-                <div className="text-xl font-semibold">
-                  EGP {result.totalOverheadCost.toFixed(0)}
-                </div>
+                  <div className="text-xl font-semibold">{formatCurrency(result.totalOverheadCost)}</div>
                 <p className="text-sm text-muted-foreground">Overhead</p>
               </div>
             </div>
@@ -218,12 +211,12 @@ export default function MultiSizeCostCalculator() {
                       Qty: {item.quantity}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span>Material: EGP {item.materialCost.toFixed(0)}</span>
-                    <span>Labor: EGP {item.laborCost.toFixed(0)}</span>
-                    <span>Overhead: EGP {item.overheadCost.toFixed(0)}</span>
-                    <span className="font-semibold">Total: EGP {item.totalCost.toFixed(0)}</span>
-                  </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span>Material: {formatCurrency(item.materialCost)}</span>
+                      <span>Labor: {formatCurrency(item.laborCost)}</span>
+                      <span>Overhead: {formatCurrency(item.overheadCost)}</span>
+                      <span className="font-semibold">Total: {formatCurrency(item.totalCost)}</span>
+                    </div>
                 </div>
               ))}
             </div>

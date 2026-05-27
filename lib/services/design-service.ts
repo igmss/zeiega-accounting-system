@@ -1,5 +1,6 @@
 import { db, COLLECTIONS } from "../firebase";
 import { SizeCostService } from "./size-cost-service";
+import { formatCurrency } from "@/lib/utils"
 import type { 
   Design, 
   DesignFilter, 
@@ -189,12 +190,12 @@ export class DesignService {
         updatedAt: new Date()
       };
 
-      if (shouldRecalculate) {
-        // Merge with existing data for comprehensive cost calculation
-        const mergedDesign = { ...existingDesign, ...updates };
-        updateData.totalCost = this.calculateTotalCost(mergedDesign);
-        console.log(`Recalculated totalCost for design ${id}: EGP ${updateData.totalCost}`);
-      }
+        if (shouldRecalculate) {
+          // Merge with existing data for comprehensive cost calculation
+          const mergedDesign = { ...existingDesign, ...updates };
+          updateData.totalCost = this.calculateTotalCost(mergedDesign);
+        console.log(`Recalculated totalCost for design ${id}: ${formatCurrency(updateData.totalCost)}`);
+        }
 
       await docRef.update(updateData);
       console.log("Design updated successfully:", id);

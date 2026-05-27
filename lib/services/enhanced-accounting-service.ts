@@ -1,6 +1,7 @@
 import { db, COLLECTIONS, FieldValue } from "../firebase"
 import type { Customer, SalesOrder, WorkOrder, Invoice, Payment, JournalEntry, WebsiteOrder } from "../types"
 import { ACCOUNT_CODES, CHART_OF_ACCOUNTS, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
+import { formatCurrency } from "@/lib/utils"
 import { FinancialStatementsService } from "./financial-statements-service"
 
 /**
@@ -867,7 +868,7 @@ export class EnhancedAccountingService {
                 accountName: getAccountName(ACCOUNTS.INVENTORY_WIP),
                 debit: totalCost,
                 credit: 0,
-                description: `Labor applied: ${laborHours} hours @ EGP ${laborRate}/hr`,
+                description: `Labor applied: ${laborHours} hours @ ${formatCurrency(laborRate)}/hr`,
             },
             {
                 accountCode: ACCOUNTS.WAGES_PAYABLE,
@@ -944,7 +945,7 @@ export class EnhancedAccountingService {
                 estimated_cost: estimatedCost,
                 updated_at: new Date(),
             })
-            console.log(`📋 Work order ${workOrderId}: estimated cost recorded as EGP ${estimatedCost} (no journal entry)`)
+            console.log(`📋 Work order ${workOrderId}: estimated cost recorded as ${formatCurrency(estimatedCost)} (no journal entry)`)
             return { success: true, entryId: `EST-${workOrderId}` }
         } catch (error) {
             console.error("Error storing estimated cost on work order:", error)
@@ -1925,7 +1926,7 @@ export class EnhancedAccountingService {
                 accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
                 debit: idleCost,
                 credit: 0,
-                description: `Idle time: ${idleHours}h @ EGP ${regularRate}/hr`,
+                description: `Idle time: ${idleHours}h @ ${formatCurrency(regularRate)}/hr`,
             })
         }
         lines.push({
@@ -2007,7 +2008,7 @@ export class EnhancedAccountingService {
             JournalEntryType.FX_ADJUSTMENT,
             lines,
             referenceDoc,
-            `FX ${isGain ? "gain" : "loss"} EGP ${amount} on ${referenceDoc} (IAS 21.28)`,
+            `FX ${isGain ? "gain" : "loss"} ${formatCurrency(amount)} on ${referenceDoc} (IAS 21.28)`,
             userId
         )
     }
@@ -2036,7 +2037,7 @@ export class EnhancedAccountingService {
                 accountName: getAccountName(ACCOUNT_CODES.INCOME_TAX_EXPENSE),
                 debit: taxAmount,
                 credit: 0,
-                description: `Income tax @ ${(taxRate * 100).toFixed(1)}% on EGP ${taxableIncome} taxable income`,
+                description: `Income tax @ ${(taxRate * 100).toFixed(1)}% on ${taxableIncome} taxable income`,
             },
             {
                 accountCode: ACCOUNT_CODES.TAX_PAYABLE, // 2130
@@ -2052,7 +2053,7 @@ export class EnhancedAccountingService {
                 JournalEntryType.INCOME_TAX_ACCRUAL,
                 lines,
                 fiscalPeriodId,
-                `Income tax accrual for ${fiscalPeriodId} (EGP ${taxAmount})`,
+                `Income tax accrual for ${fiscalPeriodId} (${formatCurrency(taxAmount)})`,
                 userId
             ),
             taxAmount,
@@ -2088,7 +2089,7 @@ export class EnhancedAccountingService {
                 accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WRITEDOWN_NRV),
                 debit: writeDownAmount,
                 credit: 0,
-                description: `NRV write-down: ${sku} — cost EGP ${currentCost}/unit, NRV EGP ${netRealisableValue}/unit × ${quantityOnHand} units`,
+                description: `NRV write-down: ${sku} — cost ${formatCurrency(currentCost)}/unit, NRV ${formatCurrency(netRealisableValue)}/unit × ${quantityOnHand} units`,
             },
             {
                 accountCode: ACCOUNT_CODES.ALLOWANCE_INVENTORY_OBSOLESCENCE, // 1241
@@ -2104,7 +2105,7 @@ export class EnhancedAccountingService {
                 JournalEntryType.INVENTORY_WRITEDOWN,
                 lines,
                 `NRV-${sku}-${Date.now()}`,
-                `IAS 2.9 NRV write-down for ${sku}: EGP ${writeDownAmount}`,
+                `IAS 2.9 NRV write-down for ${sku}: ${formatCurrency(writeDownAmount)}`,
                 userId
             ),
             writeDownAmount,

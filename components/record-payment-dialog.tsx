@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { DollarSign } from "lucide-react"
+import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 
 interface RecordPaymentDialogProps {
@@ -101,7 +102,7 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="amount">Payment Amount ($) *</Label>
+            <Label htmlFor="amount">Payment Amount *</Label>
             <Input
               id="amount"
               type="number"
@@ -112,7 +113,7 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
               onChange={(e) => handleInputChange("amount", e.target.value)}
               required
             />
-            <div className="text-sm text-muted-foreground">Invoice total: ${invoice.total_amount.toFixed(2)}</div>
+            <div className="text-sm text-muted-foreground">Invoice total: {formatCurrency(invoice.total_amount)}</div>
           </div>
 
           <div className="space-y-2">

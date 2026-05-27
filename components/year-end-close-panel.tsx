@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { formatCurrency } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,7 +32,7 @@ export function YearEndClosePanel() {
       const data = await res.json()
       if (data.success) {
         setResult(data)
-        toast.success(`FY${fiscalYear} closed. Net Income: EGP ${data.netIncome?.toLocaleString()}`)
+        toast.success(`FY${fiscalYear} closed. Net Income: ${formatCurrency(data.netIncome)}`)
       } else {
         toast.error(data.error)
       }
@@ -105,7 +106,7 @@ export function YearEndClosePanel() {
             <AlertTitle>Year-End Close Complete</AlertTitle>
             <AlertDescription>
               <div className="space-y-1 mt-2">
-                <div>Net Income: <strong>EGP {result.netIncome?.toLocaleString()}</strong></div>
+                <div>Net Income: <strong>{formatCurrency(result.netIncome)}</strong></div>
                 <div>Closing entries created: <strong>{result.entryIds?.length || 0}</strong></div>
                 <div className="text-xs text-muted-foreground mt-2">
                   Entry IDs: {result.entryIds?.join(", ")}

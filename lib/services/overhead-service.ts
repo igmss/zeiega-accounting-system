@@ -1,5 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
+import { formatCurrency } from "@/lib/utils"
 
 /**
  * Overhead allocation configuration
@@ -124,7 +125,7 @@ export class OverheadService {
       batch.set(db.collection(this.COLLECTION).doc(configId), config)
       await batch.commit()
 
-      console.log(`✅ POHR configured: EGP ${pohr} per ${allocationBase} (FY${fiscalYear})`)
+      console.log(`✅ POHR configured: ${formatCurrency(pohr)} per ${allocationBase} (FY${fiscalYear})`)
       return { success: true, configId, pohr }
     } catch (error) {
       return {
@@ -206,14 +207,14 @@ export class OverheadService {
         date: now,
         type: "OVERHEAD_APPLIED",
         reference_doc: workOrderId,
-        description: `Overhead applied to WO ${workOrderId}: ${actualActivity} × EGP ${rate} = EGP ${appliedOH}`,
+        description: `Overhead applied to WO ${workOrderId}: ${actualActivity} × ${formatCurrency(rate)} = ${formatCurrency(appliedOH)}`,
         entries: [
           {
             account_id: ACCOUNT_CODES.INVENTORY_WIP,
             account_name: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
             debit: appliedOH,
             credit: 0,
-            description: `Overhead applied: ${actualActivity} units @ EGP ${rate}/unit`,
+              description: `Overhead applied: ${actualActivity} units @ ${formatCurrency(rate)}/unit`,
           },
           {
             account_id: ACCOUNT_CODES.MANUFACTURING_OVERHEAD,
@@ -245,7 +246,7 @@ export class OverheadService {
         })
       }
 
-      console.log(`✅ Applied EGP ${appliedOH} OH to WO ${workOrderId}`)
+      console.log(`✅ Applied ${formatCurrency(appliedOH)} OH to WO ${workOrderId}`)
       return { success: true, entryId, appliedOH }
     } catch (error) {
       return {
@@ -362,7 +363,7 @@ export class OverheadService {
           date: endDate,
           type: "OVERHEAD_DISPOSITION",
           reference_doc: `OH-DISPOSITION-${startDate.toISOString().split("T")[0]}`,
-          description: `OH variance disposition: ${isOverApplied ? "Over" : "Under"}-applied EGP ${absVariance} → COGS`,
+          description: `OH variance disposition: ${isOverApplied ? "Over" : "Under"}-applied ${formatCurrency(absVariance)} → COGS`,
           entries: [
             {
               account_id: ACCOUNT_CODES.MANUFACTURING_OVERHEAD,
@@ -472,7 +473,7 @@ export class OverheadService {
           date: endDate,
           type: "OVERHEAD_DISPOSITION",
           reference_doc: `OH-PRORATE-${startDate.toISOString().split("T")[0]}`,
-          description: `OH ${isOver ? "over" : "under"}-applied variance EGP ${absV} prorated`,
+          description: `OH ${isOver ? "over" : "under"}-applied variance ${formatCurrency(absV)} prorated`,
           entries,
           account_ids: entries.map((e: any) => e.account_id),
           total_debits: totalDebits,
@@ -485,7 +486,7 @@ export class OverheadService {
         disposition.journalEntryId = dispId
       }
 
-      console.log(`✅ OH variance of EGP ${variance} disposed (${disposition.dispositionMethod})`)
+      console.log(`✅ OH variance of ${formatCurrency(variance)} disposed (${disposition.dispositionMethod})`)
       return { success: true, disposition }
     } catch (error) {
       return {

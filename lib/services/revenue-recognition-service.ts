@@ -123,7 +123,7 @@ export class RevenueRecognitionService {
       }
 
       await db.collection(this.COLLECTION).doc(contractId).set(contract)
-      console.log(`✅ Contract ${contractId} created (${method}, EGP ${contractPrice})`)
+      console.log(`✅ Contract ${contractId} created (${method}, ${formatCurrency(contractPrice)})`)
       return { success: true, contractId }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to create contract" }
@@ -284,8 +284,8 @@ export class RevenueRecognitionService {
       }
 
       console.log(
-        `✅ Revenue recognized: ${pctComplete.toFixed(1)}% → EGP ${revenueThisPeriod} ` +
-        `(total: EGP ${revenueToDate} / EGP ${contract.contractPrice})`
+        `✅ Revenue recognized: ${pctComplete.toFixed(1)}% → ${formatCurrency(revenueThisPeriod)} ` +
+        `(total: ${formatCurrency(revenueToDate)} / ${formatCurrency(contract.contractPrice)})`
       )
 
       return { success: true, recognition, contract }
@@ -360,7 +360,7 @@ export class RevenueRecognitionService {
         date: now,
         type: "SALES_INVOICE",
         reference_doc: invoiceId,
-        description: `Milestone billing for contract ${contractId}: EGP ${billingAmount}`,
+        description: `Milestone billing for contract ${contractId}: ${formatCurrency(billingAmount)}`,
         entries,
         account_ids: entries.map(e => e.account_id),
         total_debits: billingAmount,
@@ -375,7 +375,7 @@ export class RevenueRecognitionService {
       contract.updatedAt = now
       await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
 
-      console.log(`✅ Milestone billed: EGP ${billingAmount} (Total billed: EGP ${contract.amountsBilledToDate})`)
+      console.log(`✅ Milestone billed: ${formatCurrency(billingAmount)} (Total billed: ${formatCurrency(contract.amountsBilledToDate)})`)
       return { success: true, entryId }
     } catch (error) {
       return {
@@ -407,7 +407,7 @@ export class RevenueRecognitionService {
         date: now,
         type: "PAYMENT_RECEIVED",
         reference_doc: contractId,
-        description: `Advance payment for contract ${contractId}: EGP ${amount}`,
+        description: `Advance payment for contract ${contractId}: ${formatCurrency(amount)}`,
         entries: [
           {
             account_id: accountCode,
@@ -442,7 +442,7 @@ export class RevenueRecognitionService {
         await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
       }
 
-      console.log(`✅ Advance payment EGP ${amount} recorded for contract ${contractId}`)
+      console.log(`✅ Advance payment ${formatCurrency(amount)} recorded for contract ${contractId}`)
       return { success: true, entryId }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to record advance" }
@@ -479,7 +479,7 @@ export class RevenueRecognitionService {
           return {
             success: true,
             expectedLoss,
-            error: `Onerous contract already provisioned. Current expected loss: EGP ${expectedLoss}`
+            error: `Onerous contract already provisioned. Current expected loss: ${formatCurrency(expectedLoss)}`
           }
         }
 
@@ -491,7 +491,7 @@ export class RevenueRecognitionService {
           date: now,
           type: "GENERAL",
           reference_doc: contractId,
-          description: `Onerous contract provision: EGP ${expectedLoss} loss on ${contract.description}`,
+          description: `Onerous contract provision: ${formatCurrency(expectedLoss)} loss on ${contract.description}`,
           entries: [
             {
               account_id: "7002", // Penalties & Fines — or dedicated loss account
@@ -526,7 +526,7 @@ export class RevenueRecognitionService {
 
         await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
 
-        console.log(`⚠️ Onerous contract ${contractId}: EGP ${expectedLoss} loss provisioned`)
+        console.log(`⚠️ Onerous contract ${contractId}: ${formatCurrency(expectedLoss)} loss provisioned`)
         return { success: true, expectedLoss, entryId }
       }
 
@@ -639,7 +639,7 @@ export class RevenueRecognitionService {
             date: now,
             type: "GENERAL",
             reference_doc: contractId,
-            description: `IFRS 15.18 change order catch-up: ${description}`,
+        description: `IFRS 15.18 change order catch-up: ${description}`,
             entries: lines.map(l => ({
               account_id: l.accountCode,
               account_name: l.accountName,
@@ -704,8 +704,8 @@ export class RevenueRecognitionService {
 
       console.log(
         `✅ Change order ${changeOrderId}: ${treatment} treatment, ` +
-        `EGP ${originalContractPrice} → EGP ${revisedContractPrice}, ` +
-        `revenue adjustment: EGP ${revenueAdjustment}`
+        `${formatCurrency(originalContractPrice)} → ${formatCurrency(revisedContractPrice)}, ` +
+        `revenue adjustment: ${formatCurrency(revenueAdjustment)}`
       )
       return { success: true, changeOrderId, revenueAdjustment, entryId }
 

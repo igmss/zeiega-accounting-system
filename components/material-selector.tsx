@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,9 +130,7 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
             Materials Required ({materials.length})
-            <Badge variant="secondary">
-              Total Cost: EGP {calculateTotalMaterialCost().toFixed(2)}
-            </Badge>
+              <Badge variant="secondary">Total Cost: {formatCurrency(calculateTotalMaterialCost())}</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -178,10 +177,8 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
                       />
                     </TableCell>
                     <TableCell>{material.unit}</TableCell>
-                    <TableCell>EGP {material.costPerUnit.toFixed(2)}</TableCell>
-                    <TableCell>
-                      EGP {(material.quantityPerUnit * material.costPerUnit).toFixed(2)}
-                    </TableCell>
+                    <TableCell>{formatCurrency(material.costPerUnit)}</TableCell>
+                    <TableCell>{formatCurrency(material.quantityPerUnit * (material.costPerUnit || 0))}</TableCell>
                     <TableCell>
                       <Badge 
                         variant={(material.availableQuantity || 0) >= material.quantityPerUnit ? "default" : "destructive"}
@@ -290,7 +287,7 @@ export function MaterialSelector({ materials, onMaterialsChange }: MaterialSelec
                           <Badge variant="outline">{item.type}</Badge>
                         </TableCell>
                         <TableCell>{item.quantity_on_hand || 0}</TableCell>
-                        <TableCell>EGP {item.cost_per_unit?.toFixed(2) || '0.00'}</TableCell>
+                        <TableCell>{formatCurrency(item.cost_per_unit)}</TableCell>
                         <TableCell>
                           <Button
                             size="sm"

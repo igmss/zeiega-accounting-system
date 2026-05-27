@@ -108,7 +108,7 @@ export class WorkOrderMaterialService {
       // Commit inventory and status changes ONLY if accounting succeeded
       await batch.commit();
 
-      console.log(`✅ Successfully issued materials for work order ${workOrderId}, total cost: EGP ${totalCost}`);
+      console.log(`✅ Successfully issued materials for work order ${workOrderId}, total cost: ${formatCurrency(totalCost)}`);
 
       return {
         success: true,

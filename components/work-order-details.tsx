@@ -277,9 +277,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
             </div>
             <div className="flex justify-between">
               <span>Profit Margin:</span>
-              <span className={profitMargin >= 0 ? "text-green-600" : "text-red-600"}>
-                {profitMargin.toFixed(1)}%
-              </span>
+                <span className={profitMargin >= 0 ? "text-green-600" : "text-red-600"}>{profitMargin.toFixed(1)}%</span>
             </div>
             {workOrder.estimated_cost && (
               <div className="pt-3 border-t">

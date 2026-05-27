@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "sonner"
 import { FileText, AlertTriangle, DollarSign, CheckCircle2, Clock } from "lucide-react"
+import { formatCurrency } from "@/lib/utils"
 
 interface Contract {
   id: string
@@ -94,7 +95,8 @@ export function IFRS15ContractDashboard() {
       })
       const data = await res.json()
       if (data.success) {
-        toast.success(`Revenue recognized: EGP ${data.recognition?.revenueThisPeriod?.toLocaleString()}`)
+        const amount = data.recognition?.revenueThisPeriod
+        toast.success(`Revenue recognized: ${formatCurrency(amount)}`)
         fetchContracts()
       } else {
         toast.error(data.error)
@@ -112,8 +114,9 @@ export function IFRS15ContractDashboard() {
         body: JSON.stringify({ contractId }),
       })
       const data = await res.json()
-      if (data.isOnerous) {
-        toast.error(`Onerous Contract: Expected loss EGP ${data.expectedLoss?.toLocaleString()}`)
+       if (data.isOnerous) {
+         const amount = data.expectedLoss
+         toast.error(`Onerous Contract: Expected loss ${formatCurrency(amount)}`)
       } else {
         toast.success("Contract healthy: No onerous contract detected")
       }
@@ -140,19 +143,19 @@ export function IFRS15ContractDashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Contract Value</CardDescription>
-            <CardTitle className="text-2xl">EGP {(totalContractValue / 1000000).toFixed(1)}M</CardTitle>
+            <CardTitle className="text-2xl">{formatCurrency(totalContractValue / 1000000)}M</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Revenue Recognized</CardDescription>
-            <CardTitle className="text-2xl">EGP {(totalRecognized / 1000000).toFixed(1)}M</CardTitle>
+            <CardTitle className="text-2xl">{formatCurrency(totalRecognized / 1000000)}M</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Unbilled (Contract Asset)</CardDescription>
-            <CardTitle className="text-2xl">EGP {(totalUnbilled / 1000).toFixed(0)}K</CardTitle>
+            <CardTitle className="text-2xl">{formatCurrency(totalUnbilled / 1000)}K</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -166,7 +169,7 @@ export function IFRS15ContractDashboard() {
               Onerous Contracts Detected
             </CardTitle>
             <CardDescription className="text-red-600 dark:text-red-300">
-              {onerousContracts.length} contract(s) with total expected loss: EGP {onerousContracts.reduce((s, c) => s + c.expectedLoss, 0).toLocaleString()}
+              {onerousContracts.length} contract(s) with total expected loss: {formatCurrency(onerousContracts.reduce((s, c) => s + c.expectedLoss, 0))}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -241,15 +244,15 @@ export function IFRS15ContractDashboard() {
                 <TableRow key={c.id} className={c.isOnerous ? "bg-red-50 dark:bg-red-950" : ""}>
                   <TableCell className="font-medium max-w-[200px] truncate">{c.description}</TableCell>
                   <TableCell>{c.customerName}</TableCell>
-                  <TableCell>EGP {c.contractPrice.toLocaleString()}</TableCell>
+                  <TableCell>{formatCurrency(c.contractPrice)}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <Progress value={c.percentageComplete} />
                       <span className="text-xs text-muted-foreground">{c.percentageComplete.toFixed(1)}%</span>
                     </div>
                   </TableCell>
-                  <TableCell>EGP {c.revenueRecognizedToDate.toLocaleString()}</TableCell>
-                  <TableCell>EGP {c.amountsBilledToDate.toLocaleString()}</TableCell>
+                  <TableCell>{formatCurrency(c.revenueRecognizedToDate)}</TableCell>
+                  <TableCell>{formatCurrency(c.amountsBilledToDate)}</TableCell>
                   <TableCell>
                     <Badge variant={c.isOnerous ? "destructive" : c.status === "completed" ? "default" : "secondary"}>
                       {c.status}

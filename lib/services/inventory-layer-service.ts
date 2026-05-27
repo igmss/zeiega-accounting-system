@@ -54,7 +54,7 @@ export class InventoryLayerService {
       }
 
       await db.collection(this.COLLECTION).doc(layerId).set(layer)
-      console.log(`✅ FIFO layer created: ${sku} × ${quantityReceived} @ EGP ${unitCost}`)
+      console.log(`✅ FIFO layer created: ${sku} × ${quantityReceived} @ ${formatCurrency(unitCost)}`)
       return { success: true, layerId }
     } catch (error) {
       return {
@@ -131,7 +131,7 @@ export class InventoryLayerService {
 
       console.log(
         `✅ FIFO issue: ${sku} × ${quantityNeeded} units, ` +
-        `weighted cost EGP ${weightedUnitCost}/unit (total EGP ${totalCost})`
+        `weighted cost ${formatCurrency(weightedUnitCost)}/unit (total ${formatCurrency(totalCost)})`
       )
 
       return { success: true, weightedUnitCost, totalCost, layersConsumed }
