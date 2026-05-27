@@ -321,7 +321,7 @@ export function WorkOrdersList() {
                             View
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
                           <DialogHeader>
                             <DialogTitle>Work Order Details</DialogTitle>
                           </DialogHeader>
@@ -366,7 +366,7 @@ export function WorkOrdersList() {
 
       {/* Update Materials Dialog */}
       <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Update Materials & Labor</DialogTitle>
           </DialogHeader>

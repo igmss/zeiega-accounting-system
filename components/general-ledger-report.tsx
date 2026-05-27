@@ -157,8 +157,11 @@ export function GeneralLedgerReport({ dateRange }: GeneralLedgerReportProps) {
                                 {filteredAccounts.map((account: any) => (
                                     <Card key={account.code} className="overflow-hidden">
                                         <div
+                                            role="button"
+                                            tabIndex={0}
                                             className="p-4 cursor-pointer hover:bg-muted/50 flex items-center justify-between"
                                             onClick={() => toggleAccount(account.code)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccount(account.code); } }}
                                         >
                                             <div className="flex items-center gap-4">
                                                 <span className="font-mono text-sm bg-muted px-2 py-1 rounded">{account.code}</span>

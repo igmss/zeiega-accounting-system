@@ -94,7 +94,7 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
           Record Payment
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Record Payment</DialogTitle>
         </DialogHeader>

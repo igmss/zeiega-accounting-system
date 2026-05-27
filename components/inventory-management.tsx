@@ -288,7 +288,7 @@ export function InventoryManagement() {
                                   View Details
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="max-w-2xl">
+                              <DialogContent className="sm:max-w-2xl">
                                 <DialogHeader>
                                   <DialogTitle>Inventory Item Details</DialogTitle>
                                 </DialogHeader>
@@ -534,7 +534,7 @@ function EditInventoryDialog({ item, onClose, onSave }: {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit Inventory Item</DialogTitle>
         </DialogHeader>
@@ -720,7 +720,7 @@ function AdjustInventoryDialog({ item, onClose, onSave }: {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Adjust Inventory - {item.name}</DialogTitle>
         </DialogHeader>

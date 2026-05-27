@@ -61,7 +61,7 @@ export function CreateInvoiceDialog() {
           Create Invoice
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Create New Invoice</DialogTitle>
         </DialogHeader>
@@ -115,7 +115,7 @@ export function CreateInvoiceDialog() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-x-auto">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-medium">Invoice Items</h3>
               <Button type="button" variant="outline" onClick={addItem}>

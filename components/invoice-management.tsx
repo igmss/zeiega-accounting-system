@@ -254,7 +254,7 @@ export function InvoiceManagement() {
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-4xl">
+                        <DialogContent className="sm:max-w-4xl">
                           <DialogHeader>
                             <DialogTitle>Invoice Details</DialogTitle>
                           </DialogHeader>

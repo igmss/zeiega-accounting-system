@@ -230,7 +230,7 @@ export function DashboardOverview() {
             <div className="flex flex-wrap gap-2 mt-4">
               {data.orderStatus.map((status, index) => (
                 <div key={status?.name || `status-${index}`} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: status.color }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: status.color }} aria-hidden="true" />
                   <span className="text-sm">
                     {status.name}: {status.value}
                   </span>

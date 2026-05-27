@@ -325,7 +325,7 @@ export function SalesOrdersList() {
                             <Eye className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-4xl">
+                        <DialogContent className="sm:max-w-4xl">
                           <DialogHeader>
                             <DialogTitle>Sales Order Details</DialogTitle>
                           </DialogHeader>
@@ -356,7 +356,7 @@ export function SalesOrdersList() {
 
       {/* Manual Order Dialog */}
       <Dialog open={isManualOrderOpen} onOpenChange={setIsManualOrderOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Manual Order</DialogTitle>
           </DialogHeader>
