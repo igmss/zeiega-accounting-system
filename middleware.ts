@@ -160,9 +160,12 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
     response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 
+    // Next.js 14.2.x doesn't inject nonces into internal inline scripts (hydration, __NEXT_DATA__).
+    // When a nonce is present in script-src, browsers ignore 'unsafe-inline', breaking the app.
+    // Use 'unsafe-inline' without nonce for compatibility. Upgrade to Next.js 15+ for nonce support.
     const scriptSrc = process.env.NODE_ENV === "development"
-        ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
-        : `'self' 'nonce-${nonce}' 'strict-dynamic'`
+        ? "'self' 'unsafe-inline' 'unsafe-eval'"
+        : "'self' 'unsafe-inline'"
 
     response.headers.set(
         "Content-Security-Policy",
