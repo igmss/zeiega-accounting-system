@@ -25,7 +25,7 @@ export async function GET() {
       }
     })
 
-    // Fetch live balances from acc_account_balances (maintained by EnhancedAccountingService)
+    // Fallback: use acc_account_balances only for accounts with no chart-doc balance
     const balanceSnapshot = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).get()
     const balanceMap: Record<string, number> = {}
     balanceSnapshot.docs.forEach(doc => {
@@ -35,16 +35,13 @@ export async function GET() {
       }
     })
 
-    // Merge live balances into accounts
-    // Priority: data.balance from chart doc (sync writes here) > acc_account_balances cache
     for (const account of accounts) {
-      const originalBalance = account.balance
-      const codeBalance = balanceMap[account.code]
-      const idBalance = balanceMap[account.id]
-      // Only use cache if chart doc has no balance set
-      if (originalBalance === 0) {
-        if (codeBalance !== undefined) account.balance = codeBalance
-        else if (idBalance !== undefined) account.balance = idBalance
+      if (account.balance === 0) {
+        if (balanceMap[account.code] !== undefined) {
+          account.balance = balanceMap[account.code]
+        } else if (balanceMap[account.id] !== undefined) {
+          account.balance = balanceMap[account.id]
+        }
       }
     }
 
