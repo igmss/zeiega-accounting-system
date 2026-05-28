@@ -26,6 +26,7 @@ export function LiabilitiesManagement() {
     const [loading, setLoading] = useState(true)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState("")
+    const [coaBalances, setCoaBalances] = useState<Record<string, number>>({})
 
     const [newLiability, setNewLiability] = useState({
         description: "",
@@ -35,13 +36,33 @@ export function LiabilitiesManagement() {
         transactionType: "incur"
     })
 
-    const liabilityAccounts = Object.values(CHART_OF_ACCOUNTS).filter(
+    const allLiabilityAccounts = Object.values(CHART_OF_ACCOUNTS).filter(
         acc => acc.type === AccountType.LIABILITY && acc.isActive
     )
 
+    // When repaying, only show liability accounts that have an outstanding balance
+    const liabilityAccounts = newLiability.transactionType === 'repay'
+        ? allLiabilityAccounts.filter(acc => (coaBalances[acc.code] || 0) > 0)
+        : allLiabilityAccounts
+
     useEffect(() => {
         fetchLiabilities()
+        fetchBalances()
     }, [])
+
+    async function fetchBalances() {
+        try {
+            const response = await fetch('/api/chart-of-accounts')
+            if (response.ok) {
+                const data = await response.json()
+                const balances: Record<string, number> = {}
+                for (const a of (data.accounts || [])) {
+                    balances[a.code] = a.balance
+                }
+                setCoaBalances(balances)
+            }
+        } catch {}
+    }
 
     async function fetchLiabilities() {
         try {
