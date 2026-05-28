@@ -135,7 +135,7 @@ export function AssetsManagement() {
     }
 
     const filteredAssets = assets.filter(asset =>
-        asset.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        asset.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (CHART_OF_ACCOUNTS[asset.assetAccount]?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
     )
 

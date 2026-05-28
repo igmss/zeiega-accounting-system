@@ -86,7 +86,7 @@ export function LiabilitiesManagement() {
     }
 
     const filtered = liabilities.filter(l =>
-        l.description.toLowerCase().includes(searchTerm.toLowerCase())
+        l.description?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     return (

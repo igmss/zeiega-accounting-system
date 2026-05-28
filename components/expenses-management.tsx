@@ -91,7 +91,7 @@ export function ExpensesManagement() {
     }
 
     const filteredExpenses = expenses.filter(exp =>
-        exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        exp.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (CHART_OF_ACCOUNTS[exp.expenseAccount]?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
     )
 
