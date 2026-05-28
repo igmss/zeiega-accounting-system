@@ -70,69 +70,78 @@ export async function POST(request: Request) {
     prevMovementsRelated.docs.forEach(addMovementToBatch)
     await movementsBatch.commit()
 
-    // 3. Delete previous journal entries and reverse their balance cache effects
-    const prevByRef = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-      .where("reference_doc", "==", workOrderId)
-      .get()
-    const prevByLink = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-      .where("linked_doc", "==", workOrderId)
-      .get()
-    
-    const entriesToVoid: any[] = []
-    const uniqueIds = new Set()
-    
-    const addEntryToVoid = (doc: any) => {
-      if (!uniqueIds.has(doc.id)) {
-        uniqueIds.add(doc.id)
-        entriesToVoid.push(doc)
-      }
-    }
-    
-    prevByRef.docs.forEach(addEntryToVoid)
-    prevByLink.docs.forEach(addEntryToVoid)
+    // 3. Delete only the journal entries that are being replaced
+    const jeTypesToDelete: string[] = []
+    if (cleanMaterials.length > 0) jeTypesToDelete.push("MATERIAL_ISSUE_TO_WIP")
+    if (laborHours && laborCost) jeTypesToDelete.push("LABOR_APPLIED")
+    if (overheadCost > 0) jeTypesToDelete.push("OVERHEAD_APPLIED")
 
-    const balanceAdjustments: Record<string, { debits: number; credits: number }> = {}
-    
-    for (const doc of entriesToVoid) {
-      const data = doc.data()
-      if (data.entries && Array.isArray(data.entries)) {
-        for (const entry of data.entries) {
-          const accountCode = entry.account_id
-          if (!balanceAdjustments[accountCode]) {
-            balanceAdjustments[accountCode] = { debits: 0, credits: 0 }
-          }
-          balanceAdjustments[accountCode].debits += entry.debit || 0
-          balanceAdjustments[accountCode].credits += entry.credit || 0
+    if (jeTypesToDelete.length > 0) {
+      const prevByRef = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
+        .where("reference_doc", "==", workOrderId)
+        .where("type", "in", jeTypesToDelete)
+        .get()
+      const prevByLink = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
+        .where("linked_doc", "==", workOrderId)
+        .where("type", "in", jeTypesToDelete)
+        .get()
+      
+      const entriesToVoid: any[] = []
+      const uniqueIds = new Set()
+      
+      const addEntryToVoid = (doc: any) => {
+        if (!uniqueIds.has(doc.id)) {
+          uniqueIds.add(doc.id)
+          entriesToVoid.push(doc)
         }
       }
-    }
+      
+      prevByRef.docs.forEach(addEntryToVoid)
+      prevByLink.docs.forEach(addEntryToVoid)
 
-    const deleteBatch = db.batch()
-    for (const doc of entriesToVoid) {
-      deleteBatch.delete(doc.ref)
-    }
-    await deleteBatch.commit()
+      const deleteBatch = db.batch()
+      for (const doc of entriesToVoid) {
+        deleteBatch.delete(doc.ref)
+      }
+      await deleteBatch.commit()
 
-    // Adjust the balance cache for deleted entries
-    for (const [accountCode, adjustment] of Object.entries(balanceAdjustments)) {
-      const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
-      const balDoc = await balRef.get()
-      if (balDoc.exists) {
-        const existing = balDoc.data()!
-        const newTotalDebits = Math.max(0, (existing.totalDebits || 0) - adjustment.debits)
-        const newTotalCredits = Math.max(0, (existing.totalCredits || 0) - adjustment.credits)
-        
-        const isDebit = isDebitNormalBalance(accountCode)
-        const balance = isDebit
-          ? newTotalDebits - newTotalCredits
-          : newTotalCredits - newTotalDebits
-        
-        await balRef.update({
-          totalDebits: newTotalDebits,
-          totalCredits: newTotalCredits,
-          balance,
-          updatedAt: new Date()
-        })
+      // Adjust the balance cache for deleted entries
+      const balanceAdjustments: Record<string, { debits: number; credits: number }> = {}
+      
+      for (const doc of entriesToVoid) {
+        const data = doc.data()
+        if (data.entries && Array.isArray(data.entries)) {
+          for (const entry of data.entries) {
+            const accountCode = entry.account_id
+            if (!balanceAdjustments[accountCode]) {
+              balanceAdjustments[accountCode] = { debits: 0, credits: 0 }
+            }
+            balanceAdjustments[accountCode].debits += entry.debit || 0
+            balanceAdjustments[accountCode].credits += entry.credit || 0
+          }
+        }
+      }
+
+      for (const [accountCode, adjustment] of Object.entries(balanceAdjustments)) {
+        const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
+        const balDoc = await balRef.get()
+        if (balDoc.exists) {
+          const existing = balDoc.data()!
+          const newTotalDebits = Math.max(0, (existing.totalDebits || 0) - adjustment.debits)
+          const newTotalCredits = Math.max(0, (existing.totalCredits || 0) - adjustment.credits)
+          
+          const isDebit = isDebitNormalBalance(accountCode)
+          const balance = isDebit
+            ? newTotalDebits - newTotalCredits
+            : newTotalCredits - newTotalDebits
+          
+          await balRef.update({
+            totalDebits: newTotalDebits,
+            totalCredits: newTotalCredits,
+            balance,
+            updatedAt: new Date()
+          })
+        }
       }
     }
 
@@ -150,6 +159,7 @@ export async function POST(request: Request) {
       if (inventoryDoc.exists) {
         const currentQty = inventoryDoc.data()?.quantity_on_hand || 0
         const newQty = Math.max(0, currentQty - material.qty) // Prevent negative quantities
+        const itemNameFromDoc = inventoryDoc.data()?.name || 'Unknown Item'
         
         await inventoryRef.update({
           quantity_on_hand: newQty,
@@ -159,7 +169,7 @@ export async function POST(request: Request) {
         // Create inventory movement record
         const movement = {
           item_id: material.item_id,
-          item_name: itemName,
+          item_name: itemNameFromDoc,
           movement_type: 'usage',
           quantity: -material.qty,
           unit_cost: material.cost || 0,
@@ -171,14 +181,15 @@ export async function POST(request: Request) {
         }
         
         await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).add(movement)
-        
-        accountingMaterials.push({
-          itemId: material.item_id,
-          itemName: itemName,
-          quantity: material.qty,
-          unitCost: material.cost || 0
-        })
       }
+
+      // Always record the accounting entry, even if inventory item doesn't exist
+      accountingMaterials.push({
+        itemId: material.item_id,
+        itemName: itemName,
+        quantity: material.qty,
+        unitCost: material.cost || 0
+      })
     }
 
     // 5. Calculate new costs
