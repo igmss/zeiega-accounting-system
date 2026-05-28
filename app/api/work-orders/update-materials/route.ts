@@ -1,92 +1,10 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
-import { formatCurrency } from "@/lib/utils"
-import { ACCOUNT_CODES, isDebitNormalBalance } from "@/lib/accounting/account-types"
+import { isDebitNormalBalance } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
-// TypeScript interfaces for journal entries
-interface JournalEntry {
-  account_id: string
-  debit: number
-  credit: number
-  description: string
-}
-
-interface JournalDocument {
-  entries: JournalEntry[]
-  date: any
-  linked_doc?: string
-  created_at: any
-}
-
-// Function to automatically sync inventory values with Chart of Accounts
-async function syncInventoryWithChartOfAccounts() {
-  try {
-    console.log("🔄 Auto-syncing inventory with Chart of Accounts...")
-    
-    const now = new Date()
-    
-    // Calculate total inventory value from acc_inventory_items
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    
-    let totalInventoryValue = 0
-    inventorySnapshot.docs.forEach(doc => {
-      const data = doc.data()
-      const itemValue = (data.quantity_on_hand || 0) * (data.cost_per_unit || 0)
-      totalInventoryValue += itemValue
-    })
-    
-    // Update INVENTORY_RAW account balance
-    const inventoryRawRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc('INVENTORY_RAW')
-    await inventoryRawRef.update({
-      balance: totalInventoryValue,
-      last_updated: now
-    })
-    
-    // Also update CASH account balance based on journal entries
-    await syncCashBalance()
-    
-    console.log(`✅ Auto-synced INVENTORY_RAW balance to ${formatCurrency(totalInventoryValue)}`)
-  } catch (error) {
-    console.error("Error auto-syncing inventory with Chart of Accounts:", error)
-  }
-}
-
-// Function to sync CASH balance from journal entries
-async function syncCashBalance() {
-  try {
-    console.log("🔄 Auto-syncing CASH balance...")
-    
-    const now = new Date()
-    
-    // Calculate CASH balance from journal entries
-    const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
-    
-    let cashBalance = 0
-    journalSnapshot.docs.forEach(doc => {
-      const entry = doc.data() as JournalDocument
-      if (entry.entries) {
-        entry.entries.forEach((subEntry: JournalEntry) => {
-          if (subEntry.account_id === 'CASH') {
-            cashBalance += (subEntry.debit || 0) - (subEntry.credit || 0)
-          }
-        })
-      }
-    })
-    
-    // Update CASH account balance
-    const cashRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc('CASH')
-    await cashRef.update({
-      balance: cashBalance,
-      last_updated: now
-    })
-    
-    console.log(`✅ Auto-synced CASH balance to ${formatCurrency(cashBalance)}`)
-  } catch (error) {
-    console.error("Error auto-syncing CASH balance:", error)
-  }
-}
+ 
 
 export async function POST(request: Request) {
   try {
@@ -299,9 +217,6 @@ export async function POST(request: Request) {
     if (finalOverheadCost > 0) {
       await EnhancedAccountingService.recordOverheadApplied(workOrderId, finalOverheadCost)
     }
-
-    // 8. Auto-sync Chart of Accounts with current inventory values
-    await syncInventoryWithChartOfAccounts()
 
     return NextResponse.json({ 
       success: true, 

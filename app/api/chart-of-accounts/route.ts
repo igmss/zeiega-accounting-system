@@ -52,22 +52,10 @@ export async function POST(request: NextRequest) {
         id: accountRef.id,
         message: "Account created successfully"
       })
-    } else if (type === "journal_entry") {
-      // Add new journal entry
-      const journalRef = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add({
-        ...data,
-        created_at: new Date(),
-        updated_at: new Date()
-      })
-
-      return NextResponse.json({
-        id: journalRef.id,
-        message: "Journal entry created successfully"
-      })
     }
 
     return NextResponse.json(
-      { error: "Invalid request type" },
+      { error: "Invalid request type. Use /api/journal-entries POST for journal entries." },
       { status: 400 }
     )
   } catch (error) {

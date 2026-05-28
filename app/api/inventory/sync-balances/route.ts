@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
+import { ACCOUNT_CODES } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
 export async function POST() {
   try {
@@ -16,56 +18,72 @@ export async function POST() {
       ...doc.data()
     }))
 
-    // Calculate totals by type
+    // Calculate totals by type with proper account codes
     const rawMaterialsValue = inventoryItems
       .filter(item => item.type === 'raw')
-      .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
-
-    const finishedGoodsValue = inventoryItems
-      .filter(item => item.type === 'finished')
       .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
     const wipValue = inventoryItems
       .filter(item => item.type === 'wip')
       .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
+    const finishedGoodsValue = inventoryItems
+      .filter(item => item.type === 'finished')
+      .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
+
     console.log(`Calculated values - Raw: ${rawMaterialsValue}, WIP: ${wipValue}, Finished: ${finishedGoodsValue}`)
 
-    // Update chart of accounts balances
-    const accountsToUpdate = [
-      { account_id: "INVENTORY_RAW", balance: rawMaterialsValue },
-      { account_id: "INVENTORY_WIP", balance: wipValue },
-      { account_id: "INVENTORY_FINISHED", balance: finishedGoodsValue }
-    ]
+    // Create a single balanced journal entry using EnhancedAccountingService
+    const totalInventoryValue = rawMaterialsValue + wipValue + finishedGoodsValue
 
-    for (const accountUpdate of accountsToUpdate) {
-      const accountRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(accountUpdate.account_id)
-      const accountDoc = await accountRef.get()
-      
-      if (accountDoc.exists) {
-        await accountRef.update({
-          balance: accountUpdate.balance,
-          last_updated: new Date()
+    if (totalInventoryValue > 0) {
+      const lines: any[] = [
+        {
+          accountCode: ACCOUNT_CODES.INVENTORY_ADJUSTMENTS,
+          accountName: "Inventory Adjustments",
+          debit: totalInventoryValue,
+          credit: 0,
+          description: "Inventory balance sync - Total inventory value",
+        },
+      ]
+
+      if (rawMaterialsValue > 0) {
+        lines.push({
+          accountCode: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
+          accountName: "Raw Materials - Fabric",
+          debit: 0,
+          credit: rawMaterialsValue,
+          description: "Sync - Raw materials inventory value",
         })
-        console.log(`Updated ${accountUpdate.account_id} balance to ${accountUpdate.balance}`)
-      } else {
-        console.log(`Account ${accountUpdate.account_id} not found, skipping...`)
       }
-    }
 
-    // Create journal entry for balance adjustment
-    const adjustmentEntry = {
-      date: new Date(),
-      entries: [
-        { account_id: "INVENTORY_RAW", debit: rawMaterialsValue, credit: 0, description: "Inventory balance sync - Raw Materials" },
-        { account_id: "INVENTORY_WIP", debit: wipValue, credit: 0, description: "Inventory balance sync - Work in Progress" },
-        { account_id: "INVENTORY_FINISHED", debit: finishedGoodsValue, credit: 0, description: "Inventory balance sync - Finished Goods" }
-      ],
-      linked_doc: "inventory_sync",
-      created_at: new Date()
-    }
+      if (wipValue > 0) {
+        lines.push({
+          accountCode: ACCOUNT_CODES.INVENTORY_WIP,
+          accountName: "Work in Progress Inventory",
+          debit: 0,
+          credit: wipValue,
+          description: "Sync - WIP inventory value",
+        })
+      }
 
-    await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(adjustmentEntry)
+      if (finishedGoodsValue > 0) {
+        lines.push({
+          accountCode: ACCOUNT_CODES.INVENTORY_FINISHED_GOODS,
+          accountName: "Finished Goods Inventory",
+          debit: 0,
+          credit: finishedGoodsValue,
+          description: "Sync - Finished goods inventory value",
+        })
+      }
+
+      await EnhancedAccountingService.createJournalEntry(
+        "INVENTORY_ADJUSTMENT" as any,
+        lines,
+        "inventory_sync",
+        "Inventory balance sync from physical count"
+      )
+    }
 
     return NextResponse.json({
       success: true,
@@ -74,7 +92,7 @@ export async function POST() {
         rawMaterialsValue,
         wipValue,
         finishedGoodsValue,
-        totalInventoryValue: rawMaterialsValue + wipValue + finishedGoodsValue
+        totalInventoryValue
       }
     })
 
