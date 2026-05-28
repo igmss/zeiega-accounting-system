@@ -227,13 +227,15 @@ export class DesignService {
       const snapshot = await db.collection(this.COLLECTION_NAME).get();
       const designs = snapshot.docs.map(doc => doc.data()) as Design[];
 
+      const activeDesigns = designs.filter(d => d.status === 'active');
+
       const stats: DesignStats = {
         totalDesigns: designs.length,
-        activeDesigns: designs.filter(d => d.status === 'active').length,
+        activeDesigns: activeDesigns.length,
         inactiveDesigns: designs.filter(d => d.status === 'inactive').length,
         discontinuedDesigns: designs.filter(d => d.status === 'discontinued').length,
-        averageCost: designs.reduce((sum, d) => sum + d.totalCost, 0) / designs.length || 0,
-        totalCostValue: designs.reduce((sum, d) => sum + (d.totalCost * 10), 0), // Assuming 10 units average
+        averageCost: activeDesigns.reduce((sum, d) => sum + d.totalCost, 0) / activeDesigns.length || 0,
+        totalCostValue: activeDesigns.reduce((sum, d) => sum + d.totalCost, 0),
         categoryBreakdown: {}
       };
 

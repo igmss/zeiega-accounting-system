@@ -301,7 +301,7 @@ export default function DesignsManagement() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(stats.totalCostValue)}</div>
-              <p className="text-xs text-muted-foreground">Inventory cost value</p>
+              <p className="text-xs text-muted-foreground">Sum of active design costs</p>
             </CardContent>
           </Card>
         </div>
