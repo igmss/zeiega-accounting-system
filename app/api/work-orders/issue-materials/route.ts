@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { FieldValue } from "firebase-admin/firestore"
 import { requirePermission } from "@/lib/auth"
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
 export async function POST(request: Request) {
   try {
@@ -40,28 +41,34 @@ export async function POST(request: Request) {
       updated_at: new Date()
     })
     
-    // Create journal entry for materials usage
-    const journalEntry = {
-      date: new Date(),
-      entries: [
-        {
-          account_id: "INVENTORY_WIP",
-          debit: totalMaterialCost,
-          credit: 0,
-          description: `Materials issued for work order ${workOrderId}`
-        },
-        {
-          account_id: "INVENTORY_RAW",
-          debit: 0,
-          credit: totalMaterialCost,
-          description: `Materials issued for work order ${workOrderId}`
-        }
-      ],
-      linked_doc: workOrderId,
-      created_at: new Date()
+    // Create journal entry for materials usage using EnhancedAccountingService
+    const accountingMaterials = []
+    for (const material of materials) {
+      const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(material.item_id)
+      const inventoryDoc = await inventoryRef.get()
+      const itemName = inventoryDoc.exists ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+      
+      accountingMaterials.push({
+        itemId: material.item_id,
+        itemName: itemName,
+        quantity: material.qty,
+        unitCost: material.cost || 0
+      })
     }
-    
-    await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
+
+    if (accountingMaterials.length > 0) {
+      const accountingResult = await EnhancedAccountingService.recordMaterialIssue(
+        workOrderId,
+        accountingMaterials
+      )
+
+      if (!accountingResult.success) {
+        return NextResponse.json(
+          { error: `Accounting entry failed: ${accountingResult.error}` },
+          { status: 400 }
+        )
+      }
+    }
     
     // Update inventory quantities
     for (const material of materials) {
