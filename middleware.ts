@@ -188,13 +188,16 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
 function isAuthenticated(token: { id?: string } | null, request: NextRequest): boolean {
     if (token) return true
 
-    const apiSecret = process.env.API_SECRET || process.env.NEXTAUTH_SECRET
-    if (!apiSecret) return false
+    const secret = (process.env.NEXTAUTH_SECRET || "").trim()
+    const apiSecret = (process.env.API_SECRET || "").trim()
+    const validSecret = apiSecret || secret
+
+    if (!validSecret) return false
 
     const authHeader = request.headers.get("authorization")
     if (authHeader?.startsWith("Bearer ")) {
-        const bearerToken = authHeader.slice(7)
-        if (bearerToken === apiSecret) return true
+        const bearerToken = authHeader.slice(7).trim()
+        if (bearerToken === validSecret) return true
     }
 
     return false
