@@ -145,14 +145,25 @@ export async function PUT(request: Request) {
   try {
     const { id, ...workOrderData } = await request.json()
 
-    const workOrder = {
-      ...workOrderData,
-      updatedAt: new Date(),
+    // Whitelist only specific safe fields to prevent mass-assignment/pollution
+    const whitelistedUpdates: Record<string, any> = {};
+    if (workOrderData.status !== undefined) whitelistedUpdates.status = workOrderData.status;
+    if (workOrderData.completionPercentage !== undefined) whitelistedUpdates.completionPercentage = workOrderData.completionPercentage;
+    if (workOrderData.notes !== undefined) whitelistedUpdates.notes = workOrderData.notes;
+    if (workOrderData.assigned_worker !== undefined) whitelistedUpdates.assigned_worker = workOrderData.assigned_worker;
+    if (workOrderData.started_at !== undefined) {
+      whitelistedUpdates.started_at = workOrderData.started_at ? new Date(workOrderData.started_at) : null;
+    }
+    if (workOrderData.completed_at !== undefined) {
+      whitelistedUpdates.completed_at = workOrderData.completed_at ? new Date(workOrderData.completed_at) : null;
     }
 
-    await db.collection(COLLECTIONS.WORK_ORDERS).doc(id).update(workOrder)
+    await db.collection(COLLECTIONS.WORK_ORDERS).doc(id).update({
+      ...whitelistedUpdates,
+      updatedAt: new Date(),
+    })
 
-    return NextResponse.json({ id, ...workOrder })
+    return NextResponse.json({ id, ...whitelistedUpdates, updatedAt: new Date() })
   } catch (error) {
     console.error("Error updating work order:", error)
     return NextResponse.json(

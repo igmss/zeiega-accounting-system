@@ -150,17 +150,14 @@ export function WorkOrdersList() {
 
   const handleCompleteWorkOrder = async (workOrderId: string) => {
     try {
-      // Update work order status in database
-      const response = await fetch('/api/work-orders', {
-        method: 'PUT',
+      // Complete work order through the dedicated endpoint to trigger WIP -> Finished Goods journal entries
+      const response = await fetch('/api/work-orders/complete', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: workOrderId,
-          status: "completed",
-          completionPercentage: 100,
-          completed_at: new Date()
+          workOrderId: workOrderId
         })
       })
 
@@ -168,7 +165,7 @@ export function WorkOrdersList() {
         // Get the work order to find the sales order ID
         const workOrder = (Array.isArray(workOrders) ? workOrders : []).find(wo => wo.id === workOrderId)
         if (workOrder && workOrder.sales_order_id) {
-          // Trigger complete order workflow
+          // Trigger complete order workflow to generate invoice and record revenue
           const completeResponse = await fetch('/api/workflow/complete-order', {
             method: 'POST',
             headers: {
@@ -182,10 +179,10 @@ export function WorkOrdersList() {
           if (completeResponse.ok) {
             const result = await completeResponse.json()
             console.log('Order completed:', result)
-            toast.success('Work order completed!')
+            toast.success('Work order completed and WIP transferred to Finished Goods!')
           } else {
             console.error('Failed to complete order workflow')
-            toast.warning('Work order completed but failed to complete order workflow')
+            toast.warning('Work order completed but failed to trigger billing/revenue workflow')
           }
         }
 
@@ -211,8 +208,9 @@ export function WorkOrdersList() {
           setWorkOrders(Array.isArray(workOrdersData) ? workOrdersData : [])
         }
       } else {
-        console.error('Failed to update work order status')
-        toast.error('Failed to complete work order')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to complete work order:', errorData.error)
+        toast.error(`Failed to complete work order: ${errorData.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error completing work order:', error)
