@@ -97,6 +97,29 @@ function makeTxGet(
         const isQuery = typeof queryOrRef?.where === "function"
 
         // ── Doc reads (path-based) ──────────────────────────────────────
+        if (path.startsWith("acc_fiscal_periods/")) {
+            if (fiscalClosed) {
+                return {
+                    exists: true,
+                    id: path.split("/").pop()!,
+                    data: () => ({
+                        startDate: new Date(Date.now() - 30 * 86400000),
+                        endDate: new Date(Date.now() + 30 * 86400000),
+                        status: "closed",
+                    }),
+                }
+            }
+            return {
+                exists: true,
+                id: path.split("/").pop()!,
+                data: () => ({
+                    startDate: new Date(Date.now() - 30 * 86400000),
+                    endDate: new Date(Date.now() + 30 * 86400000),
+                    status: "open",
+                }),
+            }
+        }
+
         if (path.startsWith("acc_invoices/")) {
             if (overrides?.invoiceExists ?? true) {
                 return {

@@ -690,29 +690,21 @@ export class EnhancedAccountingService {
                 }
             }
 
-            // Validate fiscal period is open (reads via tx when available)
-            const periodQuery = db.collection(COLLECTIONS.FISCAL_PERIODS)
-                .where("endDate", ">=", entryDate)
-            const periodSnapshot = tx
-                ? await tx.get(periodQuery)
-                : await periodQuery.get()
+            // Validate fiscal period is open using direct doc lookup (safe in tx, no index needed)
+            const entryYear = entryDate.getFullYear()
+            const entryMonth = entryDate.getMonth() + 1
+            const periodId = `FY-${entryYear}-${String(entryMonth).padStart(2, "0")}`
+            const periodRef = db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId)
+            const periodDoc = tx ? await tx.get(periodRef) : await periodRef.get()
 
             let isClosed = false
             let periodName = "Unknown"
 
-            if (!periodSnapshot.empty) {
-                const matchingPeriod = periodSnapshot.docs.find(doc => {
-                    const p = doc.data()
-                    const start = p.startDate?.toDate ? p.startDate.toDate() : new Date(p.startDate)
-                    return start <= entryDate
-                })
-
-                if (matchingPeriod) {
-                    const period = matchingPeriod.data()
-                    periodName = matchingPeriod.id
-                    if (period.status === "closed" || period.status === "locked") {
-                        isClosed = true
-                    }
+            if (periodDoc.exists) {
+                const period = periodDoc.data()!
+                periodName = periodDoc.id
+                if (period.status === "closed" || period.status === "locked") {
+                    isClosed = true
                 }
             }
 
