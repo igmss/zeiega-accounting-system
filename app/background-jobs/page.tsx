@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Clock, Play, CheckCircle, AlertCircle, RefreshCw } from "lucide-react"
+import { Clock, Play, CheckCircle, AlertCircle, RefreshCw, Trash2, ExternalLink, History } from "lucide-react"
 import { runOrdersJob, runReturnsJob, runInventoryJob } from "@/lib/actions"
 
 interface JobRun {
@@ -17,252 +17,259 @@ interface JobRun {
   endTime?: string
   processed?: number
   errors?: string[]
+  updated?: number
+  lowStockAlerts?: number
 }
+
+const JOB_CONFIG = {
+  orders: {
+    title: "Process Orders",
+    description: "Fetches new orders from website and creates accounting entries",
+    cronLabel: "Every 15 minutes",
+    cronExpr: "*/15 * * * *",
+    apiPath: "/api/cron/process-orders",
+  },
+  returns: {
+    title: "Process Returns",
+    description: "Processes return requests and creates credit memos",
+    cronLabel: "Every 30 minutes",
+    cronExpr: "*/30 * * * *",
+    apiPath: "/api/cron/process-returns",
+  },
+  inventory: {
+    title: "Update Inventory",
+    description: "Updates inventory valuations and checks stock levels",
+    cronLabel: "Every hour",
+    cronExpr: "0 * * * *",
+    apiPath: "/api/cron/update-inventory",
+  },
+} as const
 
 export default function BackgroundJobsPage() {
   const [isRunning, setIsRunning] = useState<Record<string, boolean>>({})
-  const [jobHistory, setJobHistory] = useState<JobRun[]>([
-    {
-      id: "1",
-      jobType: "orders",
-      status: "completed",
-      startTime: "2024-01-15T10:00:00Z",
-      endTime: "2024-01-15T10:02:30Z",
-      processed: 15,
-    },
-    {
-      id: "2",
-      jobType: "inventory",
-      status: "completed",
-      startTime: "2024-01-15T09:00:00Z",
-      endTime: "2024-01-15T09:01:15Z",
-      processed: 245,
-    },
-    {
-      id: "3",
-      jobType: "returns",
-      status: "failed",
-      startTime: "2024-01-15T08:00:00Z",
-      endTime: "2024-01-15T08:00:45Z",
-      errors: ["Connection timeout to external API"],
-    },
-  ])
+  const [jobHistory, setJobHistory] = useState<JobRun[]>([])
 
   const runJob = async (jobType: "orders" | "returns" | "inventory") => {
     setIsRunning((prev) => ({ ...prev, [jobType]: true }))
+    const startTime = new Date()
+
+    const runningJob: JobRun = {
+      id: Date.now().toString(),
+      jobType,
+      status: "running",
+      startTime: startTime.toISOString(),
+    }
+    setJobHistory((prev) => [runningJob, ...prev])
 
     try {
       let result: any
-      const startTime = new Date().toISOString()
-
       switch (jobType) {
-        case "orders":
-          result = await runOrdersJob()
-          break
-        case "returns":
-          result = await runReturnsJob()
-          break
-        case "inventory":
-          result = await runInventoryJob()
-          break
+        case "orders": result = await runOrdersJob(); break
+        case "returns": result = await runReturnsJob(); break
+        case "inventory": result = await runInventoryJob(); break
       }
 
-      // Add to job history
-      const newJob: JobRun = {
-        id: Date.now().toString(),
+      const completedJob: JobRun = {
+        id: runningJob.id,
         jobType,
         status: result.success ? "completed" : "failed",
-        startTime,
+        startTime: startTime.toISOString(),
         endTime: new Date().toISOString(),
-        processed: (result as any).processed?.length || (result as any).updated?.length || 0,
-        errors: (result as any).errors || ((result as any).error ? [(result as any).error] : undefined),
+        processed: result.processed?.length ?? result.processed ?? 0,
+        updated: result.updated?.length ?? result.updated ?? 0,
+        lowStockAlerts: result.lowStockAlerts ?? 0,
+        errors: result.errors ?? (result.error ? [result.error] : undefined),
       }
 
-      setJobHistory((prev) => [newJob, ...prev.slice(0, 9)]) // Keep last 10 jobs
-
-      console.log(`${jobType} job result:`, result)
+      setJobHistory((prev) => prev.map(j => j.id === runningJob.id ? completedJob : j))
     } catch (error) {
-      console.error(`Error running ${jobType} job:`, error)
-
-      // Add failed job to history
       const failedJob: JobRun = {
-        id: Date.now().toString(),
+        id: runningJob.id,
         jobType,
         status: "failed",
-        startTime: new Date().toISOString(),
+        startTime: startTime.toISOString(),
         endTime: new Date().toISOString(),
         errors: [error instanceof Error ? error.message : "Unknown error"],
       }
-
-      setJobHistory((prev) => [failedJob, ...prev.slice(0, 9)])
+      setJobHistory((prev) => prev.map(j => j.id === runningJob.id ? failedJob : j))
     } finally {
       setIsRunning((prev) => ({ ...prev, [jobType]: false }))
     }
   }
 
+  const clearHistory = () => setJobHistory([])
+
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "running":
-        return <RefreshCw className="h-4 w-4 animate-spin" />
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-green-600" />
-      case "failed":
-        return <AlertCircle className="h-4 w-4 text-red-600" />
-      default:
-        return <Clock className="h-4 w-4" />
+      case "running": return <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+      case "completed": return <CheckCircle className="h-4 w-4 text-green-600" />
+      case "failed": return <AlertCircle className="h-4 w-4 text-red-600" />
+      default: return <Clock className="h-4 w-4" />
     }
   }
 
   const getStatusBadge = (status: string) => {
-    const variants = {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       running: "default",
       completed: "secondary",
       failed: "destructive",
-    } as const
-
-    return <Badge variant={variants[status as keyof typeof variants] || "outline"}>{status}</Badge>
+    }
+    return <Badge variant={variants[status] || "outline"}>{status}</Badge>
   }
+
+  const getElapsed = (start: string, end?: string) => {
+    const s = new Date(start)
+    const e = end ? new Date(end) : new Date()
+    const ms = e.getTime() - s.getTime()
+    if (ms < 1000) return "< 1s"
+    if (ms < 60000) return `${Math.round(ms / 1000)}s`
+    return `${Math.round(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+  }
+
+  const lastCompleted = (type: string) => jobHistory.find(j => j.jobType === type && j.status === "completed")
+  const totalCompleted = jobHistory.filter(j => j.status === "completed").length
+  const totalFailed = jobHistory.filter(j => j.status === "failed").length
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Background Jobs</h1>
-          <p className="text-muted-foreground">Monitor and manage automated background processing tasks</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Background Jobs</h1>
+            <p className="text-muted-foreground">Monitor and manage automated background processing tasks</p>
+          </div>
+          {jobHistory.length > 0 && (
+            <Button variant="outline" size="sm" onClick={clearHistory}>
+              <Trash2 className="h-4 w-4 mr-1" /> Clear History
+            </Button>
+          )}
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Process Orders</CardTitle>
-              <Play className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  Fetches new orders from website and creates accounting entries
-                </p>
-                <Button onClick={() => runJob("orders")} disabled={isRunning.orders} className="w-full">
-                  {isRunning.orders ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    "Run Now"
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Process Returns</CardTitle>
-              <Play className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">Processes return requests and creates credit memos</p>
-                <Button onClick={() => runJob("returns")} disabled={isRunning.returns} className="w-full">
-                  {isRunning.returns ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    "Run Now"
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Update Inventory</CardTitle>
-              <Play className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">Updates inventory valuations and checks stock levels</p>
-                <Button onClick={() => runJob("inventory")} disabled={isRunning.inventory} className="w-full">
-                  {isRunning.inventory ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Running...
-                    </>
-                  ) : (
-                    "Run Now"
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {(Object.keys(JOB_CONFIG) as Array<keyof typeof JOB_CONFIG>).map((type) => {
+            const config = JOB_CONFIG[type]
+            const last = lastCompleted(type)
+            return (
+              <Card key={type}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{config.title}</CardTitle>
+                  <Play className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">{config.description}</p>
+                    {last && (
+                      <p className="text-xs text-muted-foreground">
+                        Last run: {new Date(last.startTime).toLocaleString()} ({getElapsed(last.startTime, last.endTime)})
+                        {last.processed ? ` — ${last.processed} processed` : ""}
+                        {last.updated ? ` — ${last.updated} updated` : ""}
+                      </p>
+                    )}
+                    <Button onClick={() => runJob(type)} disabled={isRunning[type]} className="w-full">
+                      {isRunning[type] ? (
+                        <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Running...</>
+                      ) : (
+                        "Run Now"
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Job History</CardTitle>
-            <CardDescription>Recent background job executions and their results</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" /> Job History
+              </CardTitle>
+              <CardDescription>
+                Recent background job executions
+                {jobHistory.length > 0 && ` — ${totalCompleted} completed, ${totalFailed} failed`}
+              </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {jobHistory.map((job, index) => (
-                <div key={job.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      {getStatusIcon(job.status)}
-                      <div>
-                        <p className="font-medium capitalize">{job.jobType} Processing</p>
-                        <p className="text-sm text-muted-foreground">
-                          Started: {new Date(job.startTime).toLocaleString()}
-                        </p>
+            {jobHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No jobs run yet. Click &quot;Run Now&quot; to execute a background job.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {jobHistory.map((job, index) => (
+                  <div key={job.id}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(job.status)}
+                        <div>
+                          <p className="font-medium capitalize">
+                            {job.jobType} Processing
+                            {job.status !== "running" && (
+                              <span className="text-xs text-muted-foreground ml-1">— {getElapsed(job.startTime, job.endTime)}</span>
+                            )}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(job.startTime).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        {job.processed != null && job.processed > 0 && (
+                          <span className="text-sm text-muted-foreground">{job.processed} processed</span>
+                        )}
+                        {job.updated != null && job.updated > 0 && (
+                          <span className="text-sm text-muted-foreground">{job.updated} updated</span>
+                        )}
+                        {job.lowStockAlerts != null && job.lowStockAlerts > 0 && (
+                          <Badge variant="destructive">{job.lowStockAlerts} low stock</Badge>
+                        )}
+                        {getStatusBadge(job.status)}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      {job.processed && <span className="text-sm text-muted-foreground">{job.processed} items</span>}
-                      {getStatusBadge(job.status)}
-                    </div>
+                    {job.errors && job.errors.length > 0 && (
+                      <div className="mt-2 ml-7">
+                        <div className="rounded-md bg-red-50 dark:bg-red-950/30 p-3">
+                          <p className="text-sm text-red-800 dark:text-red-300">{job.errors.join(", ")}</p>
+                        </div>
+                      </div>
+                    )}
+                    {index < jobHistory.length - 1 && <Separator className="mt-4" />}
                   </div>
-                  {job.errors && job.errors.length > 0 && (
-                    <div className="mt-2 ml-7">
-                      <div className="rounded-md bg-red-50 p-3">
-                        <p className="text-sm text-red-800">{job.errors.join(", ")}</p>
-                      </div>
-                    </div>
-                  )}
-                  {index < jobHistory.length - 1 && <Separator className="mt-4" />}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>Cron Schedule</CardTitle>
-            <CardDescription>Automated job scheduling configuration</CardDescription>
+            <CardDescription>Automated job scheduling — configure via external scheduler or Vercel Cron</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <h4 className="font-medium">Process Orders</h4>
-                  <p className="text-sm text-muted-foreground">Every 15 minutes</p>
-                  <code className="text-xs bg-muted px-2 py-1 rounded">*/15 * * * *</code>
+            <div className="grid gap-4 md:grid-cols-3">
+              {(Object.values(JOB_CONFIG)).map((config) => (
+                <div key={config.apiPath} className="space-y-2 p-3 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-sm">{config.title}</h4>
+                    <a
+                      href={config.apiPath}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Open endpoint"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{config.cronLabel}</p>
+                  <code className="text-xs bg-muted px-2 py-1 rounded inline-block">{config.cronExpr}</code>
+                  <p className="text-xs text-muted-foreground break-all">{config.apiPath}</p>
                 </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">Process Returns</h4>
-                  <p className="text-sm text-muted-foreground">Every 30 minutes</p>
-                  <code className="text-xs bg-muted px-2 py-1 rounded">*/30 * * * *</code>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">Update Inventory</h4>
-                  <p className="text-sm text-muted-foreground">Every hour</p>
-                  <code className="text-xs bg-muted px-2 py-1 rounded">0 * * * *</code>
-                </div>
-              </div>
+              ))}
             </div>
           </CardContent>
         </Card>
