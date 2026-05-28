@@ -37,7 +37,7 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
     e.preventDefault()
     
     try {
-      // Record payment via API
+      // Record payment via API — this also updates invoice status atomically within a transaction
       const response = await fetch('/api/payments', {
         method: 'POST',
         headers: {
@@ -46,36 +46,19 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
         body: JSON.stringify({
           invoice_id: invoice.id,
           amount: Number(paymentData.amount),
-          method: paymentData.method,
-          reference: paymentData.reference,
-          notes: paymentData.notes,
+          payment_method: paymentData.method,
+          reference_number: paymentData.reference,
           date: new Date(paymentData.date)
         })
       })
 
       if (response.ok) {
-        // Update invoice status to paid
-        const invoiceResponse = await fetch('/api/invoices', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: invoice.id,
-            status: "paid",
-            paid_at: new Date()
-          })
-        })
-
-        if (invoiceResponse.ok) {
-          toast.success('Payment recorded successfully! Invoice marked as paid.')
-          setIsOpen(false)
-          router.refresh()
-        } else {
-          toast.warning('Payment recorded but failed to update invoice status')
-        }
+        toast.success('Payment recorded successfully!')
+        setIsOpen(false)
+        router.refresh()
       } else {
-        toast.error('Failed to record payment')
+        const errData = await response.json().catch(() => ({}))
+        toast.error(errData.error || 'Failed to record payment')
       }
     } catch (error) {
       console.error('Error recording payment:', error)

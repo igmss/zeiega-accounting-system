@@ -10,28 +10,49 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
     const cursor = searchParams.get("cursor")
 
-    let query = db.collection(COLLECTIONS.INVOICES)
-      .orderBy("created_at", "desc")
-      .limit(limit)
-    
-    if (cursor) {
-      const lastDoc = await db.collection(COLLECTIONS.INVOICES).doc(cursor).get()
-      if (lastDoc.exists) {
-        query = query.startAfter(lastDoc)
+    let invoices: any[] = []
+    let nextCursor: string | null = null
+    let hasMore = false
+
+    try {
+      let query = db.collection(COLLECTIONS.INVOICES) as FirebaseFirestore.Query
+      
+      // Try ordered query first, fall back to unordered if mixed types exist
+      try {
+        query = db.collection(COLLECTIONS.INVOICES)
+          .orderBy("created_at", "desc")
+          .limit(limit)
+        
+        if (cursor) {
+          const lastDoc = await db.collection(COLLECTIONS.INVOICES).doc(cursor).get()
+          if (lastDoc.exists) {
+            query = query.startAfter(lastDoc)
+          }
+        }
+      } catch {
+        query = db.collection(COLLECTIONS.INVOICES).limit(limit)
       }
+
+      const invoicesSnapshot = await query.get()
+      invoices = invoicesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        created_at: doc.data().created_at?.toDate?.() || doc.data().created_at || null,
+        due_date: doc.data().due_date?.toDate?.() || doc.data().due_date || null,
+        paid_at: doc.data().paid_at?.toDate?.() || doc.data().paid_at || null,
+      }))
+
+      const lastVisible = invoicesSnapshot.docs[invoicesSnapshot.docs.length - 1]
+      nextCursor = lastVisible ? lastVisible.id : null
+      hasMore = invoicesSnapshot.docs.length === limit
+    } catch {
+      // Final fallback — fetch without ordering if structured queries fail
+      const snapshot = await db.collection(COLLECTIONS.INVOICES).limit(limit).get()
+      invoices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     }
 
-    const invoicesSnapshot = await query.get()
-    const invoices = invoicesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-
-    const lastVisible = invoicesSnapshot.docs[invoicesSnapshot.docs.length - 1]
-    const nextCursor = lastVisible ? lastVisible.id : null
-    const hasMore = invoicesSnapshot.docs.length === limit
-
     return NextResponse.json({
+      success: true,
       data: invoices,
       nextCursor,
       hasMore

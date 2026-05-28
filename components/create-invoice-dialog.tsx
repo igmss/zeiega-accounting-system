@@ -8,25 +8,78 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 export function CreateInvoiceDialog() {
   const [isOpen, setIsOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [invoiceData, setInvoiceData] = useState({
     customer_id: "",
+    customer_name: "",
     sales_order_id: "",
     due_date: "",
     tax_rate: "10",
     items: [{ sku: "", description: "", qty: 1, unit_price: 0 }],
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // In real app, this would call the AccountingService to create invoice
-    console.log("Creating invoice:", invoiceData)
-    setIsOpen(false)
+    if (!invoiceData.customer_name && !invoiceData.customer_id) {
+      toast.error("Customer name is required")
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const subtotal = invoiceData.items.reduce((sum, item) => sum + item.qty * item.unit_price, 0)
+      const taxAmount = (subtotal * Number.parseFloat(invoiceData.tax_rate)) / 100
+      const total = subtotal + taxAmount
+
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: invoiceData.customer_id,
+          customer_name: invoiceData.customer_name,
+          sales_order_id: invoiceData.sales_order_id,
+          amount: subtotal,
+          tax_amount: taxAmount,
+          total_amount: total,
+          items: invoiceData.items.map(item => ({
+            sku: item.sku,
+            description: item.description,
+            qty: item.qty,
+            unit_price: item.unit_price,
+            total: item.qty * item.unit_price
+          })),
+          due_date: invoiceData.due_date ? new Date(invoiceData.due_date).toISOString() : undefined
+        })
+      })
+
+      if (response.ok) {
+        toast.success('Invoice created successfully!')
+        setIsOpen(false)
+        setInvoiceData({
+          customer_id: "",
+          customer_name: "",
+          sales_order_id: "",
+          due_date: "",
+          tax_rate: "10",
+          items: [{ sku: "", description: "", qty: 1, unit_price: 0 }],
+        })
+        window.location.reload()
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        toast.error(errData.error || 'Failed to create invoice')
+      }
+    } catch (error) {
+      console.error("Error creating invoice:", error)
+      toast.error('Failed to create invoice')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const addItem = () => {
@@ -70,38 +123,24 @@ export function CreateInvoiceDialog() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="customer">Customer *</Label>
-              <Select
-                value={invoiceData.customer_id}
-                onValueChange={(value) => setInvoiceData((prev) => ({ ...prev, customer_id: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CUST-001">Acme Corporation</SelectItem>
-                  <SelectItem value="CUST-002">Tech Solutions Inc</SelectItem>
-                  <SelectItem value="CUST-003">Global Industries</SelectItem>
-                  <SelectItem value="CUST-004">StartUp Innovations</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="customer_name">Customer Name *</Label>
+              <Input
+                id="customer_name"
+                value={invoiceData.customer_name}
+                onChange={(e) => setInvoiceData((prev) => ({ ...prev, customer_name: e.target.value }))}
+                placeholder="Customer name"
+                required
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sales_order">Sales Order</Label>
-              <Select
+              <Input
+                id="sales_order"
                 value={invoiceData.sales_order_id}
-                onValueChange={(value) => setInvoiceData((prev) => ({ ...prev, sales_order_id: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Link to sales order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SO-2025-0001">SO-2025-0001</SelectItem>
-                  <SelectItem value="SO-2025-0002">SO-2025-0002</SelectItem>
-                  <SelectItem value="SO-2025-0003">SO-2025-0003</SelectItem>
-                </SelectContent>
-              </Select>
+                onChange={(e) => setInvoiceData((prev) => ({ ...prev, sales_order_id: e.target.value }))}
+                placeholder="SO-2025-XXXX"
+              />
             </div>
 
             <div className="space-y-2">

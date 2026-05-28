@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, FileText, DollarSign, Clock, CheckCircle, Eye, Send, Download } from "lucide-react"
+import { Search, FileText, DollarSign, Clock, CheckCircle, Eye } from "lucide-react"
 import { InvoiceDetails } from "./invoice-details"
 import { CreateInvoiceDialog } from "./create-invoice-dialog"
 import { RecordPaymentDialog } from "./record-payment-dialog"
@@ -265,14 +265,6 @@ export function InvoiceManagement() {
                       {invoice.status !== "paid" && (
                         <RecordPaymentDialog invoice={invoice} />
                       )}
-
-                      <Button variant="outline" size="sm" aria-label="Download invoice">
-                        <Download className="h-4 w-4" />
-                      </Button>
-
-                      <Button variant="outline" size="sm" aria-label="Send invoice">
-                        <Send className="h-4 w-4" />
-                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
