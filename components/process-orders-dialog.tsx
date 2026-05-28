@@ -21,27 +21,47 @@ export function ProcessOrdersDialog() {
 
   const handleProcessOrders = async () => {
     setIsProcessing(true)
-    setProgress(0)
+    setProgress(20)
     setProcessedCount(0)
     setResults(null)
 
-    // Simulate processing with progress updates
-    const totalSteps = 5
-    for (let i = 0; i <= totalSteps; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 800))
-      setProgress((i / totalSteps) * 100)
-      setProcessedCount(i * 2) // Simulate processing 2 orders per step
+    try {
+      // Trigger the real website order synchronization
+      const response = await fetch('/api/sales-orders/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      setProgress(60)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to synchronize website orders')
+      }
+
+      const result = await response.json()
+      
+      setProgress(100)
+      setResults({
+        processed: result.processed || 0,
+        created_sales_orders: result.created_sales_orders || 0,
+        created_work_orders: result.created_work_orders || 0,
+        errors: result.errors || []
+      })
+      setProcessedCount(result.processed || 0)
+    } catch (error: any) {
+      console.error("Error during live order sync:", error)
+      setResults({
+        processed: 0,
+        created_sales_orders: 0,
+        created_work_orders: 0,
+        errors: [error.message || "An unexpected error occurred during synchronization."]
+      })
+    } finally {
+      setIsProcessing(false)
     }
-
-    // Simulate results
-    setResults({
-      processed: 10,
-      created_sales_orders: 8,
-      created_work_orders: 8,
-      errors: ["Order WEB-005: Missing customer email", "Order WEB-012: Invalid item SKU"],
-    })
-
-    setIsProcessing(false)
   }
 
   const resetDialog = () => {
