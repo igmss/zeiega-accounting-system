@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { timingSafeEqual } from "crypto"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { getCORSHeaders, handlePreflight } from "@/lib/cors"
@@ -18,7 +19,14 @@ export async function POST(request: NextRequest) {
 
     // Verify webhook secret for security (must happen before processing).
     const expectedSecret = (process.env.WEBHOOK_SECRET || '').trim()
-    if (!secret || secret !== expectedSecret) {
+    const providedBuffer = Buffer.from(secret)
+    const expectedBuffer = Buffer.from(expectedSecret)
+
+    const isAuthorized = secret && 
+      providedBuffer.length === expectedBuffer.length && 
+      timingSafeEqual(providedBuffer, expectedBuffer)
+
+    if (!isAuthorized) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401, headers: getCORSHeaders(request, ["x-webhook-secret"]) }

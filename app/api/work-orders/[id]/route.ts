@@ -53,10 +53,19 @@ export async function PUT(
     
     console.log(`Updating work order ${params.id} with:`, updates);
     
+    // Whitelist only specific safe modifiable fields to prevent Mass Assignment / cost tampering
+    const whitelistedUpdates: Record<string, any> = {};
+    if (updates.status !== undefined) whitelistedUpdates.status = updates.status;
+    if (updates.completionPercentage !== undefined) whitelistedUpdates.completionPercentage = updates.completionPercentage;
+    if (updates.notes !== undefined) whitelistedUpdates.notes = updates.notes;
+    if (updates.estimated_completion !== undefined) {
+      whitelistedUpdates.estimated_completion = updates.estimated_completion ? new Date(updates.estimated_completion) : null;
+    }
+    
     // Update work order
     const { db, COLLECTIONS } = await import("@/lib/firebase");
     await db.collection(COLLECTIONS.WORK_ORDERS).doc(params.id).update({
-      ...updates,
+      ...whitelistedUpdates,
       updated_at: new Date()
     });
     

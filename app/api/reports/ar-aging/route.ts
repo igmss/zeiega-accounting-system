@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
-import { requireAuth } from "@/lib/auth"
+import { requirePermission } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
     try {
-        const auth = await requireAuth()
-        if (!auth.authenticated) return auth.response
+        const auth = await requirePermission("reports:view")
+        if (!auth.authorized) return auth.response
 
         const { searchParams } = new URL(request.url)
         const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]

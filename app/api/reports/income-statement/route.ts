@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
-import { requireAuth } from "@/lib/auth"
+import { requirePermission } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic"
  */
 export async function GET(request: NextRequest) {
     try {
-        const auth = await requireAuth()
-        if (!auth.authenticated) return auth.response
+        const auth = await requirePermission("reports:view")
+        if (!auth.authorized) return auth.response
 
         const searchParams = request.nextUrl.searchParams
         const startDateStr = searchParams.get("startDate")
