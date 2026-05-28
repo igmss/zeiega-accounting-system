@@ -263,6 +263,15 @@ export class WorkOrderService {
             workOrder.overhead_cost = costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0);
 
             console.log(`Recalculated costs for work order ${workOrderId}: Total ${formatCurrency(costCalculation.totalEstimatedCost)}`);
+
+            // Persist the recalculated costs to Firestore if they are not yet saved
+            await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
+              item_costs: costCalculation.itemCosts,
+              estimated_cost: costCalculation.totalEstimatedCost,
+              labor_cost: workOrder.labor_cost,
+              overhead_cost: workOrder.overhead_cost,
+              updated_at: new Date()
+            }).catch(err => console.error(`Failed to persist auto-calculated costs for WO ${workOrderId}:`, err));
           }
         } catch (error) {
           console.warn(`Failed to recalculate costs for work order ${workOrderId}:`, error);
@@ -398,6 +407,33 @@ export class WorkOrderService {
               workOrderData.items = [];
               workOrderData.total_amount = 0;
               workOrderData.order_status = "unknown";
+            }
+
+            // Self-healing: auto-calculate and persist costs from designs if zero or missing
+            if (workOrderData.items && workOrderData.items.length > 0 && (!workOrderData.estimated_cost || workOrderData.estimated_cost === 0)) {
+              try {
+                const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(workOrderData.items);
+                if (costCalculation.success && costCalculation.itemCosts.length > 0) {
+                  const estimatedCost = costCalculation.totalEstimatedCost;
+                  const laborCost = costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0);
+                  const overheadCost = costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0);
+                  const laborHours = costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost / 50), 0);
+
+                  const updateFields = {
+                    estimated_cost: estimatedCost,
+                    labor_cost: laborCost,
+                    labor_hours: laborHours,
+                    overhead_cost: overheadCost,
+                    item_costs: costCalculation.itemCosts,
+                    updated_at: new Date()
+                  };
+
+                  await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderData.id).update(updateFields);
+                  Object.assign(workOrderData, updateFields);
+                }
+              } catch (err) {
+                console.warn(`Failed to auto-recalculate/persist costs for work order ${workOrderData.id}:`, err);
+              }
             }
           } catch (error) {
             console.warn(`Failed to fetch sales order ${workOrderData.sales_order_id}:`, error);

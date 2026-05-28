@@ -257,6 +257,13 @@ export function WorkOrdersList() {
     return materials.reduce((sum, material) => sum + material.qty * material.cost, 0)
   }
 
+  const getEstimatedMaterialCost = (workOrder: any) => {
+    if (workOrder.item_costs && workOrder.item_costs.length > 0) {
+      return workOrder.item_costs.reduce((sum: number, item: any) => sum + (item.materialCost || 0), 0);
+    }
+    return workOrder.estimated_cost ? (workOrder.estimated_cost * 0.4) : 0;
+  }
+
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
@@ -335,7 +342,7 @@ export function WorkOrdersList() {
                         )
                         : (
                           <>
-                            <span>{formatCurrency(workOrder.estimated_cost || 0)}</span>
+                            <span>{formatCurrency(getEstimatedMaterialCost(workOrder))}</span>
                             <span className="text-xs text-blue-600 dark:text-blue-400">Estimated</span>
                           </>
                         )
