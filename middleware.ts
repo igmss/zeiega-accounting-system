@@ -185,6 +185,21 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
     return response
 }
 
+function isAuthenticated(token: { id?: string } | null, request: NextRequest): boolean {
+    if (token) return true
+
+    const apiSecret = process.env.API_SECRET || process.env.NEXTAUTH_SECRET
+    if (!apiSecret) return false
+
+    const authHeader = request.headers.get("authorization")
+    if (authHeader?.startsWith("Bearer ")) {
+        const bearerToken = authHeader.slice(7)
+        if (bearerToken === apiSecret) return true
+    }
+
+    return false
+}
+
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
     const origin = request.headers.get("origin")
@@ -197,10 +212,20 @@ export async function middleware(request: NextRequest) {
         return applyCORSHeaders(response, origin)
     }
 
+    const isApiRoute = pathname.startsWith("/api/")
+
+    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
+    const token = await getToken({
+        req: request,
+        secret: process.env.MIDDLEWARE_SECRET || process.env.NEXTAUTH_SECRET
+    })
+
+    const authenticated = isAuthenticated(token, request)
+
     let rateLimitInfo: { remaining: number; reset: number } | null = null
 
-    // Apply rate limiting to API routes
-    if (pathname.startsWith("/api/")) {
+    // Apply rate limiting to API routes (skip for Bearer-authenticated requests)
+    if (isApiRoute && !request.headers.get("authorization")?.startsWith("Bearer ")) {
         const rateLimit = await checkRateLimit(ip)
 
         if (!rateLimit.redisAvailable) {
@@ -228,21 +253,15 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
-    const token = await getToken({
-        req: request,
-        secret: process.env.MIDDLEWARE_SECRET || process.env.NEXTAUTH_SECRET
-    })
-
     // Handle protected pages - redirect to login if not authenticated
-    if (isProtectedPage(pathname) && !token) {
+    if (isProtectedPage(pathname) && !authenticated) {
         const loginUrl = new URL("/auth/login", request.url)
         loginUrl.searchParams.set("callbackUrl", pathname)
         return NextResponse.redirect(loginUrl)
     }
 
     // Handle protected API routes - return 401 if not authenticated
-    if (isProtectedPath(pathname) && !token) {
+    if (isProtectedPath(pathname) && !authenticated) {
         return NextResponse.json(
             { success: false, error: "Authentication required" },
             { status: 401 }
