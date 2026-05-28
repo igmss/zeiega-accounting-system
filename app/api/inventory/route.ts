@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       cash: { id: "1101", name: "Cash on Hand" },
       bank: { id: "1103", name: "Bank Account" },
       payable: { id: "2101", name: "Accounts Payable" },
-      opening: { id: "3001", name: "Owner's Capital" },
+      opening: { id: "3100", name: "Retained Earnings" },
     }
 
     if (!paymentSource || !paymentSourceMap[paymentSource]) {
@@ -77,25 +77,27 @@ export async function POST(request: Request) {
     // Add inventory item
     const docRef = await db.collection(COLLECTIONS.INVENTORY_ITEMS).add(item)
     
-    // Create journal entry for inventory purchase (Credit Account → Raw Materials)
+    // Create journal entry for inventory purchase
     if (totalCost > 0) {
+      const inventoryAccount = item.type === "finished" ? "1220" : "1201"
+      const inventoryAccountName = item.type === "finished" ? "Finished Goods" : "Raw Materials - Fabric"
       const journalEntry = {
         date: now,
         entries: [
           {
-            account_id: "1201", // Raw Materials
+            account_id: inventoryAccount,
             debit: totalCost,
             credit: 0,
-            description: `Inventory purchase: ${item.name} - ${item.quantity_on_hand} ${item.unit}`
+            description: `Inventory: ${item.name} - ${item.quantity_on_hand} ${item.unit}`
           },
           {
             account_id: creditAccount.id,
             debit: 0,
             credit: totalCost,
-            description: `${creditAccount.name} payment for inventory: ${item.name}`
+            description: `${creditAccount.name} for inventory: ${item.name}`
           }
         ],
-        account_ids: ["1201", creditAccount.id], // Proper index for reporting (BUG-18)
+        account_ids: [inventoryAccount, creditAccount.id],
         linked_doc: docRef.id,
         created_at: now
       }

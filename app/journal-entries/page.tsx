@@ -97,7 +97,7 @@ export default function JournalEntriesPage() {
     }
     return (
       <Badge className={colorMap[type] || "bg-gray-500"}>
-        {type.replace(/_/g, " ")}
+        {(type || "UNKNOWN").replace(/_/g, " ")}
       </Badge>
     )
   }
