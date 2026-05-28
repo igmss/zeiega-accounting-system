@@ -303,8 +303,8 @@ export async function middleware(request: NextRequest) {
         )
     }
 
-    // Scope enforcement: read-only tokens cannot write
-    if (isApiRoute && request.method !== "GET" && !isAuthenticatedAdmin(token, request)) {
+    // Scope enforcement: read-only tokens cannot write to protected routes
+    if (isProtectedPath(pathname) && isApiRoute && request.method !== "GET" && !isAuthenticatedAdmin(token, request)) {
         return NextResponse.json(
             { success: false, error: "Write access denied. Read-only token." },
             { status: 403 }
