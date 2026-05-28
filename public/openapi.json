@@ -13,12 +13,8 @@
   },
   "servers": [
     {
-      "url": "https://zeiega-accounting-system.vercel.app",
-      "description": "Production"
-    },
-    {
-      "url": "http://localhost:3000",
-      "description": "Development"
+      "url": "",
+      "description": "Current server (auto-detected from where this spec is hosted)"
     }
   ],
   "security": [

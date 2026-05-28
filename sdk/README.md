@@ -12,7 +12,8 @@ npm install @zeiega/accufinance-sdk
 import { createAccuFinanceClient } from "@zeiega/accufinance-sdk"
 
 const api = createAccuFinanceClient({
-  apiKey: "testing-api-key-2026",
+  baseUrl: "https://your-instance.vercel.app",
+  apiKey: "your-admin-token",
 })
 
 // Full autocomplete on every endpoint, method, body, and response
@@ -49,10 +50,28 @@ await api.POST("/api/journal-entries", {
 
 ## Configuration
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `baseUrl` | `https://zeiega-accounting-system.vercel.app` | API server URL |
-| `apiKey` | — | Bearer token (API_SECRET or NEXTAUTH_SECRET) |
+| Option | Type | Description |
+|--------|------|-------------|
+| `baseUrl` | `string` (**required**) | Your AccuFinance API server URL |
+| `apiKey` | `string` (**required**) | Admin token from API_SECRET or API_ADMIN_TOKENS |
+
+## Token Types
+
+| Scope | Env Var | Access |
+|-------|---------|--------|
+| Admin | `API_SECRET` or `API_ADMIN_TOKENS` | Full read/write |
+| Read-only | `API_READ_TOKENS` | GET requests only (403 on writes) |
+
+Generate a secure token:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Then set it in Vercel: **Settings → Environment Variables**
+
+## Domain Changes
+
+If your domain changes, update the `baseUrl` in your SDK config. The OpenAPI spec at `/openapi.json` auto-detects the server URL at runtime.
 
 ## Available Endpoints
 

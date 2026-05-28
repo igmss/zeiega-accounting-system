@@ -10,10 +10,15 @@ function getBearerUser(): { id: string; email: string; name: string; role: UserR
         if (!authHeader?.startsWith("Bearer ")) return null
 
         const bearerToken = authHeader.slice(7).trim()
-        const secret = (process.env.NEXTAUTH_SECRET || "").trim()
-        const apiSecret = (process.env.API_SECRET || "").trim()
+        if (!bearerToken) return null
 
-        if (bearerToken === apiSecret || bearerToken === secret) {
+        const validTokens = new Set<string>()
+        ;(process.env.API_SECRET || "").trim()      && validTokens.add(process.env.API_SECRET!.trim())
+        ;(process.env.NEXTAUTH_SECRET || "").trim()  && validTokens.add(process.env.NEXTAUTH_SECRET!.trim())
+        ;(process.env.API_ADMIN_TOKENS || "").split(",").forEach(t => { const v = t.trim(); if (v) validTokens.add(v) })
+        ;(process.env.API_READ_TOKENS || "").split(",").forEach(t => { const v = t.trim(); if (v) validTokens.add(v) })
+
+        if (validTokens.has(bearerToken)) {
             return {
                 id: "api",
                 email: "api@system",

@@ -185,22 +185,51 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
     return response
 }
 
-function isAuthenticated(token: { id?: string } | null, request: NextRequest): boolean {
-    if (token) return true
+type TokenScope = "admin" | "read"
 
-    const secret = (process.env.NEXTAUTH_SECRET || "").trim()
-    const apiSecret = (process.env.API_SECRET || "").trim()
-    const validSecret = apiSecret || secret
-
-    if (!validSecret) return false
-
+function resolveBearerToken(request: NextRequest): { valid: false } | { valid: true; scope: TokenScope } {
     const authHeader = request.headers.get("authorization")
-    if (authHeader?.startsWith("Bearer ")) {
-        const bearerToken = authHeader.slice(7).trim()
-        if (bearerToken === validSecret) return true
+    if (!authHeader?.startsWith("Bearer ")) return { valid: false }
+
+    const bearerToken = authHeader.slice(7).trim()
+    if (!bearerToken) return { valid: false }
+
+    // Check API_SECRET (admin access, backward compatible)
+    const apiSecret = (process.env.API_SECRET || "").trim()
+    if (apiSecret && bearerToken === apiSecret) {
+        return { valid: true, scope: "admin" }
     }
 
-    return false
+    // Check NEXTAUTH_SECRET fallback (admin access)
+    const nextAuthSecret = (process.env.NEXTAUTH_SECRET || "").trim()
+    if (nextAuthSecret && bearerToken === nextAuthSecret) {
+        return { valid: true, scope: "admin" }
+    }
+
+    // Check API_ADMIN_TOKENS (comma-separated)
+    const adminTokens = (process.env.API_ADMIN_TOKENS || "").split(",").map(t => t.trim()).filter(Boolean)
+    if (adminTokens.includes(bearerToken)) {
+        return { valid: true, scope: "admin" }
+    }
+
+    // Check API_READ_TOKENS (comma-separated, read-only)
+    const readTokens = (process.env.API_READ_TOKENS || "").split(",").map(t => t.trim()).filter(Boolean)
+    if (readTokens.includes(bearerToken)) {
+        return { valid: true, scope: "read" }
+    }
+
+    return { valid: false }
+}
+
+function isAuthenticated(token: { id?: string } | null, request: NextRequest): boolean {
+    if (token) return true
+    return resolveBearerToken(request).valid
+}
+
+function isAuthenticatedAdmin(token: { id?: string } | null, request: NextRequest): boolean {
+    if (token) return true
+    const result = resolveBearerToken(request)
+    return result.valid && result.scope === "admin"
 }
 
 export async function middleware(request: NextRequest) {
@@ -268,6 +297,14 @@ export async function middleware(request: NextRequest) {
         return NextResponse.json(
             { success: false, error: "Authentication required" },
             { status: 401 }
+        )
+    }
+
+    // Scope enforcement: read-only tokens cannot write
+    if (isApiRoute && request.method !== "GET" && !isAuthenticatedAdmin(token, request)) {
+        return NextResponse.json(
+            { success: false, error: "Write access denied. Read-only token." },
+            { status: 403 }
         )
     }
 

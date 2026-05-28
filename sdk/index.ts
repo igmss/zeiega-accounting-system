@@ -3,17 +3,17 @@ import type { paths } from "./types"
 
 export type { paths as AccuFinancePaths }
 
-export function createAccuFinanceClient(config: {
-  baseUrl?: string
-  apiKey?: string
-}) {
-  const baseUrl = config.baseUrl || "https://zeiega-accounting-system.vercel.app"
+export interface AccuFinanceConfig {
+  /** Your AccuFinance API server URL. Required. */
+  baseUrl: string
+  /** Admin token (API_SECRET or API_ADMIN_TOKENS entry). Required. */
+  apiKey: string
+}
 
+export function createAccuFinanceClient(config: AccuFinanceConfig) {
   return createClient<paths>({
-    baseUrl,
-    headers: config.apiKey
-      ? { Authorization: `Bearer ${config.apiKey}` }
-      : undefined,
+    baseUrl: config.baseUrl,
+    headers: { Authorization: `Bearer ${config.apiKey}` },
   })
 }
 
