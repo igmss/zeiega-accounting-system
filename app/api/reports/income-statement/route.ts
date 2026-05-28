@@ -24,9 +24,11 @@ export async function GET(request: NextRequest) {
         const startDate = startDateStr
             ? new Date(startDateStr)
             : new Date(now.getFullYear(), 0, 1)
+        startDate.setHours(0, 0, 0, 0)
         const endDate = endDateStr
             ? new Date(endDateStr)
             : new Date(now.getFullYear(), 11, 31)
+        endDate.setHours(23, 59, 59, 999)
 
         const statement = await FinancialStatementsService.generateIncomeStatement(
             startDate,

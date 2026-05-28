@@ -26,7 +26,9 @@ export async function GET(request: Request) {
     }
 
     const startDate = new Date(from)
+    startDate.setHours(0, 0, 0, 0)
     const endDate = new Date(to)
+    endDate.setHours(23, 59, 59, 999)
 
     // Generate income statement using the service that correctly uses new COA
     const incomeStatement = await FinancialStatementsService.generateIncomeStatement(

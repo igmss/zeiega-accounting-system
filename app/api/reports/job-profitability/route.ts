@@ -21,7 +21,9 @@ export async function GET(request: Request) {
     }
 
     const fromDate = new Date(from)
+    fromDate.setHours(0, 0, 0, 0)
     const toDate = new Date(to)
+    toDate.setHours(23, 59, 59, 999)
 
     // Fetch work orders and sales orders
     const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)

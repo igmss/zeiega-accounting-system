@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
         const VAT_RATE = 14 // Egypt VAT rate
 
         const fromDateObj = fromDate ? new Date(fromDate) : undefined
+        if (fromDateObj) fromDateObj.setHours(0, 0, 0, 0)
         const toDateObj = new Date(toDate)
+        toDateObj.setHours(23, 59, 59, 999)
         toDateObj.setHours(23, 59, 59, 999) // End of day
 
         // Fetch actual balances from FinancialStatementsService

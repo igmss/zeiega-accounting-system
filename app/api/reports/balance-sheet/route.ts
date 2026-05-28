@@ -27,6 +27,7 @@ export async function GET(request: Request) {
 
     // Use 'to' date as the balance sheet date (point-in-time report)
     const asOfDate = new Date(to)
+    asOfDate.setHours(23, 59, 59, 999)
 
     // Generate balance sheet using the service that correctly uses new COA
     const balanceSheet = await FinancialStatementsService.generateBalanceSheet(asOfDate)

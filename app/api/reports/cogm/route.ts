@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
         const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
 
         const start = new Date(fromDate)
+        start.setHours(0, 0, 0, 0)
         const end = new Date(toDate)
+        end.setHours(23, 59, 59, 999)
         end.setHours(23, 59, 59, 999) // End of day
 
         // Query journal entries to calculate manufacturing costs for the period

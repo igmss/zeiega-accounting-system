@@ -14,8 +14,9 @@ export async function GET(request: NextRequest) {
         const toDateStr = searchParams.get("to") || new Date().toISOString().split("T")[0]
 
         const start = new Date(fromDateStr)
+        start.setHours(0, 0, 0, 0)
         const end = new Date(toDateStr)
-        end.setHours(23, 59, 59, 999) // End of day
+        end.setHours(23, 59, 59, 999)
 
         // 1. Get core cash flow metrics from centralized service
         const { FinancialStatementsService } = await import("@/lib/services/financial-statements-service")

@@ -18,6 +18,10 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url)
         const fromDate = searchParams.get("from") || new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0]
         const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
+        const startDate = new Date(fromDate)
+        startDate.setHours(0, 0, 0, 0)
+        const endDate = new Date(toDate)
+        endDate.setHours(23, 59, 59, 999)
         const filterAccountCode = searchParams.get("accountCode")
 
         // Query all journal entries

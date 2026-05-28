@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url)
         const toDate = searchParams.get("to") || new Date().toISOString().split("T")[0]
         const today = new Date(toDate)
+        today.setHours(23, 59, 59, 999)
 
         // Query invoices/receivables
         const invoicesRef = db.collection(COLLECTIONS.INVOICES)
