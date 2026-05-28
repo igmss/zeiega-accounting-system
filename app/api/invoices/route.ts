@@ -143,14 +143,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: revenueResult.error }, { status: 400 })
     }
 
-    // 2. Record COGS (BUG-3)
+    // 2. Record COGS (BUG-3) — auto-calculate from work order if not provided
     let cogsEntryId = null
-    if (cost_of_goods_sold > 0) {
+    let finalCOGS = cost_of_goods_sold || 0
+
+    if (finalCOGS <= 0 && body.sales_order_id) {
+      try {
+        // Look up completed work orders for this sales order
+        const woSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
+          .where("sales_order_id", "==", body.sales_order_id)
+          .where("status", "==", "completed")
+          .limit(1)
+          .get()
+        
+        if (!woSnapshot.empty) {
+          const woData = woSnapshot.docs[0].data() as any
+          finalCOGS = woData.final_completion_cost || woData.total_cost || woData.estimated_cost || 0
+        }
+      } catch (err) {
+        console.warn(`⚠️ Failed to auto-calculate COGS for invoice ${invoiceId}:`, err)
+      }
+    }
+
+    if (finalCOGS > 0) {
       const cogsLines = [
         {
-          accountCode: "5001", // Cost of Goods Sold
+          accountCode: "5301", // Cost of Goods Sold
           accountName: "Cost of Goods Sold",
-          debit: cost_of_goods_sold,
+          debit: finalCOGS,
           credit: 0,
           description: `COGS for invoice ${invoiceId}`
         },
@@ -158,7 +178,7 @@ export async function POST(request: Request) {
           accountCode: "1220", // Finished Goods Inventory
           accountName: "Finished Goods Inventory",
           debit: 0,
-          credit: cost_of_goods_sold,
+          credit: finalCOGS,
           description: `Inventory reduction for ${invoiceId}`
         }
       ]
@@ -176,7 +196,7 @@ export async function POST(request: Request) {
         console.warn(`⚠️ COGS entry failed for invoice ${invoiceId}: ${cogsResult.error}`)
       }
     } else {
-       console.warn(`⚠️ No COGS provided for invoice ${invoiceId}. Skipping COGS journal entry.`)
+       console.warn(`⚠️ No COGS available for invoice ${invoiceId}. Skipping COGS journal entry.`)
     }
 
     // Save invoice to database

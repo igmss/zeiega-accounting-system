@@ -152,48 +152,59 @@ export class WorkOrderMaterialService {
 
       const workOrderData = workOrderDoc.data();
       
-      // Calculate cost with fallbacks (BUG-20 Fix)
-      // 1. Check materials_issued array (formal issue path)
-      let totalCost = workOrderData?.materials_issued?.reduce((sum: number, material: any) => 
-        sum + material.totalCost, 0) || 0;
+      // Per IAS 2.10 / EAS 2: WIP→FG transfer at ACTUAL cost, never at estimated cost
+      // 1. Check materials_issued array (formal issue path from service)
+      let totalCost = (workOrderData?.materials_issued || []).reduce((sum: number, material: any) => 
+        sum + (material.totalCost || 0), 0);
       
-      // 2. Fallback to total_cost field (manual/auto-calculation path)
+      // 2. Fallback to total_cost field (set by update-materials route)
       if (totalCost <= 0) {
         totalCost = workOrderData?.total_cost || 0;
       }
 
-      // 3. Fallback to estimated_cost field (initial estimation path)
+      // 3. Fallback to computed from individual cost fields
       if (totalCost <= 0) {
-        totalCost = workOrderData?.estimated_cost || 0;
+        totalCost = (workOrderData?.material_cost || 0) + 
+                    (workOrderData?.labor_cost || 0) + 
+                    (workOrderData?.overhead_cost || 0);
       }
 
-      // Update work order status regardless of cost
-      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-        status: "completed",
-        completed_at: new Date(),
-        updated_at: new Date(),
-        // Store the final cost used for completion
-        final_completion_cost: totalCost
-      });
+      // 4. Do NOT fallback to estimated_cost — that creates phantom WIP credits
+      //    per IAS 2.9 (lower of cost and NRV). If no actual cost exists, skip transfer.
 
-      // Create journal entry for completion (WIP → Finished Goods) only if cost > 0
+      // Create journal entry for completion (WIP → Finished Goods) BEFORE updating status
+      // This ensures atomicity: if accounting fails, the WO stays in_progress
       let journalEntryId: string | undefined = undefined;
       
       if (totalCost > 0) {
-        // This handles real COA codes (1220 Finished Goods, 1210 WIP) and indexing
         const accountingResult = await EnhancedAccountingService.recordWIPToFinishedGoods(
           workOrderId,
           totalCost
         );
 
         if (!accountingResult.success) {
-          console.error(`⚠️ Work order completed but accounting entry failed: ${accountingResult.error}`);
-        } else {
-          journalEntryId = accountingResult.entryId;
+          console.error(`❌ WIP→FG accounting failed for WO ${workOrderId}: ${accountingResult.error}`);
+          return {
+            success: false,
+            error: `WIP→FG transfer failed: ${accountingResult.error}`
+          };
         }
+        journalEntryId = accountingResult.entryId;
       } else {
-        console.warn(`⚠️ Work order ${workOrderId} completed with zero cost. Skipping journal entry.`);
+        console.warn(`⚠️ Work order ${workOrderId} has no actual costs recorded. Skipping WIP→FG journal entry.`);
+        console.warn(`   materials_issued: empty, total_cost: 0, material/labor/overhead costs all zero.`);
       }
+
+      // Update work order status ONLY after successful accounting
+      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
+        status: "completed",
+        completed_at: new Date(),
+        updated_at: new Date(),
+        final_completion_cost: totalCost,
+        notes: totalCost > 0 
+          ? `Completed with WIP→FG transfer at EGP ${totalCost.toFixed(2)}`
+          : `Completed — no actual costs recorded. WIP→FG transfer skipped.`
+      });
 
 
       console.log(`✅ Successfully completed work order ${workOrderId}`);

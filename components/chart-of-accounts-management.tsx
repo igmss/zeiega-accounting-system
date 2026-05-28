@@ -159,6 +159,14 @@ export function ChartOfAccountsManagement() {
         return <Badge className="bg-green-500">Revenue</Badge>
       case "expense":
         return <Badge variant="outline">Expense</Badge>
+      case "contra_asset":
+        return <Badge className="bg-gray-500">Contra Asset</Badge>
+      case "contra_revenue":
+        return <Badge className="bg-yellow-600">Contra Revenue</Badge>
+      case "cogs":
+        return <Badge className="bg-orange-600">COGS</Badge>
+      case "other":
+        return <Badge className="bg-slate-500">Other</Badge>
       default:
         return <Badge>{type}</Badge>
     }
