@@ -336,7 +336,7 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
     // Work in Progress & Finished Goods (1210-1240)
     "1210": {
         code: "1210",
-        name: "Work in Progress (WIP)",
+        name: "Work in Progress (WIP) - Control",
         nameAr: "إنتاج تحت التشغيل",
         type: AccountType.ASSET,
         subType: AccountSubType.INVENTORY,
@@ -344,7 +344,7 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isActive: true,
         isSystemAccount: true,
         isCashFlowTracked: false,
-        description: "Cost of unfinished garments currently in production",
+        description: "WIP summary control account — detailed balances in 1710-1713 sub-accounts",
     },
     "1710": {
         code: "1710",
@@ -384,6 +384,19 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isSystemAccount: true,
         isCashFlowTracked: false,
         description: "Overhead in production",
+    },
+    "1713": {
+        code: "1713",
+        name: "WIP - Outside Processing",
+        nameAr: "مصنعية الغير",
+        type: AccountType.ASSET,
+        subType: AccountSubType.INVENTORY,
+        normalBalance: "debit",
+        parentCode: "1210",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Subcontracted / outsourced processing costs",
     },
     "1220": {
         code: "1220",
@@ -784,6 +797,32 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isCashFlowTracked: false,
         description: "Salaries owed but not yet paid",
     },
+
+    // IFRS 15 Contract Accounts (2117-2118)
+    "2117": {
+        code: "2117",
+        name: "Retention Payable",
+        nameAr: "تأمين ضمان محتجز مستحق",
+        type: AccountType.LIABILITY,
+        subType: AccountSubType.PAYABLE,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Retention held from subcontractors",
+    },
+    "2118": {
+        code: "2118",
+        name: "Contract Liability - Overbilling",
+        nameAr: "التزام عقد - الفوترة الزائدة",
+        type: AccountType.LIABILITY,
+        subType: AccountSubType.PAYABLE,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "IFRS 15: Billed amount exceeds % complete earned",
+    },
     "2120": {
         code: "2120",
         name: "Wages Payable - Production",
@@ -831,6 +870,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isSystemAccount: false,
         isCashFlowTracked: false,
         description: "General provisions",
+    },
+    "2155": {
+        code: "2155",
+        name: "Provision - Onerous Contracts",
+        nameAr: "مخصص عقود خاسرة",
+        type: AccountType.LIABILITY,
+        subType: AccountSubType.ACCRUED,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "IAS 37: Expected loss when total costs exceed contract price",
     },
     "2160": {
         code: "2160",
@@ -1036,6 +1087,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isCashFlowTracked: false,
         description: "Make-to-order customized garment sales",
     },
+    "4004": {
+        code: "4004",
+        name: "Revenue - Over-Time (POC)",
+        nameAr: "إيرادات محتسبة بنسبة الإنجاز",
+        type: AccountType.REVENUE,
+        subType: AccountSubType.SALES,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "IFRS 15: Revenue recognized over time (percentage-of-completion)",
+    },
     "4010": {
         code: "4010",
         name: "Alteration/Service Revenue",
@@ -1211,9 +1274,147 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         description: "Depreciation of factory assets",
     },
 
+    // Overhead Control & Applied (5009-5011)
+    "5009": {
+        code: "5009",
+        name: "Manufacturing OH - Applied",
+        nameAr: "تحميل التكاليف الصناعية المقدرة",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Overhead applied to WIP via POHR (credit balance)",
+    },
+    "5010": {
+        code: "5010",
+        name: "Manufacturing OH - Control",
+        nameAr: "مراقبة التكاليف الصناعية الفعلية",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Actual indirect manufacturing costs incurred",
+    },
+    "5011": {
+        code: "5011",
+        name: "Over/Under-Applied OH",
+        nameAr: "فرق تحميل التكاليف الصناعية",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Disposal account for OH variance (debit = under-applied, credit = over-applied)",
+    },
+
 
     // Manufacturing Cost Accounts (5101-5301)
 
+
+    // Variance Analysis Accounts (5201-5223)
+    "5201": {
+        code: "5201",
+        name: "Material Price Variance",
+        nameAr: "فرق سعر المواد",
+        type: AccountType.COGS,
+        subType: AccountSubType.MATERIALS,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5202": {
+        code: "5202",
+        name: "Material Usage Variance",
+        nameAr: "فرق استخدام المواد",
+        type: AccountType.COGS,
+        subType: AccountSubType.MATERIALS,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5211": {
+        code: "5211",
+        name: "Labor Rate Variance",
+        nameAr: "فرق معدل الأجور",
+        type: AccountType.COGS,
+        subType: AccountSubType.LABOR,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5212": {
+        code: "5212",
+        name: "Labor Efficiency Variance",
+        nameAr: "فرق كفاءة الأجور",
+        type: AccountType.COGS,
+        subType: AccountSubType.LABOR,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5221": {
+        code: "5221",
+        name: "OH Spending Variance",
+        nameAr: "فرق إنفاق التكاليف الصناعية",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5222": {
+        code: "5222",
+        name: "OH Efficiency Variance",
+        nameAr: "فرق كفاءة التكاليف الصناعية",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+    "5223": {
+        code: "5223",
+        name: "OH Volume Variance",
+        nameAr: "فرق حجم التكاليف الصناعية",
+        type: AccountType.COGS,
+        subType: AccountSubType.OVERHEAD,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "Unfavorable = debit, Favorable = credit",
+    },
+
+    // COGM / Standard Cost Summary (5300-5302)
+    "5300": {
+        code: "5300",
+        name: "Cost of Goods Manufactured (COGM)",
+        nameAr: "تكلفة البضاعة المصنعة",
+        type: AccountType.COGS,
+        subType: AccountSubType.MATERIALS,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Summary account for DM + DL + OH transferred from WIP to FG",
+    },
     "5301": {
         code: "5301",
         name: "Cost of Goods Sold",
@@ -1224,7 +1425,19 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isActive: true,
         isSystemAccount: true,
         isCashFlowTracked: false,
-        description: "Cost of items sold",
+        description: "Actual COGS (goods shipped/sold)",
+    },
+    "5302": {
+        code: "5302",
+        name: "Standard Cost of Goods Sold",
+        nameAr: "تكلفة البضاعة المباعة المعيارية",
+        type: AccountType.COGS,
+        subType: AccountSubType.MATERIALS,
+        normalBalance: "debit",
+        isActive: true,
+        isSystemAccount: false,
+        isCashFlowTracked: false,
+        description: "COGS initially recorded at standard cost (adjusted via variances)",
     },
 
     // ============================================
@@ -1665,6 +1878,7 @@ export const ACCOUNT_CODES = {
     WIP_MATERIALS: "1710",
     WIP_LABOR: "1711",
     WIP_OVERHEAD: "1712",
+    WIP_OUTSIDE_PROCESSING: "1713",
     INVENTORY_FINISHED_GOODS: "1220",
     FG_RETAIL: "1221",
     FG_WHOLESALE: "1222",
@@ -1703,11 +1917,14 @@ export const ACCOUNT_CODES = {
     VAT_CLEARING: "2111",
     VAT_PAYABLE_ETA: "2112",
     PAYROLL_PAYABLE: "2115",
+    RETENTION_PAYABLE: "2117",
+    CONTRACT_LIABILITY_OVERBILLING: "2118",
     STATUTORY_PAYABLE: "2160",
     WAGES_PAYABLE_PRODUCTION: "2120",
     TAX_PAYABLE: "2130",
     ACCRUED_EXPENSES: "2140",
     DEFERRED_REVENUE: "2150",
+    PROVISION_ONEROUS_CONTRACTS: "2155",
     SHORT_TERM_LOANS: "2201",
     LONG_TERM_LOANS: "2210",
 
@@ -1725,6 +1942,7 @@ export const ACCOUNT_CODES = {
     SALES_RETAIL: "4001",
     SALES_WHOLESALE: "4002",
     SALES_CUSTOM_MTO: "4003",
+    SALES_OVER_TIME_POC: "4004",
     SERVICE_REVENUE: "4010",
     ONLINE_SALES: "4011",
     EXPORT_SALES: "4012",
@@ -1741,9 +1959,21 @@ export const ACCOUNT_CODES = {
     FACTORY_UTILITIES: "5006",
     MACHINE_MAINTENANCE: "5007",
     DEPRECIATION_FACTORY: "5008",
-    // 5099 Removed by request
+    OH_APPLIED: "5009",
+    OH_CONTROL: "5010",
+    OH_VARIANCE: "5011",
+    // Variance accounts (5201-5223)
+    MATERIAL_PRICE_VARIANCE: "5201",
+    MATERIAL_USAGE_VARIANCE: "5202",
+    LABOR_RATE_VARIANCE: "5211",
+    LABOR_EFFICIENCY_VARIANCE: "5212",
+    OH_SPENDING_VARIANCE: "5221",
+    OH_EFFICIENCY_VARIANCE: "5222",
+    OH_VOLUME_VARIANCE: "5223",
+    // COGM / Standard COGS
+    COST_OF_GOODS_MANUFACTURED: "5300",
     COST_OF_GOODS_SOLD: "5301",
-    // 51xx WIP Expense accounts Removed by request (Redundant)
+    STANDARD_COST_OF_GOODS_SOLD: "5302",
 
     // Operating Expenses
     OFFICE_SALARIES: "6001",
@@ -1840,8 +2070,8 @@ export function getAccountsByCategory(): Record<string, Account[]> {
         else if (code >= 1401 && code <= 1491) categories["Intangibles"].push(account)
         else if (code >= 2101 && code <= 2210) categories["Payables & Liabilities"].push(account)
         else if (code >= 3001 && code <= 3200) categories["Equity"].push(account)
-        else if (code >= 4001 && code <= 4091) categories["Revenue"].push(account)
-        else if (code >= 5001 && code <= 5099) categories["COGS"].push(account)
+        else if (code >= 4001 && code <= 4099) categories["Revenue"].push(account)
+        else if (code >= 5001 && code <= 5399) categories["COGS"].push(account)
         else if (code >= 6001 && code <= 6206) categories["Operating Expenses"].push(account)
         else categories["Other"].push(account)
     }

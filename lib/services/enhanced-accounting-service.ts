@@ -813,14 +813,14 @@ export class EnhancedAccountingService {
 
         const lines: JournalLine[] = [
             {
-                accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: "Work in Progress Inventory",
-                debit: totalCost,
-                credit: 0,
-                description: `Materials issued to WO: ${workOrderId}`,
-            },
-            {
-                accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,
+            accountCode: ACCOUNT_CODES.WIP_MATERIALS,
+            accountName: "WIP - Direct Materials",
+            debit: totalCost,
+            credit: 0,
+            description: `Materials issued to WO: ${workOrderId}`,
+        },
+        {
+            accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,
                 accountName: "Raw Materials Inventory",
                 debit: 0,
                 credit: totalCost,
@@ -856,8 +856,8 @@ export class EnhancedAccountingService {
 
         const lines: JournalLine[] = [
             {
-                accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: getAccountName(ACCOUNTS.INVENTORY_WIP),
+                accountCode: ACCOUNT_CODES.WIP_LABOR,
+                accountName: "WIP - Direct Labor",
                 debit: totalCost,
                 credit: 0,
                 description: `Labor applied: ${laborHours} hours @ ${formatCurrency(laborRate)}/hr`,
@@ -896,18 +896,18 @@ export class EnhancedAccountingService {
 
         const lines: JournalLine[] = [
             {
-                accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: "Work in Progress Inventory",
+                accountCode: ACCOUNT_CODES.WIP_OVERHEAD,
+                accountName: "WIP - Overhead Applied",
                 debit: overheadAmount,
                 credit: 0,
                 description: `Overhead applied to WO: ${workOrderId}`,
             },
             {
-                accountCode: ACCOUNTS.MANUFACTURING_OVERHEAD,
-                accountName: "Manufacturing Overhead Applied",
+                accountCode: ACCOUNT_CODES.OH_APPLIED,
+                accountName: "Manufacturing OH - Applied",
                 debit: 0,
                 credit: overheadAmount,
-                description: `Overhead for WO: ${workOrderId}`,
+                description: `Overhead applied to WO: ${workOrderId}`,
             },
         ]
 

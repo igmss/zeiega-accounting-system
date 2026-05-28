@@ -258,7 +258,7 @@ export class VarianceService {
       // Price variance
       if (Math.abs(priceVar) > 0.01) {
         entries.push({
-          account_id: "5101", // Material Price Variance (temporary account)
+          account_id: ACCOUNT_CODES.MATERIAL_PRICE_VARIANCE,
           account_name: "Material Price Variance",
           debit: priceVar > 0 ? absPriceVar : 0,
           credit: priceVar < 0 ? absPriceVar : 0,
@@ -277,8 +277,8 @@ export class VarianceService {
 
       // WIP at standard
       entries.push({
-        account_id: ACCOUNT_CODES.INVENTORY_WIP,
-        account_name: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+        account_id: ACCOUNT_CODES.WIP_MATERIALS,
+        account_name: getAccountName(ACCOUNT_CODES.WIP_MATERIALS),
         debit: standardQuantity * standardPrice,
         credit: 0,
         description: `Materials to WIP at standard: ${standardQuantity} × EGP ${standardPrice}`,
@@ -287,7 +287,7 @@ export class VarianceService {
       // Usage variance
       if (Math.abs(usageVar) > 0.01) {
         entries.push({
-          account_id: "5102", // Material Usage Variance (temporary account)
+          account_id: ACCOUNT_CODES.MATERIAL_USAGE_VARIANCE,
           account_name: "Material Usage Variance",
           debit: usageVar > 0 ? absUsageVar : 0,
           credit: usageVar < 0 ? absUsageVar : 0,
@@ -338,7 +338,15 @@ export class VarianceService {
     userId: string = "system"
   ): Promise<{ success: boolean; entryId?: string; totalClosed?: number; error?: string }> {
     try {
-      const varianceAccounts = ["5101", "5102"] // Material Price, Material Usage
+      const varianceAccounts = [
+        ACCOUNT_CODES.MATERIAL_PRICE_VARIANCE,
+        ACCOUNT_CODES.MATERIAL_USAGE_VARIANCE,
+        ACCOUNT_CODES.LABOR_RATE_VARIANCE,
+        ACCOUNT_CODES.LABOR_EFFICIENCY_VARIANCE,
+        ACCOUNT_CODES.OH_SPENDING_VARIANCE,
+        ACCOUNT_CODES.OH_EFFICIENCY_VARIANCE,
+        ACCOUNT_CODES.OH_VOLUME_VARIANCE,
+      ]
       const entryId = `VAR-CLOSE-${Date.now()}`
       const entries: any[] = []
       let totalToClose = 0
@@ -360,7 +368,7 @@ export class VarianceService {
         if (Math.abs(netBalance) > 0.01) {
           entries.push({
             account_id: code,
-            account_name: code === "5101" ? "Material Price Variance" : "Material Usage Variance",
+              account_name: getAccountName(code),
             debit: netBalance < 0 ? Math.abs(netBalance) : 0,
             credit: netBalance > 0 ? netBalance : 0,
             description: `Close variance account to COGS`,

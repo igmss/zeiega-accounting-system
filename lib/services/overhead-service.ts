@@ -57,9 +57,10 @@ export interface OHDisposition {
  * Cost flow:
  *   1. Configure POHR per fiscal year
  *   2. Apply OH to WIP at POHR × actual activity
- *      DR WIP (1210) / CR Manufacturing OH Applied (temporary credit to 5004)
- *   3. At period-end, compute actual vs. applied variance
- *   4. Dispose: immaterial → COGS; material → prorate across WIP/FG/COGS
+ *      DR WIP-OH (1712) / CR Manufacturing OH - Applied (5009)
+ *   3. Actual indirect costs accumulate in Manufacturing OH - Control (5010)
+ *   4. At period-end, close applied into control, isolate variance in 5011
+ *   5. Dispose: immaterial → COGS; material → prorate across WIP/FG/COGS
  */
 export class OverheadService {
   private static readonly COLLECTION = "acc_overhead_config"
@@ -160,13 +161,8 @@ export class OverheadService {
 
   /**
    * Apply overhead to a work order
-   * DR: WIP Inventory (1210)
-   * CR: Manufacturing Overhead (5004)
-   *
-   * @param workOrderId - The work order to apply OH to
-   * @param actualActivity - Actual DLH, MH, or other allocation base units used
-   * @param pohr - The predetermined overhead rate (optional; auto-fetched if omitted)
-   * @param fiscalYear - Fiscal year (optional; defaults to current)
+   * DR: WIP - Overhead Applied (1712)
+   * CR: Manufacturing OH - Applied (5009)
    */
   static async applyOverheadToWorkOrder(
     workOrderId: string,
@@ -210,21 +206,21 @@ export class OverheadService {
         description: `Overhead applied to WO ${workOrderId}: ${actualActivity} × ${formatCurrency(rate)} = ${formatCurrency(appliedOH)}`,
         entries: [
           {
-            account_id: ACCOUNT_CODES.INVENTORY_WIP,
-            account_name: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+            account_id: ACCOUNT_CODES.WIP_OVERHEAD,
+            account_name: getAccountName(ACCOUNT_CODES.WIP_OVERHEAD),
             debit: appliedOH,
             credit: 0,
               description: `Overhead applied: ${actualActivity} units @ ${formatCurrency(rate)}/unit`,
           },
           {
-            account_id: ACCOUNT_CODES.MANUFACTURING_OVERHEAD,
-            account_name: getAccountName(ACCOUNT_CODES.MANUFACTURING_OVERHEAD),
+            account_id: ACCOUNT_CODES.OH_APPLIED,
+            account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
             debit: 0,
             credit: appliedOH,
             description: `OH applied to WO: ${workOrderId}`,
           },
         ],
-        account_ids: [ACCOUNT_CODES.INVENTORY_WIP, ACCOUNT_CODES.MANUFACTURING_OVERHEAD],
+        account_ids: [ACCOUNT_CODES.WIP_OVERHEAD, ACCOUNT_CODES.OH_APPLIED],
         total_debits: appliedOH,
         total_credits: appliedOH,
         created_at: now,
@@ -294,14 +290,14 @@ export class OverheadService {
 
   /**
    * Calculate total overhead applied during a period
-   * Sums credits to 5004 (Manufacturing OH — applied OH reduces this COGS account)
+   * Sums credits to 5009 (Manufacturing OH - Applied)
    */
   static async getAppliedOverhead(
     startDate: Date,
     endDate: Date
   ): Promise<number> {
     const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-      .where("account_ids", "array-contains", ACCOUNT_CODES.MANUFACTURING_OVERHEAD)
+      .where("account_ids", "array-contains", ACCOUNT_CODES.OH_APPLIED)
       .where("date", ">=", startDate)
       .where("date", "<=", endDate)
       .get()
@@ -310,7 +306,7 @@ export class OverheadService {
     for (const doc of snapshot.docs) {
       const entry = doc.data()
       for (const line of entry.entries || []) {
-        if (line.account_id === ACCOUNT_CODES.MANUFACTURING_OVERHEAD) {
+        if (line.account_id === ACCOUNT_CODES.OH_APPLIED) {
           total += (line.credit || 0) - (line.debit || 0)
         }
       }
@@ -319,11 +315,112 @@ export class OverheadService {
   }
 
   /**
-   * Dispose of over/under-applied overhead at period-end
+   * Close over/under-applied overhead at period-end (2-step process).
    *
-   * Immaterial: close entirely to COGS
-   * Material: prorate across WIP, Finished Goods, and COGS based on their balances
+   * Step 1: Close Applied into Control    DR 5009 OH Applied / CR 5010 OH Control
+   *   → 5010 now holds the net variance only
+   * Step 2: Transfer variance to disposal  DR/CR 5010 ↔ 5011 OH Variance
+   * Step 3: Dispose variance to COGS or prorate
    */
+  static async closeOverheadToVariance(
+    startDate: Date,
+    endDate: Date,
+    userId: string = "system"
+  ): Promise<{ success: boolean; underApplied?: number; overApplied?: number; disposedAmount?: number; error?: string }> {
+    try {
+      const actualOH = await this.getActualOverhead(startDate, endDate)
+      const appliedOH = await this.getAppliedOverhead(startDate, endDate)
+      const variance = appliedOH - actualOH // + = over-applied, - = under-applied
+
+      if (Math.abs(variance) < 0.01) {
+        return { success: true, underApplied: 0, overApplied: 0, disposedAmount: 0 }
+      }
+
+      const absV = Math.abs(variance)
+      const now = new Date()
+      const closeId = `OHCLOSE-${Date.now()}`
+
+      // Step 1: Close Applied (5009) into Control (5010)
+      // DR 5009 OH Applied (eliminate credit) / CR 5010 OH Control (reduce debit)
+      const step1 = {
+        id: `${closeId}-S1`,
+        date: endDate,
+        type: "OVERHEAD_CLOSE",
+        reference_doc: `OH-CLOSE-${startDate.toISOString().split("T")[0]}`,
+        description: `Close OH Applied to OH Control: ${formatCurrency(absV)}`,
+        entries: [
+          {
+            account_id: ACCOUNT_CODES.OH_APPLIED,
+            account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
+            debit: absV,
+            credit: 0,
+            description: "Eliminate applied OH credit balance",
+          },
+          {
+            account_id: ACCOUNT_CODES.OH_CONTROL,
+            account_name: getAccountName(ACCOUNT_CODES.OH_CONTROL),
+            debit: 0,
+            credit: absV,
+            description: "Reduce actual OH debit balance to isolate variance",
+          },
+        ],
+        account_ids: [ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.OH_CONTROL],
+        total_debits: absV,
+        total_credits: absV,
+        created_at: now,
+        created_by: userId,
+      }
+
+      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(step1.id).set(step1)
+
+      // Step 2: Transfer variance to Over/Under-Applied OH (5011)
+      const isOver = variance > 0
+      const dispId = `${closeId}-S2`
+      const step2 = {
+        id: dispId,
+        date: endDate,
+        type: "OVERHEAD_DISPOSITION",
+        reference_doc: step1.reference_doc,
+        description: `${isOver ? "Over" : "Under"}-applied OH ${formatCurrency(absV)} → disposed to COGS`,
+        entries: [
+          {
+            account_id: ACCOUNT_CODES.OH_VARIANCE,
+            account_name: getAccountName(ACCOUNT_CODES.OH_VARIANCE),
+            debit: isOver ? 0 : absV,   // Under-applied = DR variance
+            credit: isOver ? absV : 0,  // Over-applied = CR variance
+            description: `OH variance isolated at period-end`,
+          },
+          {
+            account_id: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
+            account_name: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+            debit: isOver ? absV : 0,
+            credit: isOver ? 0 : absV,
+            description: `Dispose ${isOver ? "over" : "under"}-applied OH to COGS`,
+          },
+        ],
+        account_ids: [ACCOUNT_CODES.OH_VARIANCE, ACCOUNT_CODES.COST_OF_GOODS_SOLD],
+        total_debits: absV,
+        total_credits: absV,
+        created_at: now,
+        created_by: userId,
+      }
+
+      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(dispId).set(step2)
+
+      console.log(`✅ OH close: ${formatCurrency(absV)} variance disposed to COGS`)
+      return {
+        success: true,
+        underApplied: isOver ? 0 : absV,
+        overApplied: isOver ? absV : 0,
+        disposedAmount: absV,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to close overhead variance"
+      }
+    }
+  }
   static async disposeOverheadVariance(
     startDate: Date,
     endDate: Date,
@@ -366,8 +463,8 @@ export class OverheadService {
           description: `OH variance disposition: ${isOverApplied ? "Over" : "Under"}-applied ${formatCurrency(absVariance)} → COGS`,
           entries: [
             {
-              account_id: ACCOUNT_CODES.MANUFACTURING_OVERHEAD,
-              account_name: getAccountName(ACCOUNT_CODES.MANUFACTURING_OVERHEAD),
+              account_id: ACCOUNT_CODES.OH_APPLIED,
+              account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
               debit: isOverApplied ? absVariance : 0,
               credit: isOverApplied ? 0 : absVariance,
               description: `Clear OH applied balance`,
@@ -380,7 +477,7 @@ export class OverheadService {
               description: `Dispose ${isOverApplied ? "over" : "under"}-applied OH to COGS`,
             },
           ],
-          account_ids: [ACCOUNT_CODES.MANUFACTURING_OVERHEAD, ACCOUNT_CODES.COST_OF_GOODS_SOLD],
+          account_ids: [ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.COST_OF_GOODS_SOLD],
           total_debits: absVariance,
           total_credits: absVariance,
           created_at: new Date(),
@@ -433,8 +530,8 @@ export class OverheadService {
         const entries: any[] = [
           // Clear Manufacturing OH account
           {
-            account_id: ACCOUNT_CODES.MANUFACTURING_OVERHEAD,
-            account_name: getAccountName(ACCOUNT_CODES.MANUFACTURING_OVERHEAD),
+            account_id: ACCOUNT_CODES.OH_APPLIED,
+            account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
             debit: isOver ? absV : 0,
             credit: isOver ? 0 : absV,
             description: `Clear applied OH balance`,
