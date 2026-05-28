@@ -1,6 +1,29 @@
 import { getServerSession } from "next-auth"
 import { NextRequest, NextResponse } from "next/server"
+import { headers } from "next/headers"
 import { authOptions, hasPermission, UserRole } from "@/lib/auth"
+
+function getBearerUser(): { id: string; email: string; name: string; role: UserRole } | null {
+    try {
+        const headersList = headers()
+        const authHeader = headersList.get("authorization")
+        if (!authHeader?.startsWith("Bearer ")) return null
+
+        const bearerToken = authHeader.slice(7).trim()
+        const secret = (process.env.NEXTAUTH_SECRET || "").trim()
+        const apiSecret = (process.env.API_SECRET || "").trim()
+
+        if (bearerToken === apiSecret || bearerToken === secret) {
+            return {
+                id: "api",
+                email: "api@system",
+                name: "API User",
+                role: UserRole.ADMIN,
+            }
+        }
+    } catch {}
+    return null
+}
 
 /**
  * Get current session in API routes
@@ -14,7 +37,7 @@ export async function getSession() {
  */
 export async function isAuthenticated(): Promise<boolean> {
     const session = await getSession()
-    return !!session?.user
+    return !!session?.user || !!getBearerUser()
 }
 
 /**
@@ -22,7 +45,7 @@ export async function isAuthenticated(): Promise<boolean> {
  */
 export async function getCurrentUser() {
     const session = await getSession()
-    return session?.user || null
+    return session?.user || getBearerUser() || null
 }
 
 /**
@@ -34,19 +57,21 @@ export async function requireAuth(): Promise<
 > {
     const session = await getSession()
 
-    if (!session?.user) {
-        return {
-            authenticated: false,
-            response: NextResponse.json(
-                { success: false, error: "Authentication required" },
-                { status: 401 }
-            ),
-        }
+    if (session?.user) {
+        return { authenticated: true, user: session.user }
+    }
+
+    const apiUser = getBearerUser()
+    if (apiUser) {
+        return { authenticated: true, user: apiUser }
     }
 
     return {
-        authenticated: true,
-        user: session.user,
+        authenticated: false,
+        response: NextResponse.json(
+            { success: false, error: "Authentication required" },
+            { status: 401 }
+        ),
     }
 }
 
