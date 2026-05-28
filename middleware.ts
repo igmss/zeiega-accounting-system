@@ -246,14 +246,6 @@ export async function middleware(request: NextRequest) {
 
     const isApiRoute = pathname.startsWith("/api/")
 
-    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
-    const token = await getToken({
-        req: request,
-        secret: process.env.MIDDLEWARE_SECRET || process.env.NEXTAUTH_SECRET
-    })
-
-    const authenticated = isAuthenticated(token, request)
-
     let rateLimitInfo: { remaining: number; reset: number } | null = null
 
     // Apply rate limiting to API routes (skip for Bearer-authenticated requests)
@@ -284,6 +276,17 @@ export async function middleware(request: NextRequest) {
             return response
         }
     }
+
+    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
+    let token = null
+    try {
+        token = await getToken({
+            req: request,
+            secret: process.env.MIDDLEWARE_SECRET || process.env.NEXTAUTH_SECRET
+        })
+    } catch {}
+
+    const authenticated = isAuthenticated(token, request)
 
     // Handle protected pages - redirect to login if not authenticated
     if (isProtectedPage(pathname) && !authenticated) {
