@@ -9,10 +9,38 @@ export async function GET() {
 
     // Fetch chart of accounts from Firestore
     const accountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
-    const accounts = accountsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const accounts = accountsSnapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        code: data.code || doc.id,
+        name: data.name || "",
+        type: data.type || "",
+        normal_balance: data.normal_balance || "debit",
+        isActive: data.is_active !== false,
+        deprecatedReason: data.deprecated_reason || null,
+        balance: data.balance || 0,
+        description: data.description || null,
+        parent_code: data.parent_code || null,
+      }
+    })
+
+    // Fetch live balances from acc_account_balances (maintained by EnhancedAccountingService)
+    const balanceSnapshot = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).get()
+    const balanceMap: Record<string, number> = {}
+    balanceSnapshot.docs.forEach(doc => {
+      const data = doc.data()
+      if (data.balance !== undefined) {
+        balanceMap[doc.id] = data.balance
+      }
+    })
+
+    // Merge live balances into accounts
+    for (const account of accounts) {
+      if (balanceMap[account.id] !== undefined) {
+        account.balance = balanceMap[account.id]
+      }
+    }
 
     // Fetch journal entries from Firestore
     const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
@@ -23,6 +51,7 @@ export async function GET() {
     }))
 
     return NextResponse.json({
+      success: true,
       accounts: accounts.length > 0 ? accounts : [],
       journalEntries: journalEntries.length > 0 ? journalEntries : []
     })
