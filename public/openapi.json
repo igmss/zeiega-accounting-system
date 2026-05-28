@@ -1,0 +1,2207 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AccuFinance API",
+    "version": "1.0.0",
+    "description": "REST API for the AccuFinance Manufacturing ERP system — designed for Make-to-Order (MTO) garment production. All financial transactions use double-entry accounting with live balance derivation from journal entries. Import into Postman, Insomnia, or any OpenAPI-compatible tool.",
+    "contact": {
+      "name": "AccuFinance Support"
+    },
+    "license": {
+      "name": "Proprietary"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://zeiega-accounting-system.vercel.app",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Development"
+    }
+  ],
+  "security": [
+    { "bearerAuth": [] },
+    { "cookieAuth": [] }
+  ],
+  "tags": [
+    { "name": "Health", "description": "System health and monitoring" },
+    { "name": "Dashboard", "description": "Aggregated KPI data" },
+    { "name": "Customers", "description": "Customer management" },
+    { "name": "Inventory", "description": "Inventory items and movements" },
+    { "name": "Sales Orders", "description": "Sales order management" },
+    { "name": "Invoices", "description": "Invoice creation and management" },
+    { "name": "Payments", "description": "Payment recording and tracking" },
+    { "name": "Work Orders", "description": "Manufacturing work order lifecycle" },
+    { "name": "Designs", "description": "Garment design management with multi-size BOM" },
+    { "name": "BOM", "description": "Bill of Materials definitions" },
+    { "name": "Vendors", "description": "Supplier/vendor management" },
+    { "name": "Purchase Orders", "description": "Procurement and purchase orders" },
+    { "name": "Chart of Accounts", "description": "Accounting chart of accounts" },
+    { "name": "Journal Entries", "description": "Double-entry journal entries" },
+    { "name": "Accounting", "description": "Opening balances, expenses, assets, liabilities, VAT" },
+    { "name": "Loans", "description": "Loan recording and tracking" },
+    { "name": "Reports", "description": "Financial statement generation" },
+    { "name": "Overhead", "description": "POHR configuration and allocation" },
+    { "name": "Variance", "description": "Cost variance analysis" },
+    { "name": "Contracts", "description": "IFRS 15 / ASC 606 revenue recognition" },
+    { "name": "Workflow", "description": "Business process automation" },
+    { "name": "Fiscal", "description": "Fiscal period and year-end close" },
+    { "name": "Real Orders", "description": "Website order integration" },
+    { "name": "Webhooks", "description": "External service webhooks" },
+    { "name": "Cron", "description": "Scheduled background jobs" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key set via Vercel env var (API_SECRET or NEXTAUTH_SECRET). Use for Postman, curl, scripts."
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "next-auth.session-token",
+        "description": "NextAuth session cookie from browser login."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": { "type": "string", "example": "Authentication required" }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": { "type": "string", "example": "Validation failed" },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": {} },
+          "nextCursor": { "type": "string", "nullable": true },
+          "hasMore": { "type": "boolean" }
+        }
+      },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "address": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "totalOrders": { "type": "number" },
+          "totalSpent": { "type": "number" },
+          "lastOrderDate": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "InventoryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sku": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["raw", "finished"] },
+          "unit": { "type": "string" },
+          "quantity_on_hand": { "type": "number" },
+          "cost_per_unit": { "type": "number" },
+          "reorder_level": { "type": "number", "nullable": true }
+        }
+      },
+      "JournalEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "memo": { "type": "string" },
+          "reference": { "type": "string", "nullable": true },
+          "type": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "account_id": { "type": "string" },
+                "account_name": { "type": "string" },
+                "description": { "type": "string" },
+                "debit": { "type": "number" },
+                "credit": { "type": "number" }
+              }
+            }
+          }
+        }
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "properties": {
+          "kpiData": {
+            "type": "object",
+            "properties": {
+              "totalRevenue": { "type": "number" },
+              "totalOrders": { "type": "number" },
+              "activeWorkOrders": { "type": "number" },
+              "pendingPayroll": { "type": "number" }
+            }
+          },
+          "monthlyRevenue": { "type": "array", "items": { "type": "object" } },
+          "topCustomers": { "type": "array", "items": { "type": "object" } },
+          "recentOrders": { "type": "array", "items": { "type": "object" } },
+          "inventoryAlerts": { "type": "array", "items": { "type": "object" } },
+          "workOrderStatus": {
+            "type": "object",
+            "properties": {
+              "pending": { "type": "number" },
+              "in_progress": { "type": "number" },
+              "completed": { "type": "number" }
+            }
+          }
+        }
+      },
+      "IncomeStatement": {
+        "type": "object",
+        "properties": {
+          "revenue": { "type": "number" },
+          "cost_of_goods_sold": { "type": "number" },
+          "gross_profit": { "type": "number" },
+          "operating_expenses": { "type": "number" },
+          "operating_income": { "type": "number" },
+          "other_income_expenses": { "type": "number" },
+          "net_income": { "type": "number" },
+          "monthlyTrend": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "BalanceSheet": {
+        "type": "object",
+        "properties": {
+          "assets": {
+            "type": "object",
+            "properties": {
+              "current": { "type": "object" },
+              "fixed": { "type": "object" },
+              "total": { "type": "number" }
+            }
+          },
+          "liabilities": {
+            "type": "object",
+            "properties": {
+              "current": { "type": "object" },
+              "long_term": { "type": "object" },
+              "total": { "type": "number" }
+            }
+          },
+          "equity": {
+            "type": "object",
+            "properties": {
+              "capital": { "type": "number" },
+              "retained_earnings": { "type": "number" },
+              "current_income": { "type": "number" },
+              "total": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Firestore connectivity check. Returns 'ok' or 'degraded'.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "enum": ["ok", "degraded"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get dashboard KPIs",
+        "description": "Returns aggregated KPI data: total revenue, orders, work order status, top customers, inventory alerts, and monthly revenue trend.",
+        "responses": {
+          "200": {
+            "description": "Dashboard data",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DashboardResponse" } } }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+
+    "/api/customers": {
+      "get": {
+        "tags": ["Customers"],
+        "summary": "List customers",
+        "description": "Cursor-based pagination.",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "number", "default": 50 } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Customer list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pagination" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Customers"],
+        "summary": "Create customer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } }
+        }
+      },
+      "put": {
+        "tags": ["Customers"],
+        "summary": "Update customer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Customers"],
+        "summary": "Delete customer",
+        "parameters": [{ "name": "id", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+
+    "/api/inventory": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "List inventory items",
+        "responses": {
+          "200": { "description": "Inventory list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/InventoryItem" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["Inventory"],
+        "summary": "Create inventory item",
+        "description": "Creates an inventory item with optional journal entry for purchase recording.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["sku", "name", "type", "unit", "quantity_on_hand", "cost_per_unit"],
+                "properties": {
+                  "sku": { "type": "string" },
+                  "name": { "type": "string" },
+                  "type": { "type": "string", "enum": ["raw", "finished"] },
+                  "unit": { "type": "string" },
+                  "quantity_on_hand": { "type": "number" },
+                  "cost_per_unit": { "type": "number" },
+                  "reorder_level": { "type": "number" },
+                  "paymentSource": { "type": "string", "enum": ["cash", "bank", "payable", "opening"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      },
+      "put": {
+        "tags": ["Inventory"],
+        "summary": "Update inventory item",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "cost_per_unit": { "type": "number" },
+                  "reorder_level": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Inventory"],
+        "summary": "Delete inventory item",
+        "parameters": [{ "name": "id", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+
+    "/api/inventory-items": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "Filter inventory items",
+        "parameters": [
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["raw", "finished"] } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/InventoryItem" } },
+                    "count": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/inventory/adjust": {
+      "post": {
+        "tags": ["Inventory"],
+        "summary": "Adjust inventory quantity",
+        "description": "Adjust quantity and create a journal entry for the adjustment.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["itemId", "adjustmentQty", "reason", "adjustmentType"],
+                "properties": {
+                  "itemId": { "type": "string" },
+                  "adjustmentQty": { "type": "number" },
+                  "reason": { "type": "string" },
+                  "adjustmentType": { "type": "string", "enum": ["set", "add", "subtract"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Adjusted" } }
+      }
+    },
+
+    "/api/inventory/sync-balances": {
+      "post": {
+        "tags": ["Inventory"],
+        "summary": "Sync inventory valuations",
+        "responses": { "200": { "description": "Synced" } }
+      }
+    },
+
+    "/api/inventory-movements": {
+      "get": {
+        "tags": ["Inventory"],
+        "summary": "List inventory movements",
+        "responses": { "200": { "description": "Movement list" } }
+      },
+      "post": {
+        "tags": ["Inventory"],
+        "summary": "Create inventory movement record",
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/sales-orders": {
+      "get": {
+        "tags": ["Sales Orders"],
+        "summary": "List sales orders",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "number", "default": 50 } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Sales order list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pagination" } } } } }
+      },
+      "post": {
+        "tags": ["Sales Orders"],
+        "summary": "Create manual sales order",
+        "description": "Creates a sales order with accounting journal entry.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items", "customer_name", "total"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "product_id": { "type": "string" },
+                        "product_name": { "type": "string" },
+                        "quantity": { "type": "number" },
+                        "unit_price": { "type": "number" },
+                        "total": { "type": "number" }
+                      }
+                    }
+                  },
+                  "customer_name": { "type": "string" },
+                  "total": { "type": "number" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      },
+      "put": {
+        "tags": ["Sales Orders"],
+        "summary": "Update order status",
+        "description": "If status='producing', auto-creates work order with design costs.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId", "status"],
+                "properties": {
+                  "orderId": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+
+    "/api/sales-orders/sync": {
+      "post": {
+        "tags": ["Sales Orders"],
+        "summary": "Sync website orders",
+        "description": "Manually trigger sync of website orders to the accounting system.",
+        "responses": { "200": { "description": "Sync triggered" } }
+      }
+    },
+
+    "/api/invoices": {
+      "get": {
+        "tags": ["Invoices"],
+        "summary": "List invoices",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "number", "default": 50 } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Invoice list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pagination" } } } } }
+      },
+      "post": {
+        "tags": ["Invoices"],
+        "summary": "Create invoice",
+        "description": "Creates invoice with revenue and COGS journal entries (double-entry).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "total_amount", "customer_id", "customer_name"],
+                "properties": {
+                  "amount": { "type": "number", "description": "Subtotal before tax" },
+                  "tax_amount": { "type": "number" },
+                  "total_amount": { "type": "number", "description": "Total including tax" },
+                  "cost_of_goods_sold": { "type": "number" },
+                  "customer_id": { "type": "string" },
+                  "customer_name": { "type": "string" },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "description": { "type": "string" },
+                        "quantity": { "type": "number" },
+                        "unit_price": { "type": "number" },
+                        "total": { "type": "number" }
+                      }
+                    }
+                  },
+                  "due_date": { "type": "string", "format": "date" },
+                  "sales_order_id": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/payments": {
+      "get": {
+        "tags": ["Payments"],
+        "summary": "List payments",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "number", "default": 50 } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Payment list" } }
+      },
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Record payment",
+        "description": "Records a payment against an invoice and creates a journal entry within a Firestore transaction.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "invoice_id", "payment_method"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "invoice_id": { "type": "string" },
+                  "payment_method": { "type": "string", "enum": ["cash", "bank", "card"] },
+                  "date": { "type": "string", "format": "date" },
+                  "reference_number": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Payment recorded" } }
+      }
+    },
+
+    "/api/work-orders": {
+      "get": {
+        "tags": ["Work Orders"],
+        "summary": "List all work orders with designs",
+        "responses": { "200": { "description": "Work order list" } }
+      },
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Create work order",
+        "description": "Auto-calculates costs from design or from order items.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["quantity"],
+                "properties": {
+                  "salesOrderId": { "type": "string" },
+                  "designId": { "type": "string" },
+                  "quantity": { "type": "number" },
+                  "assigned_worker": { "type": "string" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      },
+      "put": {
+        "tags": ["Work Orders"],
+        "summary": "Update work order",
+        "description": "Whitelisted fields only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "status": { "type": "string" },
+                  "completionPercentage": { "type": "number" },
+                  "notes": { "type": "string" },
+                  "assigned_worker": { "type": "string" },
+                  "started_at": { "type": "string", "format": "date-time" },
+                  "completed_at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+
+    "/api/work-orders/{id}": {
+      "get": {
+        "tags": ["Work Orders"],
+        "summary": "Get work order with design and material requirements",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Work order details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workOrder": { "type": "object" },
+                    "design": { "type": "object" },
+                    "materialRequirements": { "type": "array" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Work Orders"],
+        "summary": "Update specific work order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": { "type": "string" },
+                  "completionPercentage": { "type": "number" },
+                  "notes": { "type": "string" },
+                  "estimated_completion": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+
+    "/api/work-orders/{id}/complete": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Complete work order (WIP→FG)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["designId", "quantity"],
+                "properties": {
+                  "designId": { "type": "string" },
+                  "quantity": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Completed" } }
+      }
+    },
+
+    "/api/work-orders/{id}/issue-materials": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Issue materials to work order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["designId", "quantity"],
+                "properties": {
+                  "designId": { "type": "string" },
+                  "quantity": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Materials issued" } }
+      }
+    },
+
+    "/api/work-orders/{id}/profitability": {
+      "get": {
+        "tags": ["Work Orders"],
+        "summary": "Calculate work order profitability",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Profitability data" } }
+      }
+    },
+
+    "/api/work-orders/complete": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Complete work order (legacy)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId"],
+                "properties": { "workOrderId": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Completed" } }
+      }
+    },
+
+    "/api/work-orders/issue-materials": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Issue materials (legacy)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId", "materials"],
+                "properties": {
+                  "workOrderId": { "type": "string" },
+                  "materials": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "item_id": { "type": "string" },
+                        "qty": { "type": "number" },
+                        "cost": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Materials issued" } }
+      }
+    },
+
+    "/api/work-orders/update-materials": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Full update: reverse old + apply new materials/labor/overhead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId"],
+                "properties": {
+                  "workOrderId": { "type": "string" },
+                  "materials": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "item_id": { "type": "string" },
+                        "qty": { "type": "number" },
+                        "cost": { "type": "number" }
+                      }
+                    }
+                  },
+                  "laborHours": { "type": "number" },
+                  "laborCost": { "type": "number" },
+                  "overheadCost": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+
+    "/api/work-orders/update-costs": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Update single work order costs from design",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId"],
+                "properties": {
+                  "workOrderId": { "type": "string" },
+                  "orderId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Costs updated" } }
+      }
+    },
+
+    "/api/work-orders/auto-update": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Batch auto-cost for all work orders",
+        "responses": { "200": { "description": "Batch updated" } }
+      }
+    },
+
+    "/api/work-orders/ensure-costs": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Ensure all work orders have costs calculated",
+        "responses": { "200": { "description": "Ensured" } }
+      }
+    },
+
+    "/api/work-orders/batch-update-costs": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Batch update work order costs (skips if already has cost)",
+        "responses": { "200": { "description": "Batch updated" } }
+      }
+    },
+
+    "/api/designs": {
+      "get": {
+        "tags": ["Designs"],
+        "summary": "List designs with filters",
+        "parameters": [
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "complexity", "in": "query", "schema": { "type": "string" } },
+          { "name": "minCost", "in": "query", "schema": { "type": "number" } },
+          { "name": "maxCost", "in": "query", "schema": { "type": "number" } },
+          { "name": "minMargin", "in": "query", "schema": { "type": "number" } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "number" } },
+          { "name": "lastDocId", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Design list" } }
+      },
+      "post": {
+        "tags": ["Designs"],
+        "summary": "Create design",
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/designs/{id}": {
+      "get": {
+        "tags": ["Designs"],
+        "summary": "Get design",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Design" } }
+      },
+      "put": {
+        "tags": ["Designs"],
+        "summary": "Update design",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Designs"],
+        "summary": "Delete design",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+
+    "/api/designs/{id}/material-requirements": {
+      "get": {
+        "tags": ["Designs"],
+        "summary": "Get material requirements with availability check",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "quantity", "in": "query", "schema": { "type": "number", "description": "Production quantity" } }
+        ],
+        "responses": { "200": { "description": "Material requirements" } }
+      }
+    },
+
+    "/api/designs/stats": {
+      "get": {
+        "tags": ["Designs"],
+        "summary": "Design statistics",
+        "responses": { "200": { "description": "Design stats" } }
+      }
+    },
+
+    "/api/designs/categories": {
+      "get": {
+        "tags": ["Designs"],
+        "summary": "List categories and subcategories",
+        "parameters": [{ "name": "category", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Categories" } }
+      }
+    },
+
+    "/api/designs/import": {
+      "post": {
+        "tags": ["Designs"],
+        "summary": "Import designs from website products",
+        "responses": { "200": { "description": "Imported" } }
+      }
+    },
+
+    "/api/designs/fix-costs": {
+      "post": {
+        "tags": ["Designs"],
+        "summary": "Fix design totalCost calculations",
+        "responses": { "200": { "description": "Fixed" } }
+      }
+    },
+
+    "/api/designs/multi-size-costs": {
+      "post": {
+        "tags": ["Designs"],
+        "summary": "Calculate multi-size design costs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["designId", "sizeQuantities"],
+                "properties": {
+                  "designId": { "type": "string" },
+                  "sizeQuantities": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "size": { "type": "string" },
+                        "quantity": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Costs calculated" } }
+      }
+    },
+
+    "/api/bom": {
+      "get": {
+        "tags": ["BOM"],
+        "summary": "List BOMs",
+        "parameters": [
+          { "name": "designId", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["draft", "active", "archived"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "number" } }
+        ],
+        "responses": { "200": { "description": "BOM list" } }
+      },
+      "post": {
+        "tags": ["BOM"],
+        "summary": "Create BOM",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["design_id", "name", "items"],
+                "properties": {
+                  "design_id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "item_id": { "type": "string" },
+                        "quantity": { "type": "number" },
+                        "unit_cost": { "type": "number" }
+                      }
+                    }
+                  },
+                  "labor_hours": { "type": "number" },
+                  "labor_rate": { "type": "number" },
+                  "overhead_percentage": { "type": "number" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/bom/{id}": {
+      "get": {
+        "tags": ["BOM"],
+        "summary": "Get BOM",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "BOM" } }
+      },
+      "put": {
+        "tags": ["BOM"],
+        "summary": "Update BOM",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["BOM"],
+        "summary": "Delete BOM",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+
+    "/api/vendors": {
+      "get": {
+        "tags": ["Vendors"],
+        "summary": "List vendors",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "inactive"] } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "minRating", "in": "query", "schema": { "type": "number" } }
+        ],
+        "responses": { "200": { "description": "Vendor list" } }
+      },
+      "post": {
+        "tags": ["Vendors"],
+        "summary": "Create vendor",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "contact_name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" },
+                  "payment_terms": { "type": "string" },
+                  "lead_time_days": { "type": "number" },
+                  "notes": { "type": "string" },
+                  "status": { "type": "string", "enum": ["active", "inactive"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/vendors/{id}": {
+      "get": {
+        "tags": ["Vendors"],
+        "summary": "Get vendor",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Vendor" } }
+      },
+      "put": {
+        "tags": ["Vendors"],
+        "summary": "Update vendor",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Vendors"],
+        "summary": "Deactivate vendor",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deactivated" } }
+      }
+    },
+
+    "/api/purchase-orders": {
+      "get": {
+        "tags": ["Purchase Orders"],
+        "summary": "List purchase orders",
+        "parameters": [
+          { "name": "vendorId", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "number" } }
+        ],
+        "responses": { "200": { "description": "PO list" } }
+      },
+      "post": {
+        "tags": ["Purchase Orders"],
+        "summary": "Create purchase order",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["vendor_id", "items"],
+                "properties": {
+                  "vendor_id": { "type": "string" },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "item_id": { "type": "string" },
+                        "item_name": { "type": "string" },
+                        "quantity": { "type": "number" },
+                        "unit_cost": { "type": "number" }
+                      }
+                    }
+                  },
+                  "expected_delivery": { "type": "string", "format": "date" },
+                  "shipping_address": { "type": "string" },
+                  "shipping_cost": { "type": "number" },
+                  "tax_rate": { "type": "number" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/purchase-orders/{id}": {
+      "get": {
+        "tags": ["Purchase Orders"],
+        "summary": "Get purchase order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "PO" } }
+      },
+      "put": {
+        "tags": ["Purchase Orders"],
+        "summary": "Action on purchase order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["send", "confirm", "receive", "cancel"] },
+                  "items": { "type": "array" },
+                  "reason": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Action performed" } }
+      }
+    },
+
+    "/api/chart-of-accounts": {
+      "get": {
+        "tags": ["Chart of Accounts"],
+        "summary": "Get all accounts with live balances",
+        "description": "Returns all accounts with balances derived live from journal entries.",
+        "responses": {
+          "200": {
+            "description": "Chart of accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": { "type": "array", "items": { "type": "object" } },
+                    "journalEntries": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Chart of Accounts"],
+        "summary": "Add custom account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["type", "data"],
+                "properties": {
+                  "type": { "type": "string", "description": "Always 'account'" },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "code": { "type": "string" },
+                      "name": { "type": "string" },
+                      "type": { "type": "string" },
+                      "subType": { "type": "string" },
+                      "normalBalance": { "type": "string", "enum": ["debit", "credit"] }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/chart-of-accounts/initialize": {
+      "post": {
+        "tags": ["Chart of Accounts"],
+        "summary": "Initialize full chart of accounts",
+        "description": "Initializes the full chart from the system constant + fiscal periods. Admin only.",
+        "responses": { "200": { "description": "Initialized" } }
+      }
+    },
+
+    "/api/journal-entries": {
+      "get": {
+        "tags": ["Journal Entries"],
+        "summary": "List journal entries",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "number", "default": 50 } },
+          { "name": "startDate", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "endDate", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "type", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Journal entries", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/JournalEntry" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["Journal Entries"],
+        "summary": "Create manual journal entry",
+        "description": "Creates a manual double-entry journal entry. Validates balanced entry (debits = credits) and fiscal period.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["date", "memo", "entries"],
+                "properties": {
+                  "date": { "type": "string", "format": "date" },
+                  "memo": { "type": "string" },
+                  "reference": { "type": "string" },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["account_id", "account_name", "description", "debit", "credit"],
+                      "properties": {
+                        "account_id": { "type": "string" },
+                        "account_name": { "type": "string" },
+                        "description": { "type": "string" },
+                        "debit": { "type": "number" },
+                        "credit": { "type": "number" }
+                      }
+                    }
+                  },
+                  "type": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalEntry" } } } },
+          "400": { "description": "Unbalanced entry or closed fiscal period" }
+        }
+      }
+    },
+
+    "/api/accounting/sync-balances": {
+      "get": {
+        "tags": ["Accounting"],
+        "summary": "Get current account balances",
+        "responses": { "200": { "description": "Account balances" } }
+      },
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Sync account balances from journal entries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "syncAll": { "type": "boolean" },
+                  "accountIds": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Synced" } }
+      }
+    },
+
+    "/api/accounting/opening-balances": {
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Record opening balances",
+        "description": "Creates journal entries OB-01 through OB-GEN for all opening balances.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["date"],
+                "properties": {
+                  "date": { "type": "string", "format": "date" },
+                  "cashOnHand": { "type": "number" },
+                  "bankAccounts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string" },
+                        "balance": { "type": "number" }
+                      }
+                    }
+                  },
+                  "receivables": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "customer": { "type": "string" },
+                        "amount": { "type": "number" }
+                      }
+                    }
+                  },
+                  "inventory": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "item": { "type": "string" },
+                        "quantity": { "type": "number" },
+                        "value": { "type": "number" }
+                      }
+                    }
+                  },
+                  "fixedAssets": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "description": { "type": "string" },
+                        "value": { "type": "number" }
+                      }
+                    }
+                  },
+                  "partnerCapital": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "partner": { "type": "string" },
+                        "amount": { "type": "number" }
+                      }
+                    }
+                  },
+                  "liabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "creditor": { "type": "string" },
+                        "amount": { "type": "number" }
+                      }
+                    }
+                  },
+                  "loans": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "lender": { "type": "string" },
+                        "amount": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Opening balances recorded" } }
+      }
+    },
+
+    "/api/accounting/expenses": {
+      "get": {
+        "tags": ["Accounting"],
+        "summary": "List recorded expenses",
+        "responses": { "200": { "description": "Expense list" } }
+      },
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Record business expense",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "description", "expenseAccount", "paymentMethod"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "description": { "type": "string" },
+                  "expenseAccount": { "type": "string" },
+                  "paymentMethod": { "type": "string", "enum": ["cash", "bank"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Expense recorded" } }
+      }
+    },
+
+    "/api/accounting/assets": {
+      "get": {
+        "tags": ["Accounting"],
+        "summary": "List fixed assets",
+        "responses": { "200": { "description": "Asset list" } }
+      },
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Record asset purchase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "description", "assetAccount", "paymentMethod"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "description": { "type": "string" },
+                  "assetAccount": { "type": "string" },
+                  "paymentMethod": { "type": "string", "enum": ["cash", "bank"] },
+                  "useful_life_years": { "type": "number" },
+                  "salvage_value": { "type": "number" },
+                  "depreciation_method": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Asset recorded" } }
+      }
+    },
+
+    "/api/accounting/assets/depreciate": {
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Record depreciation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["assetEntryId", "year", "month"],
+                "properties": {
+                  "assetEntryId": { "type": "string" },
+                  "year": { "type": "number" },
+                  "month": { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Depreciation recorded" } }
+      }
+    },
+
+    "/api/accounting/liabilities": {
+      "get": {
+        "tags": ["Accounting"],
+        "summary": "List liabilities",
+        "responses": { "200": { "description": "Liability list" } }
+      },
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Record liability (incur or repay)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "description", "liabilityAccount", "transactionType"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "description": { "type": "string" },
+                  "liabilityAccount": { "type": "string" },
+                  "offsetAccount": { "type": "string" },
+                  "transactionType": { "type": "string", "enum": ["incur", "repay"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Liability recorded" } }
+      }
+    },
+
+    "/api/accounting/vat/pay": {
+      "post": {
+        "tags": ["Accounting"],
+        "summary": "Pay VAT",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "paymentMethod"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "paymentMethod": { "type": "string", "enum": ["cash", "bank"] },
+                  "periodDescription": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "VAT paid" } }
+      }
+    },
+
+    "/api/loans": {
+      "get": {
+        "tags": ["Loans"],
+        "summary": "List loans",
+        "responses": { "200": { "description": "Loan list" } }
+      },
+      "post": {
+        "tags": ["Loans"],
+        "summary": "Record loan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["amount", "description", "lenderName", "loanType", "receivedVia"],
+                "properties": {
+                  "amount": { "type": "number" },
+                  "description": { "type": "string" },
+                  "lenderName": { "type": "string" },
+                  "loanType": { "type": "string", "enum": ["short-term", "long-term"] },
+                  "receivedVia": { "type": "string", "enum": ["cash", "bank"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Loan recorded" } }
+      }
+    },
+
+    "/api/reports/profit-loss": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Profit & Loss statement",
+        "parameters": [
+          { "name": "from", "in": "query", "required": true, "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "required": true, "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": { "description": "P&L report", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IncomeStatement" } } } }
+        }
+      }
+    },
+
+    "/api/reports/income-statement": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Simplified income statement",
+        "parameters": [
+          { "name": "startDate", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "endDate", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "Income statement" } }
+      }
+    },
+
+    "/api/reports/balance-sheet": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Balance Sheet",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date", "description": "As-of date" } }
+        ],
+        "responses": {
+          "200": { "description": "Balance sheet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BalanceSheet" } } } }
+        }
+      }
+    },
+
+    "/api/reports/cash-flow": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Cash Flow Statement",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cash flow statement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "operating": { "type": "object" },
+                    "investing": { "type": "object" },
+                    "financing": { "type": "object" },
+                    "net_change_in_cash": { "type": "number" },
+                    "beginning_cash": { "type": "number" },
+                    "ending_cash": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/reports/trial-balance": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Trial Balance",
+        "parameters": [{ "name": "asOf", "in": "query", "schema": { "type": "string", "format": "date" } }],
+        "responses": { "200": { "description": "Trial balance" } }
+      }
+    },
+
+    "/api/reports/general-ledger": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate General Ledger",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "accountCode", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "General ledger" } }
+      }
+    },
+
+    "/api/reports/ar-aging": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate AR Aging Report",
+        "parameters": [{ "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }],
+        "responses": { "200": { "description": "AR aging" } }
+      }
+    },
+
+    "/api/reports/cogm": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Cost of Goods Manufactured",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "COGM",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "direct_materials": { "type": "number" },
+                    "direct_labor": { "type": "number" },
+                    "manufacturing_overhead": { "type": "number" },
+                    "total_manufacturing_costs": { "type": "number" },
+                    "wip": { "type": "object" },
+                    "cost_of_goods_manufactured": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/reports/inventory-valuation": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Inventory Valuation",
+        "responses": {
+          "200": {
+            "description": "Inventory valuation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inventoryData": { "type": "array" },
+                    "inventoryByType": { "type": "object" },
+                    "totalInventoryValue": { "type": "number" },
+                    "summary": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/reports/job-profitability": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate Job Profitability report",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "Job profitability" } }
+      }
+    },
+
+    "/api/reports/tax-vat": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Generate VAT/Tax Report",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "VAT report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "vat_rate": { "type": "number" },
+                    "taxable_sales": { "type": "number" },
+                    "taxable_purchases": { "type": "number" },
+                    "output_vat_posted": { "type": "number" },
+                    "input_vat_posted": { "type": "number" },
+                    "net_vat_payable": { "type": "number" },
+                    "vat_already_filed": { "type": "number" },
+                    "vat_outstanding": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/overhead/config": {
+      "get": {
+        "tags": ["Overhead"],
+        "summary": "Get POHR configurations",
+        "parameters": [{ "name": "fiscalYear", "in": "query", "schema": { "type": "number" } }],
+        "responses": { "200": { "description": "POHR config" } }
+      },
+      "post": {
+        "tags": ["Overhead"],
+        "summary": "Create overhead rate configuration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["fiscalYear", "allocationBase", "estimatedTotalOH", "estimatedActivityLevel"],
+                "properties": {
+                  "fiscalYear": { "type": "number" },
+                  "allocationBase": { "type": "string", "enum": ["DLH", "MH", "DL_COST", "UNITS", "MATERIAL_COST"] },
+                  "estimatedTotalOH": { "type": "number" },
+                  "estimatedActivityLevel": { "type": "number" },
+                  "department": { "type": "string" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/overhead/apply": {
+      "post": {
+        "tags": ["Overhead"],
+        "summary": "Apply overhead to work order",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId", "actualActivity", "pohr", "fiscalYear"],
+                "properties": {
+                  "workOrderId": { "type": "string" },
+                  "actualActivity": { "type": "number" },
+                  "pohr": { "type": "number" },
+                  "fiscalYear": { "type": "number" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Overhead applied" } }
+      }
+    },
+
+    "/api/variance/analyze": {
+      "post": {
+        "tags": ["Variance"],
+        "summary": "Analyze variance for work order",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workOrderId", "designId"],
+                "properties": {
+                  "workOrderId": { "type": "string" },
+                  "designId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Variance analysis" } }
+      }
+    },
+
+    "/api/variance/close": {
+      "post": {
+        "tags": ["Variance"],
+        "summary": "Close variance accounts to COGS",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "userId": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Variance accounts closed" } }
+      }
+    },
+
+    "/api/variance/standard-cost": {
+      "post": {
+        "tags": ["Variance"],
+        "summary": "Set standard cost for design",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["designId"],
+                "properties": {
+                  "designId": { "type": "string" },
+                  "materialCost": { "type": "number" },
+                  "laborCost": { "type": "number" },
+                  "overheadCost": { "type": "number" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Standard cost set" } }
+      }
+    },
+
+    "/api/contracts": {
+      "get": {
+        "tags": ["Contracts"],
+        "summary": "List active contracts",
+        "responses": { "200": { "description": "Contract list" } }
+      },
+      "post": {
+        "tags": ["Contracts"],
+        "summary": "Create contract for revenue recognition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["salesOrderId", "customerId", "customerName", "contractPrice", "totalEstimatedCost", "estimatedCompletionDate"],
+                "properties": {
+                  "salesOrderId": { "type": "string" },
+                  "customerId": { "type": "string" },
+                  "customerName": { "type": "string" },
+                  "description": { "type": "string" },
+                  "contractPrice": { "type": "number" },
+                  "totalEstimatedCost": { "type": "number" },
+                  "estimatedCompletionDate": { "type": "string", "format": "date" },
+                  "method": { "type": "string" },
+                  "overTimeCriterion": { "type": "string" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+
+    "/api/contracts/recognize": {
+      "post": {
+        "tags": ["Contracts"],
+        "summary": "Recognize revenue (IFRS 15)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["contractId", "costsIncurredThisPeriod"],
+                "properties": {
+                  "contractId": { "type": "string" },
+                  "costsIncurredThisPeriod": { "type": "number" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Revenue recognized" } }
+      }
+    },
+
+    "/api/contracts/onerous": {
+      "post": {
+        "tags": ["Contracts"],
+        "summary": "Check if contract is onerous",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["contractId"],
+                "properties": { "contractId": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Onerous check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isOnerous": { "type": "boolean" },
+                    "expectedLoss": { "type": "number" },
+                    "contract": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/workflow/complete-order": {
+      "post": {
+        "tags": ["Workflow"],
+        "summary": "End-to-end order completion",
+        "description": "Updates status, completes work orders, generates invoices and AR/COGS journal entries.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId"],
+                "properties": { "orderId": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Order completed" } }
+      }
+    },
+
+    "/api/fiscal/close": {
+      "post": {
+        "tags": ["Fiscal"],
+        "summary": "Execute year-end close",
+        "description": "Closes income/expense accounts to retained earnings. Admin only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["fiscalYear"],
+                "properties": {
+                  "fiscalYear": { "type": "number" },
+                  "userId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Year-end close complete" } }
+      }
+    },
+
+    "/api/real-orders": {
+      "get": {
+        "tags": ["Real Orders"],
+        "summary": "Fetch website orders and returns",
+        "description": "Fetches orders/returns from website collections mapped to sales order format.",
+        "responses": { "200": { "description": "Mapped orders" } }
+      }
+    },
+
+    "/api/webhooks/order-status": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Receive order status update",
+        "description": "Authenticated via x-webhook-secret header. Syncs to sales orders, creates work orders on 'processing' status.",
+        "security": [],
+        "parameters": [
+          { "name": "x-webhook-secret", "in": "header", "required": true, "schema": { "type": "string" }, "description": "WEBHOOK_SECRET env var value" }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["orderId", "status"],
+                "properties": {
+                  "orderId": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Processed" }, "401": { "description": "Invalid webhook secret" } }
+      }
+    },
+
+    "/api/webhooks/return-status": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Receive return status update",
+        "description": "On 'completed' status, processes return through accounting.",
+        "security": [],
+        "parameters": [
+          { "name": "x-webhook-secret", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["returnId", "status"],
+                "properties": {
+                  "returnId": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Processed" } }
+      }
+    },
+
+    "/api/cron/process-orders": {
+      "get": {
+        "tags": ["Cron"],
+        "summary": "Sync orders and process overdue invoices",
+        "description": "Requires authorization: Bearer CRON_SECRET header.",
+        "parameters": [
+          { "name": "authorization", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Bearer <CRON_SECRET>" }
+        ],
+        "responses": { "200": { "description": "Processed" } }
+      }
+    },
+
+    "/api/cron/process-returns": {
+      "get": {
+        "tags": ["Cron"],
+        "summary": "Sync website returns",
+        "description": "Requires authorization: Bearer CRON_SECRET header.",
+        "parameters": [
+          { "name": "authorization", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Bearer <CRON_SECRET>" }
+        ],
+        "responses": { "200": { "description": "Processed" } }
+      }
+    },
+
+    "/api/cron/update-inventory": {
+      "get": {
+        "tags": ["Cron"],
+        "summary": "Update inventory valuations",
+        "description": "Requires authorization: Bearer CRON_SECRET header.",
+        "parameters": [
+          { "name": "authorization", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Bearer <CRON_SECRET>" }
+        ],
+        "responses": { "200": { "description": "Inventory updated" } }
+      }
+    }
+  }
+}
