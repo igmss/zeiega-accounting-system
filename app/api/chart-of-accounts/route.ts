@@ -35,14 +35,16 @@ export async function GET() {
       }
     })
 
-    // Merge live balances into accounts (match by code first, then by id)
+    // Merge live balances into accounts
+    // Priority: data.balance from chart doc (sync writes here) > acc_account_balances cache
     for (const account of accounts) {
+      const originalBalance = account.balance
       const codeBalance = balanceMap[account.code]
       const idBalance = balanceMap[account.id]
-      if (codeBalance !== undefined) {
-        account.balance = codeBalance
-      } else if (idBalance !== undefined) {
-        account.balance = idBalance
+      // Only use cache if chart doc has no balance set
+      if (originalBalance === 0) {
+        if (codeBalance !== undefined) account.balance = codeBalance
+        else if (idBalance !== undefined) account.balance = idBalance
       }
     }
 
