@@ -48,6 +48,32 @@ export async function GET(request: Request) {
       return acc
     }, { administrative: 0, marketing: 0, operating: 0 })
 
+    // Generate monthly trend data for charts
+    async function generateMonthlyTrend(from: Date, to: Date) {
+      const months: string[] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      const trend: Array<{ month: string; revenue: number; expenses: number; profit: number }> = []
+      const current = new Date(from.getFullYear(), from.getMonth(), 1)
+      const end = new Date(to.getFullYear(), to.getMonth(), 1)
+
+      while (current <= end) {
+        const monthStart = new Date(current)
+        const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0)
+        try {
+          const stmt = await FinancialStatementsService.generateIncomeStatement(monthStart, monthEnd)
+          trend.push({
+            month: months[current.getMonth()],
+            revenue: Math.round(stmt.revenue.total * 100) / 100,
+            expenses: Math.round((stmt.costOfGoodsSold.total + stmt.operatingExpenses.total) * 100) / 100,
+            profit: Math.round(stmt.netIncome * 100) / 100,
+          })
+        } catch {
+          trend.push({ month: months[current.getMonth()], revenue: 0, expenses: 0, profit: 0 })
+        }
+        current.setMonth(current.getMonth() + 1)
+      }
+      return trend
+    }
+
     // Transform to the expected API response format
     const response = {
       periodStart: incomeStatement.periodStart.toISOString().split("T")[0],
@@ -121,6 +147,8 @@ export async function GET(request: Request) {
         total_other: Math.round(incomeStatement.otherIncomeExpenses.total * 100) / 100,
       },
       net_income: Math.round(incomeStatement.netIncome * 100) / 100,
+      // Monthly trend data for charts
+      monthlyTrend: await generateMonthlyTrend(startDate, endDate),
     }
 
     return NextResponse.json(response)

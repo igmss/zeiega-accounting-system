@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Download, TrendingUp } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts"
 import { formatCurrency } from "@/lib/utils"
 import { useState, useEffect } from "react"
 
@@ -120,6 +121,45 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Monthly Trend Charts */}
+      {reportData.monthlyTrend && reportData.monthlyTrend.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Profit Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={reportData.monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [formatCurrency(Number(value)), ""]} />
+                  <Line type="monotone" dataKey="profit" stroke="var(--color-chart-3)" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Revenue vs Expenses</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={reportData.monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [formatCurrency(Number(value)), ""]} />
+                  <Bar dataKey="revenue" fill="var(--color-chart-3)" name="Revenue" />
+                  <Bar dataKey="expenses" fill="var(--color-chart-1)" name="Expenses" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
