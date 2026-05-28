@@ -8,10 +8,21 @@ export async function GET() {
     if (!auth.authenticated) return auth.response
 
     const movementsSnapshot = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).get()
-    const movements = movementsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const movements = movementsSnapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        ...data,
+        // Normalize dates: convert Firestore Timestamps to ISO strings
+        created_at: data.created_at?.toDate?.()?.toISOString() || data.created_at || null,
+        // Normalize field name aliases
+        type: data.type || data.movement_type || "unknown",
+        qty: data.qty ?? data.quantity ?? 0,
+        related_doc: data.related_doc || data.reference || null,
+        user: data.user || data.created_by || "system",
+        item_id: data.item_id || data.sku || null,
+      }
+    })
     
     return NextResponse.json(movements)
   } catch (error) {

@@ -191,14 +191,28 @@ export function InventoryMovements() {
                     <div>
                       <div className="font-medium">
                         {movement.created_at 
-                          ? (movement.created_at.toDate ? movement.created_at.toDate() : new Date(movement.created_at)).toLocaleDateString()
+                          ? (() => {
+                              const d = typeof movement.created_at === 'string'
+                                ? new Date(movement.created_at)
+                                : movement.created_at.seconds
+                                  ? new Date(movement.created_at.seconds * 1000)
+                                  : new Date(movement.created_at)
+                              return isNaN(d.getTime()) ? 'N/A' : d.toLocaleDateString()
+                            })()
                           : 'N/A'
                         }
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {movement.created_at 
-                          ? (movement.created_at.toDate ? movement.created_at.toDate() : new Date(movement.created_at)).toLocaleTimeString()
-                          : 'N/A'
+                          ? (() => {
+                              const d = typeof movement.created_at === 'string'
+                                ? new Date(movement.created_at)
+                                : movement.created_at.seconds
+                                  ? new Date(movement.created_at.seconds * 1000)
+                                  : new Date(movement.created_at)
+                              return isNaN(d.getTime()) ? '' : d.toLocaleTimeString()
+                            })()
+                          : ''
                         }
                       </div>
                     </div>
