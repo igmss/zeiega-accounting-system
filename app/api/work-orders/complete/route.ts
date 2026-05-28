@@ -39,6 +39,24 @@ export async function POST(request: Request) {
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+
+    // Update linked sales order status when WO is completed
+    if (workOrder.sales_order_id) {
+      await db.runTransaction(async (tx) => {
+        const soRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrder.sales_order_id)
+        const manualRef = db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrder.sales_order_id)
+
+        const soDoc = await tx.get(soRef)
+        const manualDoc = await tx.get(manualRef)
+
+        if (soDoc.exists) {
+          tx.update(soRef, { status: "completed", updated_at: new Date() })
+        }
+        if (manualDoc.exists) {
+          tx.update(manualRef, { status: "completed", updatedAt: new Date() })
+        }
+      })
+    }
     
     return NextResponse.json({
       success: true,
