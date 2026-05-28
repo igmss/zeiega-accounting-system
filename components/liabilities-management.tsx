@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus, Search, DollarSign, Calendar } from "lucide-react"
+import { Plus, Search, DollarSign, TrendingUp, TrendingDown, Building2, Wallet } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { CHART_OF_ACCOUNTS, AccountType, AccountSubType } from "@/lib/accounting/account-types"
 
@@ -30,13 +31,12 @@ export function LiabilitiesManagement() {
         description: "",
         amount: "",
         liabilityAccount: "",
-        offsetAccount: "1105", // Default Bank
-        transactionType: "incur" // incur or repay
+        offsetAccount: "1103",
+        transactionType: "incur"
     })
 
-    // Filter COA for Liabilities
     const liabilityAccounts = Object.values(CHART_OF_ACCOUNTS).filter(
-        acc => acc.type === AccountType.LIABILITY
+        acc => acc.type === AccountType.LIABILITY && acc.isActive
     )
 
     useEffect(() => {
@@ -76,7 +76,7 @@ export function LiabilitiesManagement() {
                     description: "",
                     amount: "",
                     liabilityAccount: "",
-                    offsetAccount: "1105",
+                    offsetAccount: "1103",
                     transactionType: "incur"
                 })
             }
@@ -89,8 +89,47 @@ export function LiabilitiesManagement() {
         l.description?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
+    const totalIncurred = liabilities
+        .filter(l => l.type === 'LIABILITY_INCURED')
+        .reduce((s, l) => s + (l.amount || 0), 0)
+    const totalRepaid = liabilities
+        .filter(l => l.type === 'LIABILITY_REPAYMENT')
+        .reduce((s, l) => s + (l.amount || 0), 0)
+    const netLiabilities = totalIncurred - totalRepaid
+
     return (
         <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Net Liabilities</CardTitle>
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{formatCurrency(netLiabilities)}</div>
+                        <p className="text-xs text-muted-foreground">{liabilities.length} transactions</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Incurred</CardTitle>
+                        <TrendingUp className="h-4 w-4 text-red-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-red-600">{formatCurrency(totalIncurred)}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Repaid</CardTitle>
+                        <TrendingDown className="h-4 w-4 text-green-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-green-600">{formatCurrency(totalRepaid)}</div>
+                    </CardContent>
+                </Card>
+            </div>
+
             <div className="flex justify-between items-center">
                 <div className="relative w-72">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -109,7 +148,11 @@ export function LiabilitiesManagement() {
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle>Record Liability / Loan</DialogTitle>
-                            <DialogDescription>Add a new loan or payable, or record a repayment.</DialogDescription>
+                            <DialogDescription>
+                                {newLiability.transactionType === 'incur'
+                                    ? 'Record a new loan or payable (DR Asset / CR Liability)'
+                                    : 'Record a repayment (DR Liability / CR Asset)'}
+                            </DialogDescription>
                         </DialogHeader>
 
                         <div className="grid gap-4 py-4">
@@ -121,14 +164,14 @@ export function LiabilitiesManagement() {
                                         onClick={() => setNewLiability({ ...newLiability, transactionType: 'incur' })}
                                         className="flex-1"
                                     >
-                                        Add New Liability
+                                        <Plus className="h-3.5 w-3.5 mr-1" /> New Liability
                                     </Button>
                                     <Button
                                         variant={newLiability.transactionType === 'repay' ? 'default' : 'outline'}
                                         onClick={() => setNewLiability({ ...newLiability, transactionType: 'repay' })}
                                         className="flex-1"
                                     >
-                                        Repay Liability
+                                        <DollarSign className="h-3.5 w-3.5 mr-1" /> Repay
                                     </Button>
                                 </div>
                             </div>
@@ -145,7 +188,7 @@ export function LiabilitiesManagement() {
                                     <SelectContent>
                                         {liabilityAccounts.map(acc => (
                                             <SelectItem key={acc.code} value={acc.code}>
-                                                {acc.code} - {acc.name}
+                                                <span className="font-mono mr-2">{acc.code}</span> {acc.name}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -153,11 +196,12 @@ export function LiabilitiesManagement() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Amount</Label>
+                                <Label>Amount (EGP)</Label>
                                 <Input
                                     type="number"
                                     value={newLiability.amount}
                                     onChange={e => setNewLiability({ ...newLiability, amount: e.target.value })}
+                                    placeholder="0.00"
                                 />
                             </div>
 
@@ -181,7 +225,8 @@ export function LiabilitiesManagement() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="1101">Cash on Hand (1101)</SelectItem>
-                                        <SelectItem value="1105">Bank Account (1105)</SelectItem>
+                                        <SelectItem value="1103">Bank - Main (1103)</SelectItem>
+                                        <SelectItem value="1105">Bank - Payroll (1105)</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -197,28 +242,54 @@ export function LiabilitiesManagement() {
             <Card>
                 <CardHeader>
                     <CardTitle>Recent Transactions</CardTitle>
+                    <CardDescription>Liability records and repayments</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Description</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filtered.map((l, i) => (
-                                <TableRow key={i}>
-                                    <TableCell>{new Date(l.date).toLocaleDateString()}</TableCell>
-                                    <TableCell>{l.description}</TableCell>
-                                    <TableCell>{l.type === 'LIABILITY_INCURED' ? 'New Liability' : 'Repayment'}</TableCell>
-                                    <TableCell className="text-right">{formatCurrency(l.amount)}</TableCell>
-                                </TableRow>
+                    {loading ? (
+                        <div className="space-y-3">
+                            {[1,2,3].map(i => (
+                                <div key={i} className="animate-pulse flex justify-between py-2">
+                                    <div className="h-4 bg-muted rounded w-24"></div>
+                                    <div className="h-4 bg-muted rounded w-40"></div>
+                                    <div className="h-4 bg-muted rounded w-16"></div>
+                                    <div className="h-4 bg-muted rounded w-24"></div>
+                                </div>
                             ))}
-                        </TableBody>
-                    </Table>
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <Wallet className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>No liabilities recorded yet.</p>
+                            <p className="text-sm">Click Record Liability to add one.</p>
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Description</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead className="text-right">Amount</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filtered.map((l, i) => (
+                                    <TableRow key={i}>
+                                        <TableCell>{new Date(l.date).toLocaleDateString()}</TableCell>
+                                        <TableCell>{l.description}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={l.type === 'LIABILITY_INCURED' ? 'destructive' : 'secondary'}>
+                                                {l.type === 'LIABILITY_INCURED' ? 'New Liability' : 'Repayment'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium">
+                                            {formatCurrency(l.amount)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
         </div>
