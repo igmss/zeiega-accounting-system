@@ -110,6 +110,15 @@ export class FinancialStatementsService {
         endDate?: Date
     ): Promise<number> {
         try {
+            // Use cached balance when no date filter is needed
+            if (!startDate && !endDate) {
+                const balDoc = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode).get()
+                if (balDoc.exists) {
+                    const data = balDoc.data()!
+                    return data.balance || 0
+                }
+            }
+
             let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
                 .where("account_ids", "array-contains", accountCode) as FirebaseFirestore.Query
 
@@ -141,8 +150,9 @@ export class FinancialStatementsService {
             const isDebit = isDebitNormalBalance(accountCode)
             return isDebit ? totalDebits - totalCredits : totalCredits - totalDebits
         } catch (error) {
-            console.error(`Error getting balance for ${accountCode}:`, error)
-            return 0
+            const message = error instanceof Error ? error.message : String(error)
+            console.error(`Error getting balance for ${accountCode}:`, message)
+            throw new Error(`Failed to get balance for account ${accountCode}: ${message}`)
         }
     }
 
