@@ -947,8 +947,8 @@ export class EnhancedAccountingService {
 
     /**
      * Transfer completed goods from WIP to Finished Goods
-     * DR: Finished Goods Inventory
-     * CR: WIP Inventory
+     * DR: Finished Goods Inventory (1220)
+     * CR: WIP - Materials (1710), WIP - Labor (1711), WIP - Overhead (1712)
      */
     static async recordWIPToFinishedGoods(
         workOrderId: string,
@@ -959,6 +959,20 @@ export class EnhancedAccountingService {
             return { success: false, error: "Total cost must be positive" }
         }
 
+        // Look up work order for cost breakdown
+        let matCost = totalCost
+        let labCost = 0
+        let ohCost = 0
+        try {
+            const woDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
+            if (woDoc.exists) {
+                const wo = woDoc.data()!
+                matCost = wo.material_cost || 0
+                labCost = wo.labor_cost || 0
+                ohCost = wo.overhead_cost || 0
+            }
+        } catch {}
+
         const lines: JournalLine[] = [
             {
                 accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
@@ -967,14 +981,36 @@ export class EnhancedAccountingService {
                 credit: 0,
                 description: `Completed production from WO: ${workOrderId}`,
             },
-            {
-                accountCode: ACCOUNTS.INVENTORY_WIP,
-                accountName: "Work in Progress Inventory",
-                debit: 0,
-                credit: totalCost,
-                description: `Transfer to finished goods`,
-            },
         ]
+
+        // Credit WIP sub-accounts proportionally
+        if (matCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.WIP_MATERIALS,
+                accountName: "WIP - Direct Materials",
+                debit: 0,
+                credit: matCost,
+                description: `Materials transferred to FG`,
+            })
+        }
+        if (labCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.WIP_LABOR,
+                accountName: "WIP - Direct Labor",
+                debit: 0,
+                credit: labCost,
+                description: `Labor transferred to FG`,
+            })
+        }
+        if (ohCost > 0) {
+            lines.push({
+                accountCode: ACCOUNT_CODES.WIP_OVERHEAD,
+                accountName: "WIP - Overhead Applied",
+                debit: 0,
+                credit: ohCost,
+                description: `Overhead transferred to FG`,
+            })
+        }
 
         // CHANGED: Pass tx through for transactional atomicity
         return this.createJournalEntry(

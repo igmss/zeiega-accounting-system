@@ -81,28 +81,37 @@ export async function POST(request: Request) {
     if (totalCost > 0) {
       const inventoryAccount = item.type === "finished" ? "1220" : "1201"
       const inventoryAccountName = item.type === "finished" ? "Finished Goods" : "Raw Materials - Fabric"
-      const journalEntry = {
-        date: now,
-        entries: [
-          {
-            account_id: inventoryAccount,
-            debit: totalCost,
-            credit: 0,
-            description: `Inventory: ${item.name} - ${item.quantity_on_hand} ${item.unit}`
-          },
-          {
-            account_id: creditAccount.id,
-            debit: 0,
-            credit: totalCost,
-            description: `${creditAccount.name} for inventory: ${item.name}`
-          }
-        ],
-        account_ids: [inventoryAccount, creditAccount.id],
-        linked_doc: docRef.id,
-        created_at: now
-      }
-      
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
+        const journalEntry = {
+          id: `INV-OP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          date: now,
+          type: "OPENING_BALANCE",
+          description: `Inventory: ${item.name} - ${item.quantity_on_hand} ${item.unit}`,
+          entries: [
+            {
+              account_id: inventoryAccount,
+              account_name: inventoryAccountName,
+              debit: totalCost,
+              credit: 0,
+              description: `Inventory: ${item.name} - ${item.quantity_on_hand} ${item.unit}`
+            },
+            {
+              account_id: creditAccount.id,
+              account_name: creditAccount.name,
+              debit: 0,
+              credit: totalCost,
+              description: `${creditAccount.name} for inventory: ${item.name}`
+            }
+          ],
+          account_ids: [inventoryAccount, creditAccount.id],
+          total_debits: totalCost,
+          total_credits: totalCost,
+          reference_doc: docRef.id,
+          status: "posted",
+          created_at: now,
+          created_by: "system"
+        }
+        
+        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(journalEntry.id).set(journalEntry)
       console.log(`Created journal entry for inventory purchase sync: EGP ${totalCost} via ${creditAccount.name}`)
     }
     
