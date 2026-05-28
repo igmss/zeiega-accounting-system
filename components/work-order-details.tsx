@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 
 interface WorkOrderDetailsProps {
   workOrder: any
@@ -15,6 +17,43 @@ interface WorkOrderDetailsProps {
 export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
   const [laborHours, setLaborHours] = useState(workOrder.labor_hours?.toString() || "0")
   const [overheadCost, setOverheadCost] = useState(workOrder.overhead_cost?.toString() || "0")
+  const [saving, setSaving] = useState(false)
+
+  const handleSaveCosts = async () => {
+    setSaving(true)
+    try {
+      const currentRate = workOrder.labor_hours > 0 ? (workOrder.labor_cost / workOrder.labor_hours) : 50
+      const newLaborCost = Number(laborHours) * currentRate
+
+      const response = await fetch('/api/work-orders/update-materials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workOrderId: workOrder.id,
+          materials: workOrder.raw_materials_used || [],
+          laborHours: Number(laborHours),
+          laborCost: newLaborCost,
+          overheadCost: Number(overheadCost)
+        })
+      })
+
+      if (response.ok) {
+        toast.success("Labor and overhead costs updated successfully!")
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
+      } else {
+        toast.error("Failed to update costs")
+      }
+    } catch (error) {
+      console.error("Error updating costs:", error)
+      toast.error("An error occurred while saving costs")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const totalMaterialCost = (workOrder.raw_materials_used || []).reduce(
     (sum: number, material: any) => sum + material.qty * material.cost,
@@ -223,6 +262,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
                 step="0.5"
                 value={laborHours}
                 onChange={(e) => setLaborHours(e.target.value)}
+                disabled={workOrder.status === "completed"}
               />
             </div>
             <div className="space-y-2">
@@ -233,8 +273,16 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
                 step="0.01"
                 value={overheadCost}
                 onChange={(e) => setOverheadCost(e.target.value)}
+                disabled={workOrder.status === "completed"}
               />
             </div>
+            <Button
+              className="w-full mt-2"
+              onClick={handleSaveCosts}
+              disabled={saving || workOrder.status === "completed"}
+            >
+              {saving ? "Saving..." : workOrder.status === "completed" ? "Costs Locked (Completed)" : "Save Costs"}
+            </Button>
             <div className="pt-3 border-t space-y-2">
               <div className="flex justify-between">
                 <span>Material Cost:</span>

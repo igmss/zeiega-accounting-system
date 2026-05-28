@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Play, CheckCircle, Clock, Wrench } from "lucide-react"
+import { Play, CheckCircle, Clock, Wrench, Trash } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 import { WorkOrderDetails } from "./work-order-details"
@@ -50,8 +50,42 @@ export function WorkOrdersList() {
   const [updateData, setUpdateData] = useState({
     materials: [{ item_id: "", qty: 1, cost: 0 }],
     laborHours: 0,
-    laborCost: 0
+    laborCost: 0,
+    overheadCost: 0
   })
+  const [inventoryItems, setInventoryItems] = useState<any[]>([])
+
+  useEffect(() => {
+    async function fetchInventory() {
+      try {
+        const response = await fetch('/api/inventory/items?type=raw')
+        if (response.ok) {
+          const res = await response.json()
+          setInventoryItems(res.success ? res.data : [])
+        }
+      } catch (error) {
+        console.error("Failed to load inventory items:", error)
+      }
+    }
+    fetchInventory()
+  }, [])
+
+  useEffect(() => {
+    if (selectedWorkOrder) {
+      setUpdateData({
+        materials: selectedWorkOrder.raw_materials_used && selectedWorkOrder.raw_materials_used.length > 0
+          ? selectedWorkOrder.raw_materials_used.map((m: any) => ({
+              item_id: m.item_id || "",
+              qty: m.qty || 0,
+              cost: m.cost || 0
+            }))
+          : [{ item_id: "", qty: 1, cost: 0 }],
+        laborHours: selectedWorkOrder.labor_hours || 0,
+        laborCost: selectedWorkOrder.labor_cost || 0,
+        overheadCost: selectedWorkOrder.overhead_cost || 0
+      })
+    }
+  }, [selectedWorkOrder])
 
   const handleUpdateMaterials = async () => {
     if (!selectedWorkOrder) return
@@ -66,7 +100,8 @@ export function WorkOrdersList() {
           workOrderId: selectedWorkOrder.id,
           materials: updateData.materials,
           laborHours: updateData.laborHours,
-          laborCost: updateData.laborCost
+          laborCost: updateData.laborCost,
+          overheadCost: updateData.overheadCost
         })
       })
 
@@ -79,7 +114,7 @@ export function WorkOrdersList() {
           setWorkOrders(Array.isArray(workOrdersData) ? workOrdersData : [])
         }
         setIsUpdateDialogOpen(false)
-        toast.success('Materials and labor updated successfully!')
+        toast.success('Materials, labor and overhead updated successfully!')
       } else {
         console.error('Failed to update materials')
         toast.error('Failed to update materials')
@@ -339,7 +374,7 @@ export function WorkOrdersList() {
                         </Button>
                       )}
 
-                      {workOrder.status === "pending" && (
+                      {workOrder.status !== "completed" && (
                         <Button 
                           size="sm" 
                           variant="outline"
@@ -381,16 +416,26 @@ export function WorkOrdersList() {
               <div>
                 <Label>Materials Used</Label>
                 {updateData.materials.map((material: any, index: number) => (
-                  <div key={index} className="flex gap-2 mb-2">
-                    <Input
-                      placeholder="Item ID"
+                  <div key={index} className="flex gap-2 mb-2 items-center">
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       value={material.item_id}
                       onChange={(e) => {
+                        const itemId = e.target.value
+                        const selectedItem = inventoryItems.find(item => item.id === itemId)
                         const newMaterials = [...updateData.materials]
-                        newMaterials[index].item_id = e.target.value
+                        newMaterials[index].item_id = itemId
+                        newMaterials[index].cost = selectedItem ? (selectedItem.cost_per_unit || selectedItem.unit_cost || 0) : 0
                         setUpdateData({ ...updateData, materials: newMaterials })
                       }}
-                    />
+                    >
+                      <option value="">Select Material</option>
+                      {inventoryItems.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name || item.sku} ({item.quantity_on_hand || item.qty_on_hand || 0} available)
+                        </option>
+                      ))}
+                    </select>
                     <Input
                       type="number"
                       placeholder="Quantity"
@@ -400,6 +445,7 @@ export function WorkOrdersList() {
                         newMaterials[index].qty = Number(e.target.value)
                         setUpdateData({ ...updateData, materials: newMaterials })
                       }}
+                      className="w-32"
                     />
                     <Input
                       type="number"
@@ -410,7 +456,21 @@ export function WorkOrdersList() {
                         newMaterials[index].cost = Number(e.target.value)
                         setUpdateData({ ...updateData, materials: newMaterials })
                       }}
+                      className="w-32"
                     />
+                    {updateData.materials.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newMaterials = updateData.materials.filter((_, i) => i !== index)
+                          setUpdateData({ ...updateData, materials: newMaterials })
+                        }}
+                      >
+                        <Trash className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
                   </div>
                 ))}
                 <Button 
@@ -427,7 +487,7 @@ export function WorkOrdersList() {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label>Labor Hours</Label>
                   <Input
@@ -442,6 +502,14 @@ export function WorkOrdersList() {
                     type="number"
                     value={updateData.laborCost}
                     onChange={(e) => setUpdateData({ ...updateData, laborCost: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label>Overhead Cost (EGP)</Label>
+                  <Input
+                    type="number"
+                    value={updateData.overheadCost}
+                    onChange={(e) => setUpdateData({ ...updateData, overheadCost: Number(e.target.value) })}
                   />
                 </div>
               </div>
