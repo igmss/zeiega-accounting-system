@@ -50,7 +50,8 @@ export async function GET(request: NextRequest) {
             filteredEntries = filteredEntries.filter((e: any) => e.type === type)
         }
 
-        return createSuccessResponse({
+        return NextResponse.json({
+            success: true,
             entries: filteredEntries,
             count: filteredEntries.length,
         })
