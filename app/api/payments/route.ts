@@ -19,16 +19,22 @@ export async function GET(request: Request) {
     }
 
     const paymentsSnapshot = await query.get()
-    const payments = paymentsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const payments = paymentsSnapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        ...data,
+        date: data.date?.toDate?.() || data.date || null,
+        created_at: data.created_at?.toDate?.() || data.created_at || null,
+      }
+    })
 
     const lastVisible = paymentsSnapshot.docs[paymentsSnapshot.docs.length - 1]
     const nextCursor = lastVisible ? lastVisible.id : null
     const hasMore = paymentsSnapshot.docs.length === limit
 
     return NextResponse.json({
+      success: true,
       data: payments,
       nextCursor,
       hasMore
@@ -136,9 +142,12 @@ export async function POST(request: Request) {
       const payment = {
         id: paymentId,
         invoice_id,
+        customer_name: invoiceData.customer_name || "",
         amount,
         payment_method,
+        method: payment_method, // Frontend alias
         reference_number: reference_number || "",
+        reference: reference_number || "", // Frontend alias
         date: date || new Date().toISOString(),
         journal_entry_id: jeResult.entryId,
         created_at: new Date()
