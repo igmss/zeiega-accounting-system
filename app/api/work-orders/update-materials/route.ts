@@ -36,11 +36,14 @@ export async function POST(request: Request) {
     // 1. Revert previous inventory deductions
     for (const prevMaterial of previousMaterials) {
       if (prevMaterial.item_id && prevMaterial.qty) {
-        const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(prevMaterial.item_id)
-        const inventoryDoc = await inventoryRef.get()
-        if (inventoryDoc.exists) {
+        const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
+          .where("sku", "==", prevMaterial.item_id)
+          .limit(1)
+          .get()
+        const inventoryDoc = invSnapshot.docs[0]
+        if (inventoryDoc) {
           const currentQty = inventoryDoc.data()?.quantity_on_hand || 0
-          await inventoryRef.update({
+          await inventoryDoc.ref.update({
             quantity_on_hand: currentQty + prevMaterial.qty,
             last_updated: new Date()
           })
@@ -152,11 +155,15 @@ export async function POST(request: Request) {
     for (const material of cleanMaterials) {
       if (!material.item_id || !material.qty) continue
 
-      const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(material.item_id)
-      const inventoryDoc = await inventoryRef.get()
-      const itemName = inventoryDoc.exists ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+      const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
+        .where("sku", "==", material.item_id)
+        .limit(1)
+        .get()
+      const inventoryDoc = invSnapshot.docs[0]
+      const inventoryRef = inventoryDoc ? inventoryDoc.ref : null
+      const itemName = inventoryDoc ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
       
-      if (inventoryDoc.exists) {
+      if (inventoryDoc && inventoryRef) {
         const currentQty = inventoryDoc.data()?.quantity_on_hand || 0
         const newQty = Math.max(0, currentQty - material.qty) // Prevent negative quantities
         const itemNameFromDoc = inventoryDoc.data()?.name || 'Unknown Item'

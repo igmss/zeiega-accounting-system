@@ -43,10 +43,18 @@ export async function POST(request: Request) {
     
     // Create journal entry for materials usage using EnhancedAccountingService
     const accountingMaterials = []
+    const inventoryRefs: Array<{ ref: FirebaseFirestore.DocumentReference; qty: number }> = []
     for (const material of materials) {
-      const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(material.item_id)
-      const inventoryDoc = await inventoryRef.get()
-      const itemName = inventoryDoc.exists ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+      const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
+        .where("sku", "==", material.item_id)
+        .limit(1)
+        .get()
+      const inventoryDoc = invSnapshot.docs[0]
+      const itemName = inventoryDoc ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+      
+      if (inventoryDoc) {
+        inventoryRefs.push({ ref: inventoryDoc.ref, qty: material.qty })
+      }
       
       accountingMaterials.push({
         itemId: material.item_id,
@@ -71,10 +79,9 @@ export async function POST(request: Request) {
     }
     
     // Update inventory quantities
-    for (const material of materials) {
-      const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(material.item_id)
-      await inventoryRef.update({
-        quantity_on_hand: FieldValue.increment(-material.qty),
+    for (const inv of inventoryRefs) {
+      await inv.ref.update({
+        quantity_on_hand: FieldValue.increment(-inv.qty),
         last_updated: new Date()
       })
     }
