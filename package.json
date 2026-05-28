@@ -83,6 +83,8 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
     "jest": "^30.2.0",
+    "openapi-fetch": "^0.17.0",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "ts-jest": "^29.4.6",

@@ -1,0 +1,27 @@
+{
+  "name": "@zeiega/accufinance-sdk",
+  "version": "1.0.0",
+  "description": "Type-safe JavaScript/TypeScript SDK for AccuFinance ERP API",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "types.ts"],
+  "scripts": {
+    "build": "tsc",
+    "generate-types": "npx openapi-typescript https://zeiega-accounting-system.vercel.app/openapi.json -o types.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["accufinance", "erp", "accounting", "manufacturing", "api", "sdk"],
+  "license": "MIT",
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/igmss/zeiega-accounting-system",
+    "directory": "sdk"
+  }
+}
