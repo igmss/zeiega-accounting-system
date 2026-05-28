@@ -88,6 +88,7 @@ function isProtectedPath(pathname: string): boolean {
 function isProtectedPage(pathname: string): boolean {
     // Dashboard and module pages require auth
     const protectedPages = [
+        "/api-docs",
         "/customers",
         "/inventory",
         "/designs",
