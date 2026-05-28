@@ -35,10 +35,14 @@ export async function GET() {
       }
     })
 
-    // Merge live balances into accounts
+    // Merge live balances into accounts (match by code first, then by id)
     for (const account of accounts) {
-      if (balanceMap[account.id] !== undefined) {
-        account.balance = balanceMap[account.id]
+      const codeBalance = balanceMap[account.code]
+      const idBalance = balanceMap[account.id]
+      if (codeBalance !== undefined) {
+        account.balance = codeBalance
+      } else if (idBalance !== undefined) {
+        account.balance = idBalance
       }
     }
 
