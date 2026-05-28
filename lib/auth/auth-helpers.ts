@@ -29,7 +29,11 @@ function getBearerUser(): { id: string; email: string; name: string; role: UserR
  * Get current session in API routes
  */
 export async function getSession() {
-    return getServerSession(authOptions)
+    try {
+        return await getServerSession(authOptions)
+    } catch {
+        return null
+    }
 }
 
 /**
