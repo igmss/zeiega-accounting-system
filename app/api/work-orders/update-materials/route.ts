@@ -71,6 +71,7 @@ export async function POST(request: Request) {
     await movementsBatch.commit()
 
     // 3. Delete only the journal entries that are being replaced
+    const cleanMaterials = Array.isArray(materials) ? materials : []
     const jeTypesToDelete: string[] = []
     if (cleanMaterials.length > 0) jeTypesToDelete.push("MATERIAL_ISSUE_TO_WIP")
     if (laborHours && laborCost) jeTypesToDelete.push("LABOR_APPLIED")
@@ -147,7 +148,6 @@ export async function POST(request: Request) {
 
     // 4. Process each new material usage
     const accountingMaterials: any[] = []
-    const cleanMaterials = Array.isArray(materials) ? materials : []
 
     for (const material of cleanMaterials) {
       if (!material.item_id || !material.qty) continue
