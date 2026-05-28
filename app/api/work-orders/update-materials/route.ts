@@ -204,18 +204,30 @@ export async function POST(request: Request) {
 
     // 7. Record balanced journal entries using EnhancedAccountingService
     if (accountingMaterials.length > 0) {
-      await EnhancedAccountingService.recordMaterialIssue(workOrderId, accountingMaterials)
+      const matResult = await EnhancedAccountingService.recordMaterialIssue(workOrderId, accountingMaterials)
+      if (!matResult.success) {
+        throw new Error(`Material issue accounting failed: ${matResult.error}`)
+      }
     }
 
     if (laborHours && finalLaborCost) {
       const laborRate = laborHours > 0 ? (finalLaborCost / laborHours) : 50
-      await EnhancedAccountingService.recordLaborApplied(workOrderId, laborHours, laborRate)
+      const laborResult = await EnhancedAccountingService.recordLaborApplied(workOrderId, laborHours, laborRate)
+      if (!laborResult.success) {
+        throw new Error(`Labor applied accounting failed: ${laborResult.error}`)
+      }
     } else if (finalLaborCost > 0) {
-      await EnhancedAccountingService.recordLaborApplied(workOrderId, 1, finalLaborCost)
+      const laborResult = await EnhancedAccountingService.recordLaborApplied(workOrderId, 1, finalLaborCost)
+      if (!laborResult.success) {
+        throw new Error(`Labor applied accounting failed: ${laborResult.error}`)
+      }
     }
 
     if (finalOverheadCost > 0) {
-      await EnhancedAccountingService.recordOverheadApplied(workOrderId, finalOverheadCost)
+      const ohResult = await EnhancedAccountingService.recordOverheadApplied(workOrderId, finalOverheadCost)
+      if (!ohResult.success) {
+        throw new Error(`Overhead applied accounting failed: ${ohResult.error}`)
+      }
     }
 
     return NextResponse.json({ 
