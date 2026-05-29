@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission, requireAuth } from "@/lib/auth"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 export async function POST(request: Request) {
     try {
@@ -61,11 +62,11 @@ export async function POST(request: Request) {
             status: 'posted'
         }
 
-        // Save
+        // Save journal entry
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
 
-        // Update account balances is now handled by live computation from journal entries
-        // No direct balance field mutations required here to avoid drift.
+        // Sync affected account balances so COA reflects immediately
+        await CentralizedAccountingService.syncMultipleAccountBalances([liabilityAccount, offsetAcc])
 
         return NextResponse.json({ success: true, message: "Liability recorded", journalEntryId: entryId })
 
