@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { getAccountName } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 export async function POST(request: Request) {
     try {
@@ -171,6 +172,11 @@ export async function POST(request: Request) {
 
         if (genericLines.length > 0) {
             await recordEntry("OB-GEN", "OPENING_BALANCE", "Miscellaneous Opening Balances", genericLines)
+        }
+
+        // Sync all affected account balances
+        if (journalEntries.length > 0) {
+            await CentralizedAccountingService.syncAllAccountBalances()
         }
 
         return NextResponse.json({ 

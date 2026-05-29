@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -110,9 +111,12 @@ export async function POST(request: Request) {
           created_at: now,
           created_by: "system"
         }
-        
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(journalEntry.id).set(journalEntry)
-      console.log(`Created journal entry for inventory purchase sync: EGP ${totalCost} via ${creditAccount.name}`)
+        
+        // Sync affected account balances
+        await CentralizedAccountingService.syncMultipleAccountBalances([inventoryAccount, creditAccount.id])
+        
+        console.log(`Created journal entry for inventory purchase sync: EGP ${totalCost} via ${creditAccount.name}`)
     }
     
     

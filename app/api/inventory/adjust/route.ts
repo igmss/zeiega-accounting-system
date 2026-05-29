@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission } from "@/lib/auth"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 // TypeScript interfaces for journal entries
 interface JournalEntry {
@@ -131,11 +132,15 @@ export async function POST(request: Request) {
         created_at: new Date(),
         total_debits: adjustmentValue,
         total_credits: adjustmentValue,
-        account_ids: [assetAccountId, contraAccountId], // Proper index for reporting (BUG-18)
+        account_ids: [assetAccountId, contraAccountId],
         status: 'posted'
       }
+      journalEntry.id = `INV-ADJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
+      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(journalEntry.id).set(journalEntry)
+      
+      // Sync affected account balances
+      await CentralizedAccountingService.syncMultipleAccountBalances([assetAccountId, contraAccountId])
     }
 
 

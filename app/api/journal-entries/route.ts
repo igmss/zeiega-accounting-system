@@ -5,6 +5,7 @@ import { createSuccessResponse, createErrorResponse } from "@/lib/validation/hel
 import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
 import { authOptions } from "@/lib/auth/auth-options"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
+import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
 
 /**
  * GET /api/journal-entries
@@ -145,6 +146,9 @@ export async function POST(request: NextRequest) {
         }
 
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+        
+        // Sync affected account balances so COA reflects immediately
+        await CentralizedAccountingService.syncMultipleAccountBalances(accountIds)
 
         console.log(`✅ Journal entry ${entryId} created`)
 
