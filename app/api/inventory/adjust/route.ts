@@ -107,7 +107,9 @@ export async function POST(request: Request) {
 
       const assetAccountId = "1201" // Raw Materials default. Should ideally come from item category.
 
+      const entryId = `INV-ADJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`
       const journalEntry = {
+        id: entryId,
         date: new Date(),
         description: `Inventory adjustment: ${currentData?.name} (${reason})`,
         reference: `ADJ-${Date.now()}`,
@@ -135,9 +137,8 @@ export async function POST(request: Request) {
         account_ids: [assetAccountId, contraAccountId],
         status: 'posted'
       }
-      journalEntry.id = `INV-ADJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(journalEntry.id).set(journalEntry)
+      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
       
       // Sync affected account balances
       await CentralizedAccountingService.syncMultipleAccountBalances([assetAccountId, contraAccountId])

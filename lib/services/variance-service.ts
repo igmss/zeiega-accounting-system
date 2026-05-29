@@ -1,5 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
+import { CentralizedAccountingService } from "./centralized-accounting-service"
 
 /**
  * Standard cost configuration per design
@@ -322,6 +323,7 @@ export class VarianceService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
       return { success: true, entryId }
     } catch (error) {
       return {
@@ -408,6 +410,8 @@ export class VarianceService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      const syncedAccounts = [...varianceAccounts, ACCOUNT_CODES.COST_OF_GOODS_SOLD]
+      await CentralizedAccountingService.syncMultipleAccountBalances(syncedAccounts)
       console.log(`✅ Closed variance accounts: net EGP ${totalToClose}`)
       return { success: true, entryId, totalClosed: totalToClose }
     } catch (error) {

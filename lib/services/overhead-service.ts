@@ -1,6 +1,7 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
+import { CentralizedAccountingService } from "./centralized-accounting-service"
 
 /**
  * Overhead allocation configuration
@@ -229,6 +230,9 @@ export class OverheadService {
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
 
+      // Sync affected accounts
+      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.WIP_OVERHEAD, ACCOUNT_CODES.OH_APPLIED])
+
       // Update work order overhead cost
       const woRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId)
       const woDoc = await woRef.get()
@@ -373,6 +377,8 @@ export class OverheadService {
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(step1.id).set(step1)
 
+      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.OH_CONTROL])
+
       // Step 2: Transfer variance to Over/Under-Applied OH (5011)
       const isOver = variance > 0
       const dispId = `${closeId}-S2`
@@ -406,6 +412,8 @@ export class OverheadService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(dispId).set(step2)
+
+      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_VARIANCE, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
 
       console.log(`✅ OH close: ${formatCurrency(absV)} variance disposed to COGS`)
       return {
@@ -485,6 +493,7 @@ export class OverheadService {
         }
 
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(cogsEntryId).set(journalEntry)
+        await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
         disposition.journalEntryId = cogsEntryId
       } else {
         // Prorate across WIP, FG, COGS
@@ -580,6 +589,7 @@ export class OverheadService {
         }
 
         await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(dispId).set(journalEntry)
+        await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.INVENTORY_WIP, ACCOUNT_CODES.INVENTORY_FINISHED_GOODS, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
         disposition.journalEntryId = dispId
       }
 
