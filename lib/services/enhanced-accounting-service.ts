@@ -3,14 +3,10 @@ import type { Customer, SalesOrder, WorkOrder, Invoice, Payment, JournalEntry, W
 import { ACCOUNT_CODES, CHART_OF_ACCOUNTS, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
 import { FinancialStatementsService } from "./financial-statements-service"
-import { JournalEntryService, JournalEntryType, JournalLine } from "./journal-entry-service"
+import { JournalEntryService } from "./journal-entry-service"
 import { SalesAccountingService } from "./sales-accounting-service"
 import { InventoryAccountingService } from "./inventory-accounting-service"
 import { ManufacturingAccountingService } from "./manufacturing-accounting-service"
-
-export { JournalEntryType }
-export type { JournalLine }
-
 
 /**
  * Account codes for chart of accounts

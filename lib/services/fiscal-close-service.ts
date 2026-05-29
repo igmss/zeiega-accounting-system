@@ -265,8 +265,6 @@ export class FiscalCloseService {
           },
         ]
       )
-        total_debits: absNI,
-        total_credits: absNI,
       // Step 7: Close drawings to partner capital
       const partnerMappings = [
         { drawings: ACCOUNT_CODES.DRAWINGS_AHMED, capital: ACCOUNT_CODES.CAPITAL_AHMED },
