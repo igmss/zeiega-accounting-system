@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission, requireAuth } from "@/lib/auth"
-import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
+import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 
 export async function POST(request: Request) {
     try {
@@ -19,8 +19,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Liability account is required" }, { status: 400 })
         }
 
-        const now = new Date()
-        const entryId = `LIAB-${Date.now()}`
         const isRepayment = transactionType === 'repay'
         const desc = description || (isRepayment ? "Liability Repayment" : "New Liability Record")
 
@@ -29,46 +27,34 @@ export async function POST(request: Request) {
         // If Repaying (Debit Liability), Credit Offset (Bank/Cash)
         const offsetAcc = offsetAccount || "1101"
 
-        // Prepare Entries
-        // Liability Account (2xxx)
-        // Repayment: Debit Liability (Decrease), Credit Asset (Decrease)
-        // Incurring: Credit Liability (Increase), Debit Asset (Increase) or Expense
+        const result = await EnhancedAccountingService.createJournalEntry(
+            JournalEntryType.GENERAL,
+            [
+                {
+                    accountCode: liabilityAccount,
+                    accountName: desc,
+                    debit: isRepayment ? amount : 0,
+                    credit: isRepayment ? 0 : amount,
+                    description: desc,
+                },
+                {
+                    accountCode: offsetAcc,
+                    accountName: offsetAcc,
+                    debit: isRepayment ? 0 : amount,
+                    credit: isRepayment ? amount : 0,
+                    description: desc,
+                },
+            ],
+            `LIAB-${Math.floor(Math.random() * 10000)}`,
+            desc,
+            auth.user?.id
+        )
 
-        const liabilityEntry = {
-            account_id: liabilityAccount,
-            description: desc,
-            debit: isRepayment ? amount : 0,
-            credit: isRepayment ? 0 : amount
+        if (!result.success) {
+            return NextResponse.json({ error: result.error }, { status: 400 })
         }
 
-        const offsetEntry = {
-            account_id: offsetAcc,
-            description: desc,
-            debit: isRepayment ? 0 : amount,
-            credit: isRepayment ? amount : 0
-        }
-
-        const journalEntry = {
-            id: entryId,
-            date: now,
-            description: desc,
-            reference: `LIAB-${Math.floor(Math.random() * 10000)}`,
-            type: isRepayment ? 'LIABILITY_REPAYMENT' : 'LIABILITY_INCURED',
-            entries: [liabilityEntry, offsetEntry],
-            account_ids: [liabilityAccount, offsetAcc], // BUG-1.2 Fix
-            total_debits: amount,
-            total_credits: amount,
-            created_at: now,
-            status: 'posted'
-        }
-
-        // Save journal entry
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-
-        // Sync affected account balances so COA reflects immediately
-        await CentralizedAccountingService.syncMultipleAccountBalances([liabilityAccount, offsetAcc])
-
-        return NextResponse.json({ success: true, message: "Liability recorded", journalEntryId: entryId })
+        return NextResponse.json({ success: true, message: "Liability recorded", journalEntryId: result.entryId })
 
     } catch (error) {
         console.error("Error recording liability:", error)

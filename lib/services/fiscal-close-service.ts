@@ -1,6 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName, AccountType, getAccountsByType } from "../accounting/account-types"
-import { CentralizedAccountingService } from "./centralized-accounting-service"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 /**
  * Fiscal Year-End Close Service
@@ -56,6 +56,30 @@ export class FiscalCloseService {
         return c - d  // Positive = credit balance (revenue/contra normally credit)
       }
 
+      const recordCloseEntry = async (
+        idPrefix: string,
+        description: string,
+        lines: { account_id: string; account_name: string; debit: number; credit: number; description: string }[]
+      ): Promise<void> => {
+        const result = await JournalEntryService.createJournalEntry(
+          JournalEntryType.CLOSING_ENTRY,
+          lines.map(l => ({
+            accountCode: l.account_id,
+            accountName: l.account_name,
+            debit: l.debit,
+            credit: l.credit,
+            description: l.description,
+          })),
+          `FY${fiscalYear}-CLOSE`,
+          description,
+          userId,
+          endDate
+        )
+        if (result.success && result.entryId) {
+          entryIds.push(result.entryId)
+        }
+      }
+
       // Step 2: Close Revenue to P&L
       let totalRevenue = 0
       const closeRevenueLines: any[] = []
@@ -106,19 +130,11 @@ export class FiscalCloseService {
       }
 
       if (closeRevenueLines.length > 0) {
-        const totalD = closeRevenueLines.reduce((s, l) => s + (l.debit || 0), 0)
-        const totalC = closeRevenueLines.reduce((s, l) => s + (l.credit || 0), 0)
-        const revEntryId = `CLOSE-REV-${fiscalYear}-${Date.now()}`
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(revEntryId).set({
-          id: revEntryId, date: endDate, type: "CLOSING_ENTRY",
-          reference_doc: `FY${fiscalYear}-CLOSE`,
-          description: `Close revenue accounts to P&L for FY${fiscalYear}`,
-          entries: closeRevenueLines,
-          account_ids: [...new Set(closeRevenueLines.map(l => l.account_id))],
-          total_debits: totalD, total_credits: totalC,
-          created_at: now, created_by: userId,
-        })
-        entryIds.push(revEntryId)
+        await recordCloseEntry(
+          `CLOSE-REV-${fiscalYear}`,
+          `Close revenue accounts to P&L for FY${fiscalYear}`,
+          closeRevenueLines
+        )
       }
 
       // Step 3: Close COGS to P&L
@@ -149,19 +165,11 @@ export class FiscalCloseService {
       }
 
       if (closeCOGSLines.length > 0) {
-        const totalD = closeCOGSLines.reduce((s, l) => s + (l.debit || 0), 0)
-        const totalC = closeCOGSLines.reduce((s, l) => s + (l.credit || 0), 0)
-        const cogsEntryId = `CLOSE-COGS-${fiscalYear}-${Date.now()}`
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(cogsEntryId).set({
-          id: cogsEntryId, date: endDate, type: "CLOSING_ENTRY",
-          reference_doc: `FY${fiscalYear}-CLOSE`,
-          description: `Close COGS accounts to P&L for FY${fiscalYear}`,
-          entries: closeCOGSLines,
-          account_ids: [...new Set(closeCOGSLines.map(l => l.account_id))],
-          total_debits: totalD, total_credits: totalC,
-          created_at: now, created_by: userId,
-        })
-        entryIds.push(cogsEntryId)
+        await recordCloseEntry(
+          `CLOSE-COGS-${fiscalYear}`,
+          `Close COGS accounts to P&L for FY${fiscalYear}`,
+          closeCOGSLines
+        )
       }
 
       // Step 4: Close Expenses to P&L
@@ -191,19 +199,11 @@ export class FiscalCloseService {
       }
 
       if (closeExpLines.length > 0) {
-        const totalD = closeExpLines.reduce((s, l) => s + (l.debit || 0), 0)
-        const totalC = closeExpLines.reduce((s, l) => s + (l.credit || 0), 0)
-        const expEntryId = `CLOSE-EXP-${fiscalYear}-${Date.now()}`
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(expEntryId).set({
-          id: expEntryId, date: endDate, type: "CLOSING_ENTRY",
-          reference_doc: `FY${fiscalYear}-CLOSE`,
-          description: `Close expense accounts to P&L for FY${fiscalYear}`,
-          entries: closeExpLines,
-          account_ids: [...new Set(closeExpLines.map(l => l.account_id))],
-          total_debits: totalD, total_credits: totalC,
-          created_at: now, created_by: userId,
-        })
-        entryIds.push(expEntryId)
+        await recordCloseEntry(
+          `CLOSE-EXP-${fiscalYear}`,
+          `Close expense accounts to P&L for FY${fiscalYear}`,
+          closeExpLines
+        )
       }
 
       // Step 5: Close Other Income/Expense to P&L
@@ -233,34 +233,22 @@ export class FiscalCloseService {
       }
 
       if (closeOtherLines.length > 0) {
-        const totalD = closeOtherLines.reduce((s, l) => s + (l.debit || 0), 0)
-        const totalC = closeOtherLines.reduce((s, l) => s + (l.credit || 0), 0)
-        const otherEntryId = `CLOSE-OTHER-${fiscalYear}-${Date.now()}`
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(otherEntryId).set({
-          id: otherEntryId, date: endDate, type: "CLOSING_ENTRY",
-          reference_doc: `FY${fiscalYear}-CLOSE`,
-          description: `Close other income/expense to P&L for FY${fiscalYear}`,
-          entries: closeOtherLines,
-          account_ids: [...new Set(closeOtherLines.map(l => l.account_id))],
-          total_debits: totalD, total_credits: totalC,
-          created_at: now, created_by: userId,
-        })
-        entryIds.push(otherEntryId)
+        await recordCloseEntry(
+          `CLOSE-OTHER-${fiscalYear}`,
+          `Close other income/expense to P&L for FY${fiscalYear}`,
+          closeOtherLines
+        )
       }
 
       // Calculate net income (revenue - COGS - expenses + other)
       const netIncome = totalRevenue + totalCOGS + totalExpenses + totalOther
 
       // Step 6: Close Current Year P&L to Retained Earnings
-      const pAndLEntryId = `CLOSE-PL-${fiscalYear}-${Date.now()}`
       const absNI = Math.abs(netIncome)
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(pAndLEntryId).set({
-        id: pAndLEntryId,
-        date: endDate,
-        type: "CLOSING_ENTRY",
-        reference_doc: `FY${fiscalYear}-CLOSE`,
-        description: `Close P&L to Retained Earnings: Net ${netIncome >= 0 ? "Income" : "Loss"} EGP ${absNI}`,
-        entries: [
+      await recordCloseEntry(
+        `CLOSE-PL-${fiscalYear}`,
+        `Close P&L to Retained Earnings: Net ${netIncome >= 0 ? "Income" : "Loss"} EGP ${absNI}`,
+        [
           {
             account_id: ACCOUNT_CODES.CURRENT_YEAR_PL,
             account_name: getAccountName(ACCOUNT_CODES.CURRENT_YEAR_PL),
@@ -275,15 +263,10 @@ export class FiscalCloseService {
             credit: netIncome < 0 ? absNI : 0,
             description: `Net ${netIncome >= 0 ? "income" : "loss"} for FY${fiscalYear}`,
           },
-        ],
-        account_ids: [ACCOUNT_CODES.CURRENT_YEAR_PL, ACCOUNT_CODES.RETAINED_EARNINGS],
+        ]
+      )
         total_debits: absNI,
         total_credits: absNI,
-        created_at: now,
-        created_by: userId,
-      })
-      entryIds.push(pAndLEntryId)
-
       // Step 7: Close drawings to partner capital
       const partnerMappings = [
         { drawings: ACCOUNT_CODES.DRAWINGS_AHMED, capital: ACCOUNT_CODES.CAPITAL_AHMED },
@@ -294,35 +277,33 @@ export class FiscalCloseService {
       for (const { drawings, capital } of partnerMappings) {
         const drawBal = await getBal(drawings)
         if (Math.abs(drawBal) > 0.01) {
-          const drawEntryId = `CLOSE-DRAW-${drawings}-${Date.now()}`
           const absDraw = Math.abs(drawBal)
-          await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(drawEntryId).set({
-            id: drawEntryId, date: endDate, type: "CLOSING_ENTRY",
-            reference_doc: `FY${fiscalYear}-CLOSE`,
-            description: `Close drawings to capital`,
-            entries: [
+          const result = await JournalEntryService.createJournalEntry(
+            JournalEntryType.CLOSING_ENTRY,
+            [
               {
-                account_id: capital,
-                account_name: getAccountName(capital),
+                accountCode: capital,
+                accountName: getAccountName(capital),
                 debit: drawBal > 0 ? absDraw : 0,
                 credit: drawBal < 0 ? absDraw : 0,
                 description: `Close drawings to capital`,
               },
               {
-                account_id: drawings,
-                account_name: getAccountName(drawings),
+                accountCode: drawings,
+                accountName: getAccountName(drawings),
                 debit: drawBal < 0 ? absDraw : 0,
                 credit: drawBal > 0 ? absDraw : 0,
                 description: `Close drawings account`,
               },
             ],
-            account_ids: [capital, drawings],
-            total_debits: absDraw,
-            total_credits: absDraw,
-            created_at: now,
-            created_by: userId,
-          })
-          entryIds.push(drawEntryId)
+            `FY${fiscalYear}-CLOSE`,
+            `Close drawings to capital`,
+            userId,
+            endDate
+          )
+          if (result.success && result.entryId) {
+            entryIds.push(result.entryId)
+          }
         }
       }
 
@@ -337,9 +318,6 @@ export class FiscalCloseService {
       }, { merge: true })
 
       console.log(`✅ Fiscal year ${fiscalYear} closed. Net Income: EGP ${netIncome}`)
-      
-      // Sync all account balances after close
-      await CentralizedAccountingService.syncAllAccountBalances()
       
       return { success: true, netIncome, entryIds }
     } catch (error) {

@@ -3,6 +3,14 @@ import type { Customer, SalesOrder, WorkOrder, Invoice, Payment, JournalEntry, W
 import { ACCOUNT_CODES, CHART_OF_ACCOUNTS, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
 import { FinancialStatementsService } from "./financial-statements-service"
+import { JournalEntryService, JournalEntryType, JournalLine } from "./journal-entry-service"
+import { SalesAccountingService } from "./sales-accounting-service"
+import { InventoryAccountingService } from "./inventory-accounting-service"
+import { ManufacturingAccountingService } from "./manufacturing-accounting-service"
+
+export { JournalEntryType }
+export type { JournalLine }
+
 
 /**
  * Account codes for chart of accounts
@@ -161,90 +169,14 @@ export class EnhancedAccountingService {
      *  - re-running will skip the SO creation and retry the processed=true update
      */
     static async syncWebsiteOrders() {
-        const processed: string[] = []
-        const errors: string[] = []
-
-        try {
-            const ordersSnapshot = await db.collection(COLLECTIONS.ORDERS).where("processed", "!=", true).limit(50).get()
-
-            for (const orderDoc of ordersSnapshot.docs) {
-                const order = orderDoc.data() as any
-                try {
-                    await this.createSalesOrder(order)
-
-                    // Mark website order as processed – even if SO already existed (idempotent skip),
-                    // we still need to mark it. This ensures eventual consistency on retry.
-                    await orderDoc.ref.update({
-                        processed: true,
-                        processed_at: new Date(),
-                        processing_error: null,
-                    })
-
-                    processed.push(order.id)
-                } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : "Unknown error"
-                    console.error(`❌ Error sync process for order ${orderDoc.id}:`, errorMessage)
-                    errors.push(`Order ${orderDoc.id}: ${errorMessage}`)
-
-                    // Update order with error details for debugging
-                    try {
-                        await orderDoc.ref.update({
-                            processed: false,
-                            processing_error: errorMessage,
-                            last_processed_at: new Date(),
-                        })
-                    } catch {
-                        // If even the error update fails, log and continue
-                        console.error(`❌ Could not update error state for order ${orderDoc.id}`)
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching orders:", error)
-            errors.push(`Fetch error: ${error instanceof Error ? error.message : "Unknown error"}`)
-        }
-
-        return { processed, errors }
+        return SalesAccountingService.syncWebsiteOrders()
     }
 
     /**
      * Process website returns (for cron job)
      */
     static async syncWebsiteReturns() {
-        const processed: string[] = []
-        const errors: string[] = []
-
-        try {
-            const returnsSnapshot = await db.collection(COLLECTIONS.RETURNS).where("processed", "!=", true).limit(50).get()
-
-            for (const returnDoc of returnsSnapshot.docs) {
-                try {
-                    const returnData = returnDoc.data() as any
-                    const result = await this.processReturn(returnData)
-
-                    if (!result?.success) {
-                        errors.push(`Return ${returnDoc.id}: ${result?.error || "Unknown error"}`)
-                        continue
-                    }
-
-                    // Mark as processed
-                    await returnDoc.ref.update({
-                        processed: true,
-                        processed_at: new Date(),
-                    })
-
-                    processed.push(returnData.id)
-                } catch (error) {
-                    console.error(`Error processing return ${returnDoc.id}:`, error)
-                    errors.push(`Return ${returnDoc.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching returns:", error)
-            errors.push(`Fetch error: ${error instanceof Error ? error.message : "Unknown error"}`)
-        }
-
-        return { processed, errors }
+        return SalesAccountingService.syncWebsiteReturns()
     }
 
     /**
@@ -253,242 +185,14 @@ export class EnhancedAccountingService {
     public static async processReturn(
         returnData: ReturnData
     ): Promise<{ success: boolean; creditMemoId?: string; error?: string }> {
-        const creditMemoId = `CM-${Date.now()}`
-        const returnId = returnData?.id ?? returnData?.returnId ?? "unknown"
-        const returnAmount = Number(returnData.refundAmount ?? returnData.amount ?? 0)
-
-        if (!Number.isFinite(returnAmount) || returnAmount < 0) {
-            return { success: false, error: `Invalid return amount for return ${returnId}` }
-        }
-
-        // CHANGED: Wrap all reads and writes in a Firestore transaction for atomicity
-        return db.runTransaction(async (tx) => {
-            // ── Phase 1: All reads ──────────────────────────────────────────
-            const orderId = returnData?.orderId
-            const invoiceIdFromReturn = returnData?.invoiceId
-
-            let invoiceData: Record<string, unknown> | null = null
-            let invoiceDocId: string | null = null
-
-            // Try direct invoice ID lookup first, then fall back to orderId
-            if (invoiceIdFromReturn && typeof invoiceIdFromReturn === "string") {
-                const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(invoiceIdFromReturn))
-                if (doc.exists) {
-                    invoiceData = doc.data() as Record<string, unknown>
-                    invoiceDocId = doc.id
-                }
-            }
-            
-            if (!invoiceData && orderId && typeof orderId === "string") {
-                const snapshot = await tx.get(
-                    db.collection(COLLECTIONS.INVOICES).where("sales_order_id", "==", orderId).limit(1)
-                )
-                if (!snapshot.empty) {
-                    const first = snapshot.docs[0]
-                    invoiceData = first.data() as Record<string, unknown>
-                    invoiceDocId = first.id
-                }
-                // Also try derivedInvoiceId
-                if (!invoiceData) {
-                    const derivedId = `INV-${orderId.slice(-8)}`
-                    const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(derivedId))
-                    if (doc.exists) {
-                        invoiceData = doc.data() as Record<string, unknown>
-                        invoiceDocId = doc.id
-                    }
-                }
-            }
-
-            if (!invoiceData || !invoiceDocId) {
-                throw new Error(`Original invoice not found for return ${returnId}`)
-            }
-
-            const rawStatus = invoiceData.status
-            const invoiceStatus: string | undefined = typeof rawStatus === 'string' ? rawStatus : undefined
-
-            // Determine credit account based on original payment method for paid invoices
-            let creditAccountCode: string = ACCOUNTS.ACCOUNTS_RECEIVABLE
-            let creditAccountName = getAccountName(ACCOUNTS.ACCOUNTS_RECEIVABLE)
-
-            if (invoiceStatus === "paid") {
-                const paymentsSnapshot = await tx.get(
-                    db.collection(COLLECTIONS.PAYMENTS)
-                        .where("invoice_id", "==", invoiceDocId)
-                        .limit(1)
-                )
-                const paymentDoc = paymentsSnapshot.docs[0]
-                const paymentData = paymentDoc?.data?.() as any
-
-                const paymentMethod =
-                    returnData?.paymentMethod ??
-                    returnData?.payment_method ??
-                    paymentData?.payment_method ??
-                    paymentData?.method ??
-                    paymentData?.paymentMethod
-
-                if (!paymentMethod || typeof paymentMethod !== "string") {
-                    throw new Error(`Unable to determine original payment method for paid invoice ${invoiceDocId}`)
-                }
-
-                const isCash = paymentMethod.toLowerCase() === "cash"
-                creditAccountCode = isCash ? ACCOUNTS.CASH : ACCOUNTS.BANK
-                creditAccountName = getAccountName(creditAccountCode)
-            }
-
-            // Validate return items and read inventory costs
-            const items = Array.isArray(returnData?.items) ? returnData.items : []
-            if (items.length === 0) {
-                throw new Error(`Return ${returnId} has no items to restore inventory value`)
-            }
-
-            let inventoryRestorationValue = 0
-            const restorationLinesByItem: Array<{ sku: string; quantity: number }> = []
-
-            for (const item of items) {
-                const sku: string | undefined = item?.sku ?? item?.productId ?? item?.id
-                const quantityRaw = item?.quantity ?? item?.qty
-                const quantity = Number(quantityRaw ?? 0)
-
-                if (!sku || !Number.isFinite(quantity) || quantity <= 0) {
-                    throw new Error(`Invalid return item (sku=${String(sku)}, qty=${String(quantityRaw)})`)
-                }
-
-                const invDoc = await tx.get(db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku))
-                if (!invDoc.exists) {
-                    throw new Error(`Inventory item not found: ${sku}`)
-                }
-
-                const invData = invDoc.data() as any
-                const unitCostRaw = invData?.unit_cost ?? invData?.cost_per_unit ?? invData?.unitCost ?? 0
-                const unitCost = Number(unitCostRaw ?? 0)
-
-                if (!Number.isFinite(unitCost) || unitCost < 0) {
-                    throw new Error(`Invalid unit cost for inventory restoration (sku=${sku})`)
-                }
-
-                inventoryRestorationValue += unitCost * quantity
-                restorationLinesByItem.push({ sku, quantity })
-            }
-
-            if (inventoryRestorationValue < 0) {
-                throw new Error(`Unable to compute inventory restoration value for return ${returnId}`)
-            }
-
-            // ── Phase 2: All writes ─────────────────────────────────────────
-            // 1. Sales return / credit memo journal entry
-            const salesReturnLines: JournalLine[] = [
-                {
-                    accountCode: ACCOUNTS.SALES_RETURNS,
-                    accountName: getAccountName(ACCOUNTS.SALES_RETURNS),
-                    debit: returnAmount,
-                    credit: 0,
-                    description: `Return ${returnId}`,
-                },
-                {
-                    accountCode: creditAccountCode,
-                    accountName: creditAccountName,
-                    debit: 0,
-                    credit: returnAmount,
-                    description: `Refund for return ${returnId}`,
-                },
-            ]
-
-            const memoResult = await this.createJournalEntry(
-                JournalEntryType.SALES_RETURN,
-                salesReturnLines,
-                creditMemoId,
-                `Credit memo / return ${returnId}`,
-                "system",
-                undefined,
-                tx
-            )
-
-            if (!memoResult.success) {
-                throw new Error(memoResult.error || "Failed to create credit memo")
-            }
-
-            // 2. Inventory restoration journal entry (DR FG / CR COGS)
-            const inventoryLines: JournalLine[] = [
-                {
-                    accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
-                    accountName: getAccountName(ACCOUNTS.INVENTORY_FINISHED_GOODS),
-                    debit: inventoryRestorationValue,
-                    credit: 0,
-                    description: `Inventory restoration for return ${returnId}`,
-                },
-                {
-                    accountCode: ACCOUNTS.COGS,
-                    accountName: getAccountName(ACCOUNTS.COGS),
-                    debit: 0,
-                    credit: inventoryRestorationValue,
-                    description: `COGS reversal for return ${returnId}`,
-                },
-            ]
-
-            const inventoryResult = await this.createJournalEntry(
-                JournalEntryType.INVENTORY_ADJUSTMENT,
-                inventoryLines,
-                creditMemoId,
-                `Inventory restoration journal for return ${returnId}`,
-                "system",
-                undefined,
-                tx
-            )
-
-            if (!inventoryResult.success) {
-                throw new Error(inventoryResult.error || "Failed to create inventory restoration journal entry")
-            }
-
-            // 3. Update inventory physical quantities (within same tx)
-            for (const item of restorationLinesByItem) {
-                const invRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(item.sku)
-                tx.update(invRef, {
-                    quantity_on_hand: FieldValue.increment(item.quantity),
-                    updated_at: new Date(),
-                })
-            }
-
-            return { success: true, creditMemoId }
-        }).catch(error => ({
-            success: false,
-            creditMemoId,
-            error: error instanceof Error ? error.message : "Transaction failed during return processing"
-        }))
+        return SalesAccountingService.processReturn(returnData)
     }
 
     /**
      * Update inventory valuations (for cron job)
      */
     static async updateInventoryValuations() {
-        const updated: string[] = []
-        const lowStockAlerts: string[] = []
-
-        try {
-            const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-
-            for (const itemDoc of inventorySnapshot.docs) {
-                const item = itemDoc.data() as any
-
-                // Check for low stock
-                if (item.qty_on_hand <= (item.reorder_point || 10)) {
-                    lowStockAlerts.push(`${item.sku}: ${item.qty_on_hand} units remaining`)
-                }
-
-                // Update valuation based on FIFO method
-                const updatedValue = item.qty_on_hand * (item.unit_cost || 0)
-
-                await itemDoc.ref.update({
-                    total_value: updatedValue,
-                    last_updated: new Date(),
-                })
-
-                updated.push(item.sku)
-            }
-        } catch (error) {
-            console.error("Error updating inventory:", error)
-        }
-
-        return { updated, lowStockAlerts }
+        return InventoryAccountingService.updateInventoryValuations()
     }
 
     /**
@@ -499,34 +203,7 @@ export class EnhancedAccountingService {
         quantity: number,
         type: "issue" | "receipt" | "return" | "adjustment",
     ) {
-        const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku)
-        const inventoryDoc = await inventoryRef.get()
-
-        if (inventoryDoc.exists) {
-            const currentQty = inventoryDoc.data()?.qty_on_hand || 0
-            const newQty = type === "issue" ? currentQty - quantity : currentQty + quantity
-
-            await inventoryRef.update({
-                qty_on_hand: Math.max(0, newQty),
-                last_movement: new Date(),
-            })
-
-            // Record inventory movement
-            const movementId = `MOV-${Date.now()}`
-            await db
-                .collection(COLLECTIONS.INVENTORY_MOVEMENTS)
-                .doc(movementId)
-                .set({
-                    id: movementId,
-                    sku,
-                    type,
-                    quantity,
-                    previous_qty: currentQty,
-                    new_qty: Math.max(0, newQty),
-                    date: new Date(),
-                    created_at: new Date(),
-                })
-        }
+        return InventoryAccountingService.adjustInventory(sku, quantity, type)
     }
 
     /**
@@ -535,119 +212,21 @@ export class EnhancedAccountingService {
      * Repeated runs will use the same document path and not create duplicates.
      */
     static async createSalesOrder(websiteOrder: WebsiteOrder) {
-        const now = Date.now()
-        const salesOrderId = websiteOrder.id
-
-        // Idempotency check: skip if sales order already exists
-        const existingSO = await db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId).get()
-        if (existingSO.exists) {
-            console.log(`ℹ️ Sales order ${salesOrderId} already exists, skipping`)
-            return
-        }
-
-        // Find or create customer (FIX-004: Lookup email if missing)
-        let customerEmail = websiteOrder.customer_email
-        if (!customerEmail && websiteOrder.userId) {
-            console.log(`🔍 Looking up email for user ${websiteOrder.userId}...`)
-            const userDoc = await db.collection(COLLECTIONS.USERS).doc(websiteOrder.userId).get()
-            if (userDoc.exists) {
-                customerEmail = userDoc.data()?.email
-            }
-        }
-
-        const customerId = await this.findOrCreateCustomer(customerEmail || websiteOrder.userId || "unknown")
-
-        const salesOrder: SalesOrder = {
-            id: salesOrderId,
-            website_order_id: websiteOrder.id,
-            customer_id: customerId,
-            items: websiteOrder.items.map((item) => ({
-                sku: item.sku || item.id,
-                qty: item.quantity || 1,
-                unit_price: item.price || 0,
-            })),
-            status: "pending",
-            created_at: new Date(),
-        }
-
-        // Generate work order alongside sales order with unique ID
-        const workOrderId = `WO-${now}-${Math.random().toString(36).substr(2, 4)}`
-        const workOrder: WorkOrder = {
-            id: workOrderId,
-            sales_order_id: salesOrderId,
-            raw_materials_used: [],
-            labor_hours: 0,
-            labor_cost: 0,
-            overhead_cost: 0,
-            total_cost: 0,
-            estimated_cost: 0,
-            status: "pending",
-            created_at: new Date(),
-        }
-
-        const batch = db.batch()
-        batch.set(db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId), salesOrder)
-        batch.set(db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId), workOrder)
-        
-        await batch.commit()
-        console.log(`✅ Atomic: Created sales order ${salesOrderId} and work order ${workOrderId}`)
+        return SalesAccountingService.createSalesOrder(websiteOrder)
     }
 
     /**
      * Find or create customer
      */
     static async findOrCreateCustomer(email: string): Promise<string> {
-        const customerSnapshot = await db.collection(COLLECTIONS.CUSTOMERS).where("email", "==", email).limit(1).get()
-
-        if (!customerSnapshot.empty) {
-            return customerSnapshot.docs[0].id
-        }
-
-        // Check users collection for name
-        const usersRef = db.collection(COLLECTIONS.USERS)
-        const userSnapshot = await usersRef.where("email", "==", email).limit(1).get()
-
-        let name = email.split("@")[0] // Fallback
-        if (!userSnapshot.empty) {
-            const userData = userSnapshot.docs[0].data()
-            name = userData.name || userData.displayName || name
-        }
-
-        // Create new customer
-        const customerId = `CUST-${Date.now()}`
-        const customer: Customer = {
-            id: customerId,
-            name,
-            email,
-            phone: "",
-            address: "",
-            created_at: new Date(),
-        }
-
-        await db.collection(COLLECTIONS.CUSTOMERS).doc(customerId).set(customer)
-        return customerId
+        return SalesAccountingService.findOrCreateCustomer(email)
     }
 
     /**
      * Create work order
      */
     static async createWorkOrder(salesOrderId: string) {
-        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
-
-        const workOrder: WorkOrder = {
-            id: workOrderId,
-            sales_order_id: salesOrderId,
-            raw_materials_used: [],
-            labor_hours: 0,
-            labor_cost: 0,
-            overhead_cost: 0,
-            total_cost: 0,
-            estimated_cost: 0,
-            status: "pending",
-            created_at: new Date(),
-        }
-
-        await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).set(workOrder)
+        return ManufacturingAccountingService.createWorkOrder(salesOrderId)
     }
 
     static async createJournalEntry(
@@ -657,143 +236,10 @@ export class EnhancedAccountingService {
         notes?: string,
         userId: string = "system",
         customDate?: Date,
-        tx?: FirebaseFirestore.Transaction
+        tx?: FirebaseFirestore.Transaction,
+        metadata?: Record<string, unknown>
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
-        try {
-            const now = new Date()
-            const entryDate = customDate || new Date()
-
-            // Validate balanced entry (pure logic, no DB reads needed)
-            const totalDebits = lines.reduce((sum, l) => sum + l.debit, 0)
-            const totalCredits = lines.reduce((sum, l) => sum + l.credit, 0)
-
-            if (Math.abs(totalDebits - totalCredits) > 0.01) {
-                return {
-                    success: false,
-                    error: `Journal entry not balanced: Debits=${totalDebits}, Credits=${totalCredits}`
-                }
-            }
-
-            // Validate no line has both debit and credit, and no negative amounts
-            for (const line of lines) {
-                if (line.debit > 0 && line.credit > 0) {
-                    return {
-                        success: false,
-                        error: `Line cannot have both debit and credit: ${line.accountName}`
-                    }
-                }
-                if (line.debit < 0 || line.credit < 0) {
-                    return {
-                        success: false,
-                        error: `Negative amounts not allowed: ${line.accountName}`
-                    }
-                }
-            }
-
-            // Validate fiscal period is open using direct doc lookup (safe in tx, no index needed)
-            const entryYear = entryDate.getFullYear()
-            const entryMonth = entryDate.getMonth() + 1
-            const periodId = `FY-${entryYear}-${String(entryMonth).padStart(2, "0")}`
-            const periodRef = db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId)
-            const periodDoc = tx ? await tx.get(periodRef) : await periodRef.get()
-
-            let isClosed = false
-            let periodName = "Unknown"
-
-            if (periodDoc.exists) {
-                const period = periodDoc.data()!
-                periodName = periodDoc.id
-                if (period.status === "closed" || period.status === "locked") {
-                    isClosed = true
-                }
-            }
-
-            if (isClosed && entryType !== JournalEntryType.CLOSING_ENTRY) {
-                return {
-                    success: false,
-                    error: `Cannot post to a closed or locked fiscal period: ${periodName}`
-                }
-            }
-
-            // CHANGED: Use crypto.randomUUID() for collision-resistant ID generation
-            const entryId = `JE-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`
-
-            const accountIds = Array.from(new Set(lines.map(l => l.accountCode)))
-
-            // CHANGED: Read existing balance cache docs BEFORE writing (required by Firestore tx)
-            const balanceSnapshots: Map<string, FirebaseFirestore.DocumentSnapshot> = new Map()
-            for (const accountCode of accountIds) {
-                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
-                const balDoc = tx ? await tx.get(balRef) : await balRef.get()
-                balanceSnapshots.set(accountCode, balDoc)
-            }
-
-            const journalEntry = {
-                id: entryId,
-                date: entryDate,
-                type: entryType,
-                reference_doc: referenceDoc,
-                description: notes || `Journal entry for ${referenceDoc}`,
-                entries: lines.map(line => ({
-                    account_id: line.accountCode,
-                    account_name: line.accountName,
-                    debit: line.debit,
-                    credit: line.credit,
-                    description: line.description,
-                })),
-                account_ids: accountIds,
-                total_debits: totalDebits,
-                total_credits: totalCredits,
-                created_at: now,
-                created_by: userId,
-            }
-
-            // Write journal entry
-            const jeRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId)
-            if (tx) {
-                tx.set(jeRef, journalEntry)
-            } else {
-                await jeRef.set(journalEntry)
-            }
-
-            // CHANGED: Update balance cache for each affected account (atomic with JE)
-            for (const line of lines) {
-                const balDoc = balanceSnapshots.get(line.accountCode)
-                const existing = balDoc?.exists ? balDoc.data()! : { totalDebits: 0, totalCredits: 0 }
-                const newTotalDebits = (existing.totalDebits || 0) + line.debit
-                const newTotalCredits = (existing.totalCredits || 0) + line.credit
-                const isDebit = isDebitNormalBalance(line.accountCode)
-                const balance = isDebit
-                    ? newTotalDebits - newTotalCredits
-                    : newTotalCredits - newTotalDebits
-
-                const balanceData = {
-                    accountCode: line.accountCode,
-                    totalDebits: newTotalDebits,
-                    totalCredits: newTotalCredits,
-                    balance,
-                    lastEntryId: entryId,
-                    updatedAt: now,
-                }
-
-                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(line.accountCode)
-                if (tx) {
-                    tx.set(balRef, balanceData)
-                } else {
-                    await balRef.set(balanceData)
-                }
-            }
-
-            console.log(`✅ Journal entry ${entryId} created: ${entryType}`)
-            return { success: true, entryId }
-
-        } catch (error) {
-            console.error("Error creating journal entry:", error)
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : "Failed to create journal entry"
-            }
-        }
+        return JournalEntryService.createJournalEntry(entryType, lines, referenceDoc, notes, userId, customDate, tx, metadata)
     }
 
     /**
@@ -805,37 +251,7 @@ export class EnhancedAccountingService {
         workOrderId: string,
         materials: Array<{ itemId: string; itemName: string; quantity: number; unitCost: number }>
     ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
-        const totalCost = materials.reduce((sum, m) => sum + (m.quantity * m.unitCost), 0)
-
-        if (totalCost <= 0) {
-            return { success: false, error: "Total material cost must be positive" }
-        }
-
-        const lines: JournalLine[] = [
-            {
-            accountCode: ACCOUNT_CODES.WIP_MATERIALS,
-            accountName: "WIP - Direct Materials",
-            debit: totalCost,
-            credit: 0,
-            description: `Materials issued to WO: ${workOrderId}`,
-        },
-        {
-            accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,
-                accountName: "Raw Materials Inventory",
-                debit: 0,
-                credit: totalCost,
-                description: `Materials issued: ${materials.map(m => m.itemName).join(", ")}`,
-            },
-        ]
-
-        const result = await this.createJournalEntry(
-            JournalEntryType.MATERIAL_ISSUE_TO_WIP,
-            lines,
-            workOrderId,
-            `Material issue for work order ${workOrderId}`
-        )
-
-        return { ...result, totalCost }
+        return InventoryAccountingService.recordMaterialIssue(workOrderId, materials)
     }
 
     /**
@@ -848,37 +264,7 @@ export class EnhancedAccountingService {
         laborHours: number,
         laborRate: number
     ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
-        const totalCost = laborHours * laborRate
-
-        if (totalCost <= 0) {
-            return { success: false, error: "Labor cost must be positive" }
-        }
-
-        const lines: JournalLine[] = [
-            {
-                accountCode: ACCOUNT_CODES.WIP_LABOR,
-                accountName: "WIP - Direct Labor",
-                debit: totalCost,
-                credit: 0,
-                description: `Labor applied: ${laborHours} hours @ ${formatCurrency(laborRate)}/hr`,
-            },
-            {
-                accountCode: ACCOUNTS.WAGES_PAYABLE,
-                accountName: getAccountName(ACCOUNTS.WAGES_PAYABLE),
-                debit: 0,
-                credit: totalCost,
-                description: `Direct labor for WO: ${workOrderId}`,
-            },
-        ]
-
-        return {
-            ...await this.createJournalEntry(
-                JournalEntryType.LABOR_APPLIED,
-                lines,
-                workOrderId
-            ),
-            totalCost
-        }
+        return ManufacturingAccountingService.recordLaborApplied(workOrderId, laborHours, laborRate)
     }
 
     /**
@@ -890,32 +276,7 @@ export class EnhancedAccountingService {
         workOrderId: string,
         overheadAmount: number
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
-        if (overheadAmount <= 0) {
-            return { success: true } // Skip if no overhead
-        }
-
-        const lines: JournalLine[] = [
-            {
-                accountCode: ACCOUNT_CODES.WIP_OVERHEAD,
-                accountName: "WIP - Overhead Applied",
-                debit: overheadAmount,
-                credit: 0,
-                description: `Overhead applied to WO: ${workOrderId}`,
-            },
-            {
-                accountCode: ACCOUNT_CODES.OH_APPLIED,
-                accountName: "Manufacturing OH - Applied",
-                debit: 0,
-                credit: overheadAmount,
-                description: `Overhead applied to WO: ${workOrderId}`,
-            },
-        ]
-
-        return this.createJournalEntry(
-            JournalEntryType.OVERHEAD_APPLIED,
-            lines,
-            workOrderId
-        )
+        return ManufacturingAccountingService.recordOverheadApplied(workOrderId, overheadAmount)
     }
 
     /**
@@ -928,21 +289,7 @@ export class EnhancedAccountingService {
         workOrderId: string,
         estimatedCost: number
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
-        if (estimatedCost <= 0) {
-            return { success: false, error: "Estimated cost must be positive" }
-        }
-
-        try {
-            await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-                estimated_cost: estimatedCost,
-                updated_at: new Date(),
-            })
-            console.log(`📋 Work order ${workOrderId}: estimated cost recorded as ${formatCurrency(estimatedCost)} (no journal entry)`)
-            return { success: true, entryId: `EST-${workOrderId}` }
-        } catch (error) {
-            console.error("Error storing estimated cost on work order:", error)
-            return { success: false, error: error instanceof Error ? error.message : "Failed to store estimate" }
-        }
+        return ManufacturingAccountingService.recordWIPOpening(workOrderId, estimatedCost)
     }
 
     /**
@@ -955,73 +302,7 @@ export class EnhancedAccountingService {
         totalCost: number,
         tx?: FirebaseFirestore.Transaction
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
-        if (totalCost <= 0) {
-            return { success: false, error: "Total cost must be positive" }
-        }
-
-        // Look up work order for cost breakdown
-        let matCost = totalCost
-        let labCost = 0
-        let ohCost = 0
-        try {
-            const woDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-            if (woDoc.exists) {
-                const wo = woDoc.data()!
-                matCost = wo.material_cost || 0
-                labCost = wo.labor_cost || 0
-                ohCost = wo.overhead_cost || 0
-            }
-        } catch {}
-
-        const lines: JournalLine[] = [
-            {
-                accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
-                accountName: "Finished Goods Inventory",
-                debit: totalCost,
-                credit: 0,
-                description: `Completed production from WO: ${workOrderId}`,
-            },
-        ]
-
-        // Credit WIP sub-accounts proportionally
-        if (matCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.WIP_MATERIALS,
-                accountName: "WIP - Direct Materials",
-                debit: 0,
-                credit: matCost,
-                description: `Materials transferred to FG`,
-            })
-        }
-        if (labCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.WIP_LABOR,
-                accountName: "WIP - Direct Labor",
-                debit: 0,
-                credit: labCost,
-                description: `Labor transferred to FG`,
-            })
-        }
-        if (ohCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.WIP_OVERHEAD,
-                accountName: "WIP - Overhead Applied",
-                debit: 0,
-                credit: ohCost,
-                description: `Overhead transferred to FG`,
-            })
-        }
-
-        // CHANGED: Pass tx through for transactional atomicity
-        return this.createJournalEntry(
-            JournalEntryType.WIP_TO_FINISHED_GOODS,
-            lines,
-            workOrderId,
-            undefined,
-            "system",
-            undefined,
-            tx
-        )
+        return ManufacturingAccountingService.recordWIPToFinishedGoods(workOrderId, totalCost, tx)
     }
 
     /**
@@ -1045,105 +326,7 @@ export class EnhancedAccountingService {
         wipTransferEntryId?: string
         error?: string
     }> {
-        // CHANGED: Wrap all writes in a Firestore transaction for atomicity.
-        // If WIP→FG transfer fails, revenue and COGS entries are never created.
-        return db.runTransaction(async (tx) => {
-            // Auto-transfer WIP→FG if work order is linked
-            let wipTransferEntryId: string | undefined
-            if (workOrderId && costOfGoodsSold > 0) {
-                const wipTransfer = await this.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold, tx)
-                if (!wipTransfer.success) {
-                    throw new Error(`WIP→FG transfer failed: ${wipTransfer.error}`)
-                }
-                wipTransferEntryId = wipTransfer.entryId
-            }
-
-            // Record revenue and AR (including VAT)
-            const totalReceivable = salesAmount + vatAmount
-            
-            const revenueLines: JournalLine[] = [
-                {
-                    accountCode: ACCOUNTS.ACCOUNTS_RECEIVABLE,
-                    accountName: "Accounts Receivable",
-                    debit: totalReceivable,
-                    credit: 0,
-                    description: `Invoice: ${invoiceId} (Total: ${totalReceivable})`,
-                },
-                {
-                    accountCode: ACCOUNTS.SALES_REVENUE,
-                    accountName: "Sales Revenue",
-                    debit: 0,
-                    credit: salesAmount,
-                    description: `Sale net revenue`,
-                },
-            ]
-            
-            if (vatAmount > 0) {
-                revenueLines.push({
-                    accountCode: ACCOUNTS.VAT_PAYABLE,
-                    accountName: "VAT Payable",
-                    debit: 0,
-                    credit: vatAmount,
-                    description: "Sales VAT (14%)",
-                })
-            }
-
-            const revenueResult = await this.createJournalEntry(
-                JournalEntryType.SALES_INVOICE,
-                revenueLines,
-                invoiceId,
-                undefined,
-                "system",
-                undefined,
-                tx
-            )
-
-            if (!revenueResult.success) {
-                throw new Error(revenueResult.error || "Revenue JE creation failed")
-            }
-
-            // Record COGS
-            const cogsLines: JournalLine[] = [
-                {
-                    accountCode: ACCOUNTS.COGS,
-                    accountName: getAccountName(ACCOUNTS.COGS),
-                    debit: costOfGoodsSold,
-                    credit: 0,
-                    description: `COGS for invoice: ${invoiceId}`,
-                },
-                {
-                    accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
-                    accountName: getAccountName(ACCOUNTS.INVENTORY_FINISHED_GOODS),
-                    debit: 0,
-                    credit: costOfGoodsSold,
-                    description: `Goods sold`,
-                },
-            ]
-
-            const cogsResult = await this.createJournalEntry(
-                JournalEntryType.SALES_COGS,
-                cogsLines,
-                invoiceId,
-                undefined,
-                "system",
-                undefined,
-                tx
-            )
-
-            if (!cogsResult.success) {
-                throw new Error(cogsResult.error || "COGS JE creation failed")
-            }
-
-            return {
-                success: true,
-                revenueEntryId: revenueResult.entryId,
-                cogsEntryId: cogsResult.entryId,
-                wipTransferEntryId,
-            }
-        }).catch(error => ({
-            success: false,
-            error: error instanceof Error ? error.message : "Transaction failed during sale recording"
-        }))
+        return SalesAccountingService.recordSale(invoiceId, salesAmount, costOfGoodsSold, vatAmount, workOrderId)
     }
 
     /**
@@ -1329,56 +512,7 @@ export class EnhancedAccountingService {
      * Void a journal entry by creating a reversing entry
      */
     static async voidJournalEntry(entryId: string, userId: string): Promise<{ success: boolean; voidEntryId?: string; error?: string }> {
-        try {
-            const entryRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId)
-            const entryDoc = await entryRef.get()
-            
-            if (!entryDoc.exists) {
-                return { success: false, error: "Journal entry not found" }
-            }
-            
-            const entryData = entryDoc.data()
-            if (entryData?.voided) {
-                return { success: false, error: "Journal entry is already voided" }
-            }
-            
-            // Create reversing lines
-            const reversingLines: JournalLine[] = entryData?.entries.map((line: any) => ({
-                accountCode: line.account_id,
-                accountName: line.account_name,
-                debit: line.credit, // Swap debit and credit
-                credit: line.debit,
-                description: `VOID: ${line.description}`,
-            }))
-            
-            const result = await this.createJournalEntry(
-                entryData?.type as JournalEntryType,
-                reversingLines,
-                entryId,
-                `Voided original entry: ${entryId}`,
-                userId
-            )
-            
-            if (result.success) {
-                await entryRef.update({
-                    voided: true,
-                    voided_at: new Date(),
-                    voided_by: userId,
-                    reversing_entry_id: result.entryId
-                })
-            }
-            
-            return {
-                success: result.success,
-                voidEntryId: result.entryId,
-                error: result.error
-            }
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : "Failed to void entry"
-            }
-        }
+        return JournalEntryService.voidJournalEntry(entryId, userId)
     }
     /**
      * Dashboard data methods
@@ -1727,89 +861,7 @@ export class EnhancedAccountingService {
         reason: string,
         userId: string = "system"
     ): Promise<{ success: boolean; entryId?: string; recordId?: string; error?: string }> {
-        const totalCost = quantityScrapped * unitCost
-        if (totalCost <= 0) return { success: false, error: "Scrap cost must be positive" }
-        if (salvageValue < 0 || salvageValue > totalCost) {
-            return { success: false, error: "Salvage value must be between 0 and total scrap cost" }
-        }
-
-        const netLoss = totalCost - salvageValue
-        const lines: JournalLine[] = []
-
-        if (isAbnormal) {
-            // Period expense — never hits job cost
-            if (netLoss > 0) {
-                lines.push({
-                    accountCode: ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE, // 6209
-                    accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
-                    debit: netLoss,
-                    credit: 0,
-                    description: `Abnormal spoilage: ${sku} × ${quantityScrapped} units (${reason})`,
-                })
-            }
-        } else {
-            // Normal scrap — net cost stays in WIP; only salvage moves to scrap inventory
-            // No additional debit needed — WIP bears the net cost implicitly
-        }
-
-        if (salvageValue > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.SCRAP_INVENTORY, // 1205
-                accountName: getAccountName(ACCOUNT_CODES.SCRAP_INVENTORY),
-                debit: salvageValue,
-                credit: 0,
-                description: `Salvage value: ${sku} scrap`,
-            })
-        }
-
-        // Always credit WIP for the full scrap cost
-        lines.push({
-            accountCode: ACCOUNT_CODES.INVENTORY_WIP, // 1210
-            accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
-            debit: 0,
-            credit: totalCost,
-            description: `Scrap from WO ${workOrderId}: ${quantityScrapped} × ${sku}`,
-        })
-
-        // Normal scrap: WIP absorbs net cost — re-debit WIP for net loss portion
-        if (!isAbnormal && netLoss > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.INVENTORY_WIP,
-                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
-                debit: netLoss,
-                credit: 0,
-                description: `Normal scrap net cost charged to WO ${workOrderId}`,
-            })
-        }
-
-        const result = await this.createJournalEntry(
-            JournalEntryType.SCRAP_RECORD,
-            lines,
-            workOrderId,
-            `Scrap record: ${quantityScrapped} × ${sku} from WO ${workOrderId}`,
-            userId
-        )
-
-        if (!result.success) return result
-
-        // Persist scrap record document
-        const recordId = `SCRAP-${Date.now()}`
-        await db.collection(COLLECTIONS.SCRAP_RECORDS).doc(recordId).set({
-            id: recordId,
-            workOrderId,
-            sku,
-            quantityScrapped,
-            unitCost,
-            totalCost,
-            salvageValue,
-            isAbnormal,
-            reason,
-            journalEntryId: result.entryId,
-            created_at: new Date(),
-            created_by: userId,
-        })
-
-        return { ...result, recordId }
+        return ManufacturingAccountingService.recordScrap(workOrderId, sku, quantityScrapped, unitCost, salvageValue, isAbnormal, reason, userId)
     }
 
     /**
@@ -1836,78 +888,7 @@ export class EnhancedAccountingService {
         reason: string,
         userId: string = "system"
     ): Promise<{ success: boolean; entryId?: string; reworkOrderId?: string; error?: string }> {
-        const totalReworkCost = additionalMaterialCost + additionalLaborCost + additionalOverheadCost
-        if (totalReworkCost <= 0) return { success: false, error: "Rework cost must be positive" }
-
-        const debitAccount = isNormalRework
-            ? ACCOUNT_CODES.INVENTORY_WIP            // Normal → into job
-            : ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE  // Abnormal → period cost
-
-        const lines: JournalLine[] = [
-            {
-                accountCode: debitAccount,
-                accountName: getAccountName(debitAccount),
-                debit: totalReworkCost,
-                credit: 0,
-                description: `Rework for WO ${originalWorkOrderId}: ${reason}`,
-            },
-        ]
-
-        if (additionalMaterialCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.RAW_MATERIALS_FABRIC, // 1201
-                accountName: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
-                debit: 0,
-                credit: additionalMaterialCost,
-                description: `Rework materials`,
-            })
-        }
-        if (additionalLaborCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION, // 2120
-                accountName: getAccountName(ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION),
-                debit: 0,
-                credit: additionalLaborCost,
-                description: `Rework direct labor`,
-            })
-        }
-        if (additionalOverheadCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.MANUFACTURING_OVERHEAD, // 5004
-                accountName: getAccountName(ACCOUNT_CODES.MANUFACTURING_OVERHEAD),
-                debit: 0,
-                credit: additionalOverheadCost,
-                description: `Rework overhead`,
-            })
-        }
-
-        const result = await this.createJournalEntry(
-            JournalEntryType.REWORK_COSTS,
-            lines,
-            originalWorkOrderId,
-            `Rework costs for WO ${originalWorkOrderId}`,
-            userId
-        )
-
-        if (!result.success) return result
-
-        const reworkOrderId = `RWK-${Date.now()}`
-        await db.collection(COLLECTIONS.REWORK_ORDERS).doc(reworkOrderId).set({
-            id: reworkOrderId,
-            originalWorkOrderId,
-            reason,
-            additionalMaterialCost,
-            additionalLaborCost,
-            additionalOverheadCost,
-            totalReworkCost,
-            isNormalRework,
-            journalEntryId: result.entryId,
-            status: "completed",
-            created_at: new Date(),
-            created_by: userId,
-        })
-
-        return { ...result, reworkOrderId }
+        return ManufacturingAccountingService.recordRework(originalWorkOrderId, additionalMaterialCost, additionalLaborCost, additionalOverheadCost, isNormalRework, reason, userId)
     }
 
     /**
@@ -1929,52 +910,7 @@ export class EnhancedAccountingService {
         idleHours: number = 0,
         userId: string = "system"
     ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
-        const regularCost  = regularHours  * regularRate
-        const overtimeCost = overtimeHours * overtimeRate
-        const idleCost     = idleHours     * regularRate   // idle at base rate
-        const totalWages   = regularCost + overtimeCost + idleCost
-
-        if (totalWages <= 0) return { success: false, error: "Total wages must be positive" }
-
-        const productiveCost = regularCost + overtimeCost
-        const lines: JournalLine[] = []
-
-        if (productiveCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.INVENTORY_WIP,
-                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
-                debit: productiveCost,
-                credit: 0,
-                description: `Labor: ${regularHours}h regular + ${overtimeHours}h OT on WO ${workOrderId}`,
-            })
-        }
-        if (idleCost > 0) {
-            lines.push({
-                accountCode: ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE, // 6209 — idle time is period cost
-                accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
-                debit: idleCost,
-                credit: 0,
-                description: `Idle time: ${idleHours}h @ ${formatCurrency(regularRate)}/hr`,
-            })
-        }
-        lines.push({
-            accountCode: ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION,
-            accountName: getAccountName(ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION),
-            debit: 0,
-            credit: totalWages,
-            description: `Total wages payable for WO ${workOrderId}`,
-        })
-
-        return {
-            ...await this.createJournalEntry(
-                JournalEntryType.LABOR_APPLIED,
-                lines,
-                workOrderId,
-                `Detailed labor for WO ${workOrderId}`,
-                userId
-            ),
-            totalCost: productiveCost,
-        }
+        return ManufacturingAccountingService.recordLaborDetailed(workOrderId, regularHours, regularRate, overtimeHours, overtimeRate, idleHours, userId)
     }
 
     /**
@@ -2102,85 +1038,13 @@ export class EnhancedAccountingService {
         quantityOnHand: number,
         userId: string = "system"
     ): Promise<{ success: boolean; entryId?: string; writeDownAmount?: number; error?: string }> {
-        if (netRealisableValue >= currentCost) {
-            return { success: true, writeDownAmount: 0 } // No write-down needed
-        }
-        if (quantityOnHand <= 0) {
-            return { success: false, error: "Quantity on hand must be positive" }
-        }
-
-        const writeDownAmount = Math.round((currentCost - netRealisableValue) * quantityOnHand * 100) / 100
-
-        const lines: JournalLine[] = [
-            {
-                accountCode: ACCOUNT_CODES.INVENTORY_WRITEDOWN_NRV, // 6210
-                accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WRITEDOWN_NRV),
-                debit: writeDownAmount,
-                credit: 0,
-                description: `NRV write-down: ${sku} — cost ${formatCurrency(currentCost)}/unit, NRV ${formatCurrency(netRealisableValue)}/unit × ${quantityOnHand} units`,
-            },
-            {
-                accountCode: ACCOUNT_CODES.ALLOWANCE_INVENTORY_OBSOLESCENCE, // 1241
-                accountName: getAccountName(ACCOUNT_CODES.ALLOWANCE_INVENTORY_OBSOLESCENCE),
-                debit: 0,
-                credit: writeDownAmount,
-                description: `Provision for inventory obsolescence: ${sku}`,
-            },
-        ]
-
-        return {
-            ...await this.createJournalEntry(
-                JournalEntryType.INVENTORY_WRITEDOWN,
-                lines,
-                `NRV-${sku}-${Date.now()}`,
-                `IAS 2.9 NRV write-down for ${sku}: ${formatCurrency(writeDownAmount)}`,
-                userId
-            ),
-            writeDownAmount,
-        }
+        return InventoryAccountingService.recordInventoryWriteDown(sku, currentCost, netRealisableValue, quantityOnHand, userId)
     }
 
     /**
      * Process and mark overdue invoices (Fix-M4)
      */
     static async processOverdueInvoices(): Promise<{ processed: number; errors: number }> {
-        try {
-            const now = new Date()
-            const snapshot = await db.collection(COLLECTIONS.INVOICES)
-                .where("status", "in", ["unpaid", "partial"])
-                .get()
-
-            const batch = db.batch()
-            let count = 0
-            
-            snapshot.forEach(doc => {
-                const invoice = doc.data()
-                // Convert due_date if it's a string, timestamp or missing
-                let dueDate: Date | null = null
-                if (invoice.due_date?.toDate) {
-                    dueDate = invoice.due_date.toDate()
-                } else if (invoice.due_date) {
-                    dueDate = new Date(invoice.due_date)
-                }
-                
-                if (dueDate && dueDate < now) {
-                    batch.update(doc.ref, { 
-                        status: "overdue",
-                        updated_at: now
-                    })
-                    count++
-                }
-            })
-
-            if (count > 0) {
-                await batch.commit()
-            }
-            
-            console.log(`✅ Processed ${count} overdue invoices`)
-            return { processed: count, errors: 0 }
-        } catch (error) {
-            console.error("Error processing overdue invoices:", error)
-            return { processed: 0, errors: 1 }
-        }
+        return SalesAccountingService.processOverdueInvoices()
     }
 }

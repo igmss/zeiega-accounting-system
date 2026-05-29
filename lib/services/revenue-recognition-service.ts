@@ -1,7 +1,7 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
-import { CentralizedAccountingService } from "./centralized-accounting-service"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 /**
  * Contract for IFRS 15 over-time revenue recognition.
@@ -319,7 +319,6 @@ export class RevenueRecognitionService {
       }
 
       const now = new Date()
-      const entryId = `BILL-${contractId}-${Date.now()}`
 
       // Update amounts billed
       contract.amountsBilledToDate += billingAmount
@@ -357,29 +356,30 @@ export class RevenueRecognitionService {
         },
       ]
 
-      const journalEntry = {
-        id: entryId,
-        date: now,
-        type: "SALES_INVOICE",
-        reference_doc: invoiceId,
-        description: `Milestone billing for contract ${contractId}: ${formatCurrency(billingAmount)}`,
-        entries,
-        account_ids: entries.map(e => e.account_id),
-        total_debits: billingAmount,
-        total_credits: billingAmount,
-        created_at: now,
-        created_by: userId,
-      }
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.SALES_INVOICE,
+        entries.map(e => ({
+          accountCode: e.account_id,
+          accountName: e.account_name,
+          debit: e.debit,
+          credit: e.credit,
+          description: e.description,
+        })),
+        invoiceId,
+        `Milestone billing for contract ${contractId}: ${formatCurrency(billingAmount)}`,
+        userId
+      )
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids || [ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, ACCOUNT_CODES.SALES_CUSTOM_MTO])
+      if (!result.success) {
+        return { success: false, error: result.error }
+      }
 
       // Update contract
       contract.updatedAt = now
       await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
 
       console.log(`✅ Milestone billed: ${formatCurrency(billingAmount)} (Total billed: ${formatCurrency(contract.amountsBilledToDate)})`)
-      return { success: true, entryId }
+      return { success: true, entryId: result.entryId }
     } catch (error) {
       return {
         success: false,
@@ -402,40 +402,34 @@ export class RevenueRecognitionService {
     userId: string = "system"
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
-      const entryId = `ADV-${contractId}-${Date.now()}`
       const now = new Date()
 
-      const journalEntry = {
-        id: entryId,
-        date: now,
-        type: "PAYMENT_RECEIVED",
-        reference_doc: contractId,
-        description: `Advance payment for contract ${contractId}: ${formatCurrency(amount)}`,
-        entries: [
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.PAYMENT_RECEIVED,
+        [
           {
-            account_id: accountCode,
-            account_name: getAccountName(accountCode),
+            accountCode: accountCode,
+            accountName: getAccountName(accountCode),
             debit: amount,
             credit: 0,
             description: `Advance received from customer`,
           },
           {
-            account_id: ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY,
-            account_name: getAccountName(ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY),
+            accountCode: ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY,
+            accountName: getAccountName(ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY),
             debit: 0,
             credit: amount,
             description: `Contract liability for advance`,
           },
         ],
-        account_ids: [accountCode, ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY],
-        total_debits: amount,
-        total_credits: amount,
-        created_at: now,
-        created_by: userId,
-      }
+        contractId,
+        `Advance payment for contract ${contractId}: ${formatCurrency(amount)}`,
+        userId
+      )
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids || [ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, ACCOUNT_CODES.SALES_CUSTOM_MTO])
+      if (!result.success) {
+        return { success: false, error: result.error }
+      }
 
       // Update contract amounts billed
       const contract = await this.getContract(contractId)
@@ -447,7 +441,7 @@ export class RevenueRecognitionService {
       }
 
       console.log(`✅ Advance payment ${formatCurrency(amount)} recorded for contract ${contractId}`)
-      return { success: true, entryId }
+      return { success: true, entryId: result.entryId }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to record advance" }
     }

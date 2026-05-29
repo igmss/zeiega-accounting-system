@@ -1,6 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
-import { CentralizedAccountingService } from "./centralized-accounting-service"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 /**
  * Standard cost configuration per design
@@ -244,7 +244,6 @@ export class VarianceService {
       const absPriceVar = Math.abs(priceVar)
       const absUsageVar = Math.abs(usageVar)
 
-      const entryId = `MV-${workOrderId}-${Date.now()}`
       const entries: any[] = []
 
       // Record raw materials at standard
@@ -305,26 +304,25 @@ export class VarianceService {
         description: `Materials consumed: ${actualQuantityUsed} units`,
       })
 
-      const totalDebits = entries.reduce((s, e) => s + (e.debit || 0), 0)
-      const totalCredits = entries.reduce((s, e) => s + (e.credit || 0), 0)
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.MATERIAL_ISSUE_TO_WIP,
+        entries.map((e: any) => ({
+          accountCode: e.account_id,
+          accountName: e.account_name,
+          debit: e.debit || 0,
+          credit: e.credit || 0,
+          description: e.description,
+        })),
+        workOrderId,
+        `Material issue with variance capture for WO ${workOrderId}`,
+        userId
+      )
 
-      const journalEntry = {
-        id: entryId,
-        date: new Date(),
-        type: "MATERIAL_ISSUE_TO_WIP",
-        reference_doc: workOrderId,
-        description: `Material issue with variance capture for WO ${workOrderId}`,
-        entries,
-        account_ids: [...new Set(entries.map((e: any) => e.account_id))],
-        total_debits: totalDebits,
-        total_credits: totalCredits,
-        created_at: new Date(),
-        created_by: userId,
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
-      return { success: true, entryId }
+      return { success: true, entryId: result.entryId }
     } catch (error) {
       return {
         success: false,
@@ -349,7 +347,6 @@ export class VarianceService {
         ACCOUNT_CODES.OH_EFFICIENCY_VARIANCE,
         ACCOUNT_CODES.OH_VOLUME_VARIANCE,
       ]
-      const entryId = `VAR-CLOSE-${Date.now()}`
       const entries: any[] = []
       let totalToClose = 0
 
@@ -392,28 +389,26 @@ export class VarianceService {
         description: `Period-end variance close-out`,
       })
 
-      const totalDebits = entries.reduce((s, e) => s + (e.debit || 0), 0)
-      const totalCredits = entries.reduce((s, e) => s + (e.credit || 0), 0)
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.CLOSING_ENTRY,
+        entries.map((e: any) => ({
+          accountCode: e.account_id,
+          accountName: e.account_name,
+          debit: e.debit || 0,
+          credit: e.credit || 0,
+          description: e.description,
+        })),
+        "VARIANCE-CLOSEOUT",
+        `Period-end variance accounts closed to COGS`,
+        userId
+      )
 
-      const journalEntry = {
-        id: entryId,
-        date: new Date(),
-        type: "CLOSING_ENTRY",
-        reference_doc: "VARIANCE-CLOSEOUT",
-        description: `Period-end variance accounts closed to COGS`,
-        entries,
-        account_ids: [...new Set(entries.map((e: any) => e.account_id))],
-        total_debits: totalDebits,
-        total_credits: totalCredits,
-        created_at: new Date(),
-        created_by: userId,
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      const syncedAccounts = [...varianceAccounts, ACCOUNT_CODES.COST_OF_GOODS_SOLD]
-      await CentralizedAccountingService.syncMultipleAccountBalances(syncedAccounts)
       console.log(`✅ Closed variance accounts: net EGP ${totalToClose}`)
-      return { success: true, entryId, totalClosed: totalToClose }
+      return { success: true, entryId: result.entryId, totalClosed: totalToClose }
     } catch (error) {
       return {
         success: false,

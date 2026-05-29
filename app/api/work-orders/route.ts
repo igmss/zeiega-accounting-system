@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
-import { db, COLLECTIONS } from "@/lib/firebase";
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
 // GET /api/work-orders - Get all work orders with design information
@@ -108,25 +107,19 @@ export async function POST(request: NextRequest) {
 
     // Final fallback: Create basic work order with warning
     console.warn("Creating basic work order without automatic cost calculation");
-    const now = new Date();
-    const workOrder = {
-      ...workOrderData,
-      createdAt: now,
-      updatedAt: now,
-      status: workOrderData.status || "pending",
-      completionPercentage: workOrderData.completionPercentage || 0,
-      total_cost: 0,
-      estimated_cost: 0,
-      labor_cost: 0,
-      materials_issued: [],
-      notes: `Basic work order created without automatic cost calculation - manual cost entry required`
-    };
-
-    const docRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
+    
+    const result = await WorkOrderService.createBasicWorkOrder(workOrderData);
+    
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      workOrderId: docRef.id,
+      workOrderId: result.workOrderId,
       message: "Basic work order created - manual cost entry required"
     });
 
@@ -145,25 +138,16 @@ export async function PUT(request: Request) {
   try {
     const { id, ...workOrderData } = await request.json()
 
-    // Whitelist only specific safe fields to prevent mass-assignment/pollution
-    const whitelistedUpdates: Record<string, any> = {};
-    if (workOrderData.status !== undefined) whitelistedUpdates.status = workOrderData.status;
-    if (workOrderData.completionPercentage !== undefined) whitelistedUpdates.completionPercentage = workOrderData.completionPercentage;
-    if (workOrderData.notes !== undefined) whitelistedUpdates.notes = workOrderData.notes;
-    if (workOrderData.assigned_worker !== undefined) whitelistedUpdates.assigned_worker = workOrderData.assigned_worker;
-    if (workOrderData.started_at !== undefined) {
-      whitelistedUpdates.started_at = workOrderData.started_at ? new Date(workOrderData.started_at) : null;
-    }
-    if (workOrderData.completed_at !== undefined) {
-      whitelistedUpdates.completed_at = workOrderData.completed_at ? new Date(workOrderData.completed_at) : null;
+    const result = await WorkOrderService.updateWorkOrder(id, workOrderData)
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error || "Failed to update work order" },
+        { status: 400 }
+      )
     }
 
-    await db.collection(COLLECTIONS.WORK_ORDERS).doc(id).update({
-      ...whitelistedUpdates,
-      updatedAt: new Date(),
-    })
-
-    return NextResponse.json({ id, ...whitelistedUpdates, updatedAt: new Date() })
+    return NextResponse.json({ id, ...workOrderData, updatedAt: new Date() })
   } catch (error) {
     console.error("Error updating work order:", error)
     return NextResponse.json(

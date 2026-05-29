@@ -1,7 +1,7 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
-import { CentralizedAccountingService } from "./centralized-accounting-service"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 /**
  * Overhead allocation configuration
@@ -199,39 +199,32 @@ export class OverheadService {
       const entryId = `OH-${workOrderId}-${Date.now()}`
       const now = new Date()
 
-      const journalEntry = {
-        id: entryId,
-        date: now,
-        type: "OVERHEAD_APPLIED",
-        reference_doc: workOrderId,
-        description: `Overhead applied to WO ${workOrderId}: ${actualActivity} × ${formatCurrency(rate)} = ${formatCurrency(appliedOH)}`,
-        entries: [
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.OVERHEAD_APPLIED,
+        [
           {
-            account_id: ACCOUNT_CODES.WIP_OVERHEAD,
-            account_name: getAccountName(ACCOUNT_CODES.WIP_OVERHEAD),
+            accountCode: ACCOUNT_CODES.WIP_OVERHEAD,
+            accountName: getAccountName(ACCOUNT_CODES.WIP_OVERHEAD),
             debit: appliedOH,
             credit: 0,
-              description: `Overhead applied: ${actualActivity} units @ ${formatCurrency(rate)}/unit`,
+            description: `Overhead applied: ${actualActivity} units @ ${formatCurrency(rate)}/unit`,
           },
           {
-            account_id: ACCOUNT_CODES.OH_APPLIED,
-            account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
+            accountCode: ACCOUNT_CODES.OH_APPLIED,
+            accountName: getAccountName(ACCOUNT_CODES.OH_APPLIED),
             debit: 0,
             credit: appliedOH,
             description: `OH applied to WO: ${workOrderId}`,
           },
         ],
-        account_ids: [ACCOUNT_CODES.WIP_OVERHEAD, ACCOUNT_CODES.OH_APPLIED],
-        total_debits: appliedOH,
-        total_credits: appliedOH,
-        created_at: now,
-        created_by: userId,
+        workOrderId,
+        `Overhead applied to WO ${workOrderId}: ${actualActivity} × ${formatCurrency(rate)} = ${formatCurrency(appliedOH)}`,
+        userId
+      )
+
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
-
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-
-      // Sync affected accounts
-      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.WIP_OVERHEAD, ACCOUNT_CODES.OH_APPLIED])
 
       // Update work order overhead cost
       const woRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId)
@@ -247,7 +240,7 @@ export class OverheadService {
       }
 
       console.log(`✅ Applied ${formatCurrency(appliedOH)} OH to WO ${workOrderId}`)
-      return { success: true, entryId, appliedOH }
+      return { success: true, entryId: result.entryId, appliedOH }
     } catch (error) {
       return {
         success: false,
@@ -341,79 +334,61 @@ export class OverheadService {
       }
 
       const absV = Math.abs(variance)
-      const now = new Date()
-      const closeId = `OHCLOSE-${Date.now()}`
 
       // Step 1: Close Applied (5009) into Control (5010)
       // DR 5009 OH Applied (eliminate credit) / CR 5010 OH Control (reduce debit)
-      const step1 = {
-        id: `${closeId}-S1`,
-        date: endDate,
-        type: "OVERHEAD_CLOSE",
-        reference_doc: `OH-CLOSE-${startDate.toISOString().split("T")[0]}`,
-        description: `Close OH Applied to OH Control: ${formatCurrency(absV)}`,
-        entries: [
+      const refDoc = `OH-CLOSE-${startDate.toISOString().split("T")[0]}`
+      
+      await JournalEntryService.createJournalEntry(
+        JournalEntryType.GENERAL,
+        [
           {
-            account_id: ACCOUNT_CODES.OH_APPLIED,
-            account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
+            accountCode: ACCOUNT_CODES.OH_APPLIED,
+            accountName: getAccountName(ACCOUNT_CODES.OH_APPLIED),
             debit: absV,
             credit: 0,
             description: "Eliminate applied OH credit balance",
           },
           {
-            account_id: ACCOUNT_CODES.OH_CONTROL,
-            account_name: getAccountName(ACCOUNT_CODES.OH_CONTROL),
+            accountCode: ACCOUNT_CODES.OH_CONTROL,
+            accountName: getAccountName(ACCOUNT_CODES.OH_CONTROL),
             debit: 0,
             credit: absV,
             description: "Reduce actual OH debit balance to isolate variance",
           },
         ],
-        account_ids: [ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.OH_CONTROL],
-        total_debits: absV,
-        total_credits: absV,
-        created_at: now,
-        created_by: userId,
-      }
-
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(step1.id).set(step1)
-
-      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.OH_CONTROL])
+        refDoc,
+        `Close OH Applied to OH Control: ${formatCurrency(absV)}`,
+        userId,
+        endDate
+      )
 
       // Step 2: Transfer variance to Over/Under-Applied OH (5011)
       const isOver = variance > 0
-      const dispId = `${closeId}-S2`
-      const step2 = {
-        id: dispId,
-        date: endDate,
-        type: "OVERHEAD_DISPOSITION",
-        reference_doc: step1.reference_doc,
-        description: `${isOver ? "Over" : "Under"}-applied OH ${formatCurrency(absV)} → disposed to COGS`,
-        entries: [
+      
+      await JournalEntryService.createJournalEntry(
+        JournalEntryType.GENERAL,
+        [
           {
-            account_id: ACCOUNT_CODES.OH_VARIANCE,
-            account_name: getAccountName(ACCOUNT_CODES.OH_VARIANCE),
-            debit: isOver ? 0 : absV,   // Under-applied = DR variance
-            credit: isOver ? absV : 0,  // Over-applied = CR variance
+            accountCode: ACCOUNT_CODES.OH_VARIANCE,
+            accountName: getAccountName(ACCOUNT_CODES.OH_VARIANCE),
+            debit: isOver ? 0 : absV,
+            credit: isOver ? absV : 0,
             description: `OH variance isolated at period-end`,
           },
           {
-            account_id: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
-            account_name: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+            accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
+            accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
             debit: isOver ? absV : 0,
             credit: isOver ? 0 : absV,
             description: `Dispose ${isOver ? "over" : "under"}-applied OH to COGS`,
           },
         ],
-        account_ids: [ACCOUNT_CODES.OH_VARIANCE, ACCOUNT_CODES.COST_OF_GOODS_SOLD],
-        total_debits: absV,
-        total_credits: absV,
-        created_at: now,
-        created_by: userId,
-      }
-
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(dispId).set(step2)
-
-      await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_VARIANCE, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
+        refDoc,
+        `${isOver ? "Over" : "Under"}-applied OH ${formatCurrency(absV)} → disposed to COGS`,
+        userId,
+        endDate
+      )
 
       console.log(`✅ OH close: ${formatCurrency(absV)} variance disposed to COGS`)
       return {
@@ -459,42 +434,35 @@ export class OverheadService {
 
       if (!isMaterial) {
         // Close entirely to COGS (5301)
-        const cogsEntryId = `OHDISP-${Date.now()}`
         const isOverApplied = variance > 0
         const absVariance = Math.abs(variance)
 
-        const journalEntry = {
-          id: cogsEntryId,
-          date: endDate,
-          type: "OVERHEAD_DISPOSITION",
-          reference_doc: `OH-DISPOSITION-${startDate.toISOString().split("T")[0]}`,
-          description: `OH variance disposition: ${isOverApplied ? "Over" : "Under"}-applied ${formatCurrency(absVariance)} → COGS`,
-          entries: [
+        const cogsResult = await JournalEntryService.createJournalEntry(
+          JournalEntryType.GENERAL,
+          [
             {
-              account_id: ACCOUNT_CODES.OH_APPLIED,
-              account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
+              accountCode: ACCOUNT_CODES.OH_APPLIED,
+              accountName: getAccountName(ACCOUNT_CODES.OH_APPLIED),
               debit: isOverApplied ? absVariance : 0,
               credit: isOverApplied ? 0 : absVariance,
               description: `Clear OH applied balance`,
             },
             {
-              account_id: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
-              account_name: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+              accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
+              accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
               debit: isOverApplied ? 0 : absVariance,
               credit: isOverApplied ? absVariance : 0,
               description: `Dispose ${isOverApplied ? "over" : "under"}-applied OH to COGS`,
             },
           ],
-          account_ids: [ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.COST_OF_GOODS_SOLD],
-          total_debits: absVariance,
-          total_credits: absVariance,
-          created_at: new Date(),
-          created_by: userId,
+          `OH-DISPOSITION-${startDate.toISOString().split("T")[0]}`,
+          `OH variance disposition: ${isOverApplied ? "Over" : "Under"}-applied ${formatCurrency(absVariance)} → COGS`,
+          userId,
+          endDate
+        )
+        if (cogsResult.success && cogsResult.entryId) {
+          disposition.journalEntryId = cogsResult.entryId
         }
-
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(cogsEntryId).set(journalEntry)
-        await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
-        disposition.journalEntryId = cogsEntryId
       } else {
         // Prorate across WIP, FG, COGS
         // Get balances
@@ -533,7 +501,6 @@ export class OverheadService {
 
         const isOver = variance > 0
         const absV = Math.abs(variance)
-        const dispId = `OHDISP-${Date.now()}`
         const isDr = !isOver // Under-applied = debit these accounts (increase)
 
         const entries: any[] = [
@@ -571,26 +538,23 @@ export class OverheadService {
           },
         ]
 
-        const totalDebits = entries.reduce((s, e) => s + (e.debit || 0), 0)
-        const totalCredits = entries.reduce((s, e) => s + (e.credit || 0), 0)
-
-        const journalEntry = {
-          id: dispId,
-          date: endDate,
-          type: "OVERHEAD_DISPOSITION",
-          reference_doc: `OH-PRORATE-${startDate.toISOString().split("T")[0]}`,
-          description: `OH ${isOver ? "over" : "under"}-applied variance ${formatCurrency(absV)} prorated`,
-          entries,
-          account_ids: entries.map((e: any) => e.account_id),
-          total_debits: totalDebits,
-          total_credits: totalCredits,
-          created_at: new Date(),
-          created_by: userId,
+        const dispResult = await JournalEntryService.createJournalEntry(
+          JournalEntryType.GENERAL,
+          entries.map((e: any) => ({
+            accountCode: e.account_id,
+            accountName: e.account_name,
+            debit: e.debit || 0,
+            credit: e.credit || 0,
+            description: e.description,
+          })),
+          `OH-PRORATE-${startDate.toISOString().split("T")[0]}`,
+          `OH ${isOver ? "over" : "under"}-applied variance ${formatCurrency(absV)} prorated`,
+          userId,
+          endDate
+        )
+        if (dispResult.success && dispResult.entryId) {
+          disposition.journalEntryId = dispResult.entryId
         }
-
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(dispId).set(journalEntry)
-        await CentralizedAccountingService.syncMultipleAccountBalances([ACCOUNT_CODES.OH_APPLIED, ACCOUNT_CODES.INVENTORY_WIP, ACCOUNT_CODES.INVENTORY_FINISHED_GOODS, ACCOUNT_CODES.COST_OF_GOODS_SOLD])
-        disposition.journalEntryId = dispId
       }
 
       console.log(`✅ OH variance of ${formatCurrency(variance)} disposed (${disposition.dispositionMethod})`)

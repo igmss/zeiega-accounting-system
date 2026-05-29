@@ -506,4 +506,60 @@ export class WorkOrderService {
       throw new Error("Failed to calculate work order profitability");
     }
   }
+
+  static async updateWorkOrder(workOrderId: string, updates: Record<string, any>): Promise<{ success: boolean; error?: string }> {
+    try {
+      const whitelistedUpdates: Record<string, any> = {}
+      if (updates.status !== undefined) whitelistedUpdates.status = updates.status
+      if (updates.completionPercentage !== undefined) whitelistedUpdates.completionPercentage = updates.completionPercentage
+      if (updates.notes !== undefined) whitelistedUpdates.notes = updates.notes
+      if (updates.assigned_worker !== undefined) whitelistedUpdates.assigned_worker = updates.assigned_worker
+      if (updates.estimated_completion !== undefined) {
+        whitelistedUpdates.estimated_completion = updates.estimated_completion ? new Date(updates.estimated_completion) : null
+      }
+      if (updates.started_at !== undefined) {
+        whitelistedUpdates.started_at = updates.started_at ? new Date(updates.started_at) : null
+      }
+      if (updates.completed_at !== undefined) {
+        whitelistedUpdates.completed_at = updates.completed_at ? new Date(updates.completed_at) : null
+      }
+
+      if (Object.keys(whitelistedUpdates).length === 0) {
+        return { success: false, error: "No valid fields to update" }
+      }
+
+      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
+        ...whitelistedUpdates,
+        updated_at: new Date(),
+      })
+
+      return { success: true }
+    } catch (error) {
+      console.error("Error updating work order:", error)
+      return { success: false, error: error instanceof Error ? error.message : "Failed to update work order" }
+    }
+  }
+
+  static async createBasicWorkOrder(workOrderData: Record<string, any>): Promise<{ success: boolean; workOrderId?: string; error?: string }> {
+    try {
+      const now = new Date()
+      const workOrder = {
+        ...workOrderData,
+        createdAt: now,
+        updatedAt: now,
+        status: workOrderData.status || "pending",
+        completionPercentage: workOrderData.completionPercentage || 0,
+        total_cost: 0,
+        estimated_cost: 0,
+        labor_cost: 0,
+        materials_issued: [],
+        notes: workOrderData.notes || `Basic work order created without automatic cost calculation - manual cost entry required`
+      }
+
+      const docRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder)
+      return { success: true, workOrderId: docRef.id }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Failed to create work order" }
+    }
+  }
 }

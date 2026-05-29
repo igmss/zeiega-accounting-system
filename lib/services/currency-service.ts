@@ -33,7 +33,7 @@ export interface CurrencyBalance {
 
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
-import { CentralizedAccountingService } from "./centralized-accounting-service"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 const EXCHANGE_RATES_COLLECTION = "acc_exchange_rates"
 
@@ -154,48 +154,44 @@ export class CurrencyService {
   }> {
     try {
       const egpAmount = Math.round(originalAmount * rate * 100) / 100
-      const entryId = `FX-PURCH-${Date.now()}`
 
-      const journalEntry = {
-        id: entryId,
-        date: new Date(),
-        type: "MATERIAL_RECEIPT",
-        reference_doc: `FX-${vendorId}`,
-        description: `${description} | ${originalCurrency} ${originalAmount} @ ${rate} = EGP ${egpAmount}`,
-        entries: [
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.MATERIAL_RECEIPT,
+        [
           {
-            account_id: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
-            account_name: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
+            accountCode: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
+            accountName: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
             debit: egpAmount,
             credit: 0,
             description: `Imported materials: ${originalCurrency} ${originalAmount} @ ${rate}`,
           },
           {
-            account_id: ACCOUNT_CODES.ACCOUNTS_PAYABLE,
-            account_name: getAccountName(ACCOUNT_CODES.ACCOUNTS_PAYABLE),
+            accountCode: ACCOUNT_CODES.ACCOUNTS_PAYABLE,
+            accountName: getAccountName(ACCOUNT_CODES.ACCOUNTS_PAYABLE),
             debit: 0,
             credit: egpAmount,
             description: `Foreign AP: ${originalCurrency} ${originalAmount}`,
           },
         ],
-        account_ids: [ACCOUNT_CODES.RAW_MATERIALS_FABRIC, ACCOUNT_CODES.ACCOUNTS_PAYABLE],
-        total_debits: egpAmount,
-        total_credits: egpAmount,
-        created_at: new Date(),
-        created_by: userId,
-        // Store original currency metadata
-        metadata: {
+        `FX-${vendorId}`,
+        `${description} | ${originalCurrency} ${originalAmount} @ ${rate} = EGP ${egpAmount}`,
+        userId,
+        undefined,
+        undefined,
+        {
           originalAmount,
           originalCurrency,
           exchangeRate: rate,
           rateDate: new Date(),
-        },
+        }
+      )
+
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
       console.log(`✅ FX purchase: ${originalCurrency} ${originalAmount} → EGP ${egpAmount}`)
-      return { success: true, entryId, egpAmount }
+      return { success: true, entryId: result.entryId, egpAmount }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to record FX purchase" }
     }
@@ -223,21 +219,20 @@ export class CurrencyService {
   ): Promise<{ success: boolean; entryId?: string; fxGainLoss?: number; error?: string }> {
     try {
       const fxGainLoss = Math.round((originalEGPAmount - paymentEGPAmount) * 100) / 100
-      const isGain = fxGainLoss > 0 // Paid less EGP than booked = gain
+      const isGain = fxGainLoss > 0
       const absFx = Math.abs(fxGainLoss)
-      const entryId = `FX-SETTLE-${Date.now()}`
 
-      const entries: any[] = [
+      const lines: import("./journal-entry-service").JournalLine[] = [
         {
-          account_id: ACCOUNT_CODES.ACCOUNTS_PAYABLE,
-          account_name: getAccountName(ACCOUNT_CODES.ACCOUNTS_PAYABLE),
+          accountCode: ACCOUNT_CODES.ACCOUNTS_PAYABLE,
+          accountName: getAccountName(ACCOUNT_CODES.ACCOUNTS_PAYABLE),
           debit: originalEGPAmount,
           credit: 0,
           description: `Settle foreign AP: ${originalCurrency} ${originalAmount}`,
         },
         {
-          account_id: ACCOUNT_CODES.BANK_MAIN,
-          account_name: getAccountName(ACCOUNT_CODES.BANK_MAIN),
+          accountCode: ACCOUNT_CODES.BANK_MAIN,
+          accountName: getAccountName(ACCOUNT_CODES.BANK_MAIN),
           debit: 0,
           credit: paymentEGPAmount,
           description: `Payment: ${originalCurrency} ${originalAmount} @ ${paymentRate}`,
@@ -245,36 +240,29 @@ export class CurrencyService {
       ]
 
       if (Math.abs(fxGainLoss) > 0.01) {
-        entries.push({
-          account_id: this.FX_GAIN_LOSS_ACCOUNT,
-          account_name: "FX Gain/Loss",
+        lines.push({
+          accountCode: this.FX_GAIN_LOSS_ACCOUNT,
+          accountName: "FX Gain/Loss",
           debit: isGain ? 0 : absFx,
           credit: isGain ? absFx : 0,
           description: `${isGain ? "Gain" : "Loss"} on FX settlement (${originalCurrency})`,
         })
       }
 
-      const totalDebits = entries.reduce((s, e) => s + (e.debit || 0), 0)
-      const totalCredits = entries.reduce((s, e) => s + (e.credit || 0), 0)
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.PAYMENT_MADE,
+        lines,
+        `FX-${vendorId}`,
+        `FX settlement: ${originalCurrency} ${originalAmount} | Book: EGP ${originalEGPAmount} | Paid: EGP ${paymentEGPAmount} | ${isGain ? "Gain" : "Loss"}: EGP ${absFx}`,
+        userId
+      )
 
-      const journalEntry = {
-        id: entryId,
-        date: new Date(),
-        type: "PAYMENT_MADE",
-        reference_doc: `FX-${vendorId}`,
-        description: `FX settlement: ${originalCurrency} ${originalAmount} | Book: EGP ${originalEGPAmount} | Paid: EGP ${paymentEGPAmount} | ${isGain ? "Gain" : "Loss"}: EGP ${absFx}`,
-        entries,
-        account_ids: entries.map((e: any) => e.account_id),
-        total_debits: totalDebits,
-        total_credits: totalCredits,
-        created_at: new Date(),
-        created_by: userId,
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
 
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
       console.log(`✅ FX settlement: ${isGain ? "Gain" : "Loss"} EGP ${absFx}`)
-      return { success: true, entryId, fxGainLoss }
+      return { success: true, entryId: result.entryId, fxGainLoss }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to record FX settlement" }
     }

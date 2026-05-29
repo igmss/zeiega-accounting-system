@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { getAccountName } from "@/lib/accounting/account-types"
 import { requirePermission, requireAuth } from "@/lib/auth"
-import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
+import { EnhancedAccountingService, JournalEntryType, ACCOUNTS } from "@/lib/services/enhanced-accounting-service"
 
 export async function POST(request: Request) {
     try {
@@ -31,67 +31,52 @@ export async function POST(request: Request) {
         const assetDescription = description || `Asset acquisition - ${amount.toLocaleString()}`
 
         // Map payment method to actual COA codes
-        let paymentAccountCode = '1101' // Default Cash on Hand
+        let paymentAccountCode = '1101'
         let paymentAccountName = 'Cash on Hand'
 
         if (paymentMethod === 'bank') {
-            paymentAccountCode = '1103' // Main Bank
+            paymentAccountCode = '1103'
             paymentAccountName = 'Bank Account'
         } else if (paymentMethod === 'payable') {
-            paymentAccountCode = '2101' // Accounts Payable
+            paymentAccountCode = '2101'
             paymentAccountName = 'Accounts Payable'
         } else if (paymentMethod === 'equity') {
-            const partnerCode = body.partnerCode || '3011' // Default to Ahmed if not specified
+            const partnerCode = body.partnerCode || '3011'
             paymentAccountCode = partnerCode
             paymentAccountName = getAccountName(partnerCode)
         }
 
-        // Create journal entry document directly
-        // Mirrors Expenses structure
-        const entryId = `AST-${Date.now()}`
-
-        const journalEntry = {
-            id: entryId,
-            date: now,
-            description: assetDescription,
-            reference: `AST-${Math.floor(Math.random() * 10000)}`,
-            type: 'ASSET_PURCHASE', // Specific type for assets
-            metadata: {
-                useful_life_years: useful_life_years || null,
-                salvage_value: salvage_value || 0,
-                depreciation_method: depreciation_method || (useful_life_years ? 'straight_line' : null)
-            },
-            entries: [
+        const result = await EnhancedAccountingService.createJournalEntry(
+            JournalEntryType.GENERAL,
+            [
                 {
-                    account_id: assetAccount, // e.g. "1501" - Machinery
-                    description: assetDescription,
+                    accountCode: assetAccount,
+                    accountName: getAccountName(assetAccount),
                     debit: amount,
-                    credit: 0
+                    credit: 0,
+                    description: assetDescription,
                 },
                 {
-                    account_id: paymentAccountCode, // e.g. "1101"
-                    description: `Payment for ${assetDescription}`,
+                    accountCode: paymentAccountCode,
+                    accountName: paymentAccountName,
                     debit: 0,
-                    credit: amount
-                }
+                    credit: amount,
+                    description: `Payment for ${assetDescription}`,
+                },
             ],
-            account_ids: [assetAccount, paymentAccountCode], // BUG-1.2 Fix
-            total_debits: amount,
-            total_credits: amount,
-            created_at: now,
-            status: 'posted'
+            `AST-${Math.floor(Math.random() * 10000)}`,
+            assetDescription,
+            auth.user?.id
+        )
+
+        if (!result.success) {
+            return NextResponse.json({ error: result.error }, { status: 400 })
         }
-
-        // Save to Firestore
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
-
-        // Sync affected account balances so COA reflects immediately
-        await CentralizedAccountingService.syncMultipleAccountBalances([assetAccount, paymentAccountCode])
 
         return NextResponse.json({
             success: true,
             message: `Asset "${assetDescription}" recorded successfully`,
-            journalEntryId: entryId,
+            journalEntryId: result.entryId,
             asset: {
                 amount: amount,
                 description: assetDescription,

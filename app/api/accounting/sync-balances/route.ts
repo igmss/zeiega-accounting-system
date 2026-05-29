@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission } from "@/lib/auth"
-
-import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
+import { CHART_OF_ACCOUNTS } from "@/lib/accounting/account-types"
 
 export async function POST(request: Request) {
   try {
@@ -15,11 +15,17 @@ export async function POST(request: Request) {
     let results: Record<string, number> = {}
     
     if (syncAll) {
-      console.log("🔄 Syncing ALL account balances...")
-      results = await CentralizedAccountingService.syncAllAccountBalances()
+      console.log("🔄 Refreshing ALL account balances...")
+      for (const code of Object.keys(CHART_OF_ACCOUNTS)) {
+        const { balance } = await EnhancedAccountingService.getAccountBalance(code)
+        results[code] = balance
+      }
     } else if (accountIds && Array.isArray(accountIds)) {
-      console.log(`🔄 Syncing specific accounts: ${accountIds.join(', ')}`)
-      results = await CentralizedAccountingService.syncMultipleAccountBalances(accountIds)
+      console.log(`🔄 Refreshing specific accounts: ${accountIds.join(', ')}`)
+      for (const accountId of accountIds) {
+        const { balance } = await EnhancedAccountingService.getAccountBalance(accountId)
+        results[accountId] = balance
+      }
     } else {
       return NextResponse.json(
         { error: "Either 'syncAll: true' or 'accountIds' array is required" },

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
-import { getAccountName } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
-import { CentralizedAccountingService } from "@/lib/services/centralized-accounting-service"
+import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 
 export async function POST(request: Request) {
     try {
@@ -29,48 +27,42 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Date is required" }, { status: 400 })
         }
 
-        const journalEntries: any[] = []
+        const journalEntries: string[] = []
         const now = new Date()
         const effectiveDate = new Date(date)
+        const userId = auth.user?.id || "system"
 
-        // Helper to record a journal entry
-        const recordEntry = async (idPrefix: string, type: string, description: string, lines: { account_id: string, debit: number, credit: number, description: string }[]) => {
-            const totalDebits = lines.reduce((sum, l) => sum + l.debit, 0)
-            const totalCredits = lines.reduce((sum, l) => sum + l.credit, 0)
-            
-            // Allow small rounding differences if very close
-            if (Math.abs(totalDebits - totalCredits) > 0.01) {
-                console.warn(`Imbalanced entry attempt for ${idPrefix}: DR ${totalDebits}, CR ${totalCredits}`)
-            }
-
-            const entryId = `${idPrefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-            const entry = {
-                id: entryId,
-                date: effectiveDate,
-                reference: idPrefix,
+        const recordEntry = async (idPrefix: string, description: string, lines: { account_id: string, debit: number, credit: number, description: string }[]) => {
+            const result = await EnhancedAccountingService.createJournalEntry(
+                JournalEntryType.GENERAL,
+                lines.map(l => ({
+                    accountCode: l.account_id,
+                    accountName: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                    description: l.description,
+                })),
+                idPrefix,
                 description,
-                type: "OPENING_BALANCE",
-                entries: lines,
-                account_ids: [...new Set(lines.map(l => l.account_id))],
-                total_debits: totalDebits,
-                total_credits: totalCredits,
-                created_at: now,
-                status: "posted"
+                userId,
+                effectiveDate
+            )
+            if (result.success && result.entryId) {
+                journalEntries.push(result.entryId)
             }
-            await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(entry)
-            journalEntries.push(entryId)
+            return result
         }
 
         // OB-01: Ahmed's Machine Contribution (Part of his total capital)
         // If Ahmed's capital is provided, we assume 47,400 is for machines as per OB-01
         if (partnerCapital?.ahmed >= 47400) {
-            await recordEntry("OB-01", "OPENING_BALANCE", "Ahmed's Machine Contribution (2x Over Machines)", [
+            await recordEntry("OB-01", "Ahmed's Machine Contribution (2x Over Machines)", [
                 { account_id: "1303", debit: 47400, credit: 0, description: "Contribution of 2x Over Machines" },
                 { account_id: "3011", debit: 0, credit: 47400, description: "Capital contribution - Ahmed" }
             ])
         } else if (partnerCapital?.ahmed > 0) {
              // Fallback if less than machine value
-             await recordEntry("OB-01", "OPENING_BALANCE", "Ahmed's Initial Contribution", [
+             await recordEntry("OB-01", "Ahmed's Initial Contribution", [
                 { account_id: "1303", debit: partnerCapital.ahmed, credit: 0, description: "Initial asset contribution" },
                 { account_id: "3011", debit: 0, credit: partnerCapital.ahmed, description: "Capital contribution - Ahmed" }
             ])
@@ -84,7 +76,7 @@ export async function POST(request: Request) {
             // According to OB entries, Ibrahim initially contributes 70,000 cash.
             const ibrahimCash = Math.min(partnerCapital.ibrahim, 70000)
             if (ibrahimCash > 0) {
-                await recordEntry("OB-02", "OPENING_BALANCE", "Ibrahim's Cash Contribution", [
+                await recordEntry("OB-02", "Ibrahim's Cash Contribution", [
                     { account_id: "1101", debit: ibrahimCash, credit: 0, description: "Cash injection" },
                     { account_id: "3012", debit: 0, credit: ibrahimCash, description: "Capital contribution - Ibrahim" }
                 ])
@@ -93,7 +85,7 @@ export async function POST(request: Request) {
 
         // OB-03: Fathy's Cash Contribution
         if (partnerCapital?.fathy > 0) {
-            await recordEntry("OB-03", "OPENING_BALANCE", "Fathy's Cash Contribution", [
+            await recordEntry("OB-03", "Fathy's Cash Contribution", [
                 { account_id: "1101", debit: partnerCapital.fathy, credit: 0, description: "Initial cash contribution" },
                 { account_id: "3013", debit: 0, credit: partnerCapital.fathy, description: "Capital contribution - Fathy" }
             ])
@@ -117,13 +109,13 @@ export async function POST(request: Request) {
         const totalPurchase = ob04Lines.reduce((sum, l) => sum + l.debit, 0)
         if (totalPurchase > 0) {
             ob04Lines.push({ account_id: "1101", debit: 0, credit: totalPurchase, description: "Payment from cash pool" })
-            await recordEntry("OB-04", "OPENING_BALANCE", "Asset Purchases from Cash Pool", ob04Lines)
+            await recordEntry("OB-04", "Asset Purchases from Cash Pool", ob04Lines)
         }
 
         // OB-05: Website & App as Intangible Asset
         if (digitalAssets?.domains > 0 || digitalAssets?.software > 0) {
             const erpVal = (digitalAssets.domains || 0) + (digitalAssets.software || 0)
-            await recordEntry("OB-05", "OPENING_BALANCE", "Website & App (Intangible Assets)", [
+            await recordEntry("OB-05", "Website & App (Intangible Assets)", [
                 { account_id: "1402", debit: erpVal, credit: 0, description: "ERP/Systems Valuation" },
                 { account_id: "3011", debit: 0, credit: erpVal * 0.3, description: "Ahmed 30% Contribution" },
                 { account_id: "3012", debit: 0, credit: erpVal * 0.7, description: "Ibrahim 70% Contribution" }
@@ -133,7 +125,7 @@ export async function POST(request: Request) {
         // OB-06: Capital Rebalancing (Selective)
         if (rebalancingEnabled) {
             // As per OB-06 example
-            await recordEntry("OB-06", "OPENING_BALANCE", "Partner Capital Rebalancing (60/25/15 Alignment)", [
+            await recordEntry("OB-06", "Partner Capital Rebalancing (60/25/15 Alignment)", [
                 { account_id: "3012", debit: 154400, credit: 0, description: "Rebalance Capital" },
                 { account_id: "3013", debit: 78640, credit: 0, description: "Rebalance Capital" },
                 { account_id: "3011", debit: 0, credit: 233040, description: "Rebalance Capital to Ahmed" }
@@ -171,15 +163,10 @@ export async function POST(request: Request) {
         }
 
         if (genericLines.length > 0) {
-            await recordEntry("OB-GEN", "OPENING_BALANCE", "Miscellaneous Opening Balances", genericLines)
+            await recordEntry("OB-GEN", "Miscellaneous Opening Balances", genericLines)
         }
 
-        // Sync all affected account balances
-        if (journalEntries.length > 0) {
-            await CentralizedAccountingService.syncAllAccountBalances()
-        }
-
-        return NextResponse.json({ 
+        return NextResponse.json({
             success: true, 
             message: "ZEIEGA Opening Structure recorded",
             entriesCreated: journalEntries.length 
@@ -190,3 +177,4 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Failed to create opening balances" }, { status: 500 })
     }
 }
+
