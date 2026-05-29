@@ -1,6 +1,7 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
+import { CentralizedAccountingService } from "./centralized-accounting-service"
 
 /**
  * Contract for IFRS 15 over-time revenue recognition.
@@ -371,6 +372,7 @@ export class RevenueRecognitionService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids || [ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, ACCOUNT_CODES.SALES_CUSTOM_MTO])
 
       // Update contract
       contract.updatedAt = now
@@ -433,6 +435,7 @@ export class RevenueRecognitionService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids || [ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, ACCOUNT_CODES.SALES_CUSTOM_MTO])
 
       // Update contract amounts billed
       const contract = await this.getContract(contractId)

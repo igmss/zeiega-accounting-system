@@ -33,6 +33,7 @@ export interface CurrencyBalance {
 
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
+import { CentralizedAccountingService } from "./centralized-accounting-service"
 
 const EXCHANGE_RATES_COLLECTION = "acc_exchange_rates"
 
@@ -192,6 +193,7 @@ export class CurrencyService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
       console.log(`✅ FX purchase: ${originalCurrency} ${originalAmount} → EGP ${egpAmount}`)
       return { success: true, entryId, egpAmount }
     } catch (error) {
@@ -270,6 +272,7 @@ export class CurrencyService {
       }
 
       await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      await CentralizedAccountingService.syncMultipleAccountBalances(journalEntry.account_ids)
       console.log(`✅ FX settlement: ${isGain ? "Gain" : "Loss"} EGP ${absFx}`)
       return { success: true, entryId, fxGainLoss }
     } catch (error) {

@@ -1,5 +1,6 @@
 import { db, COLLECTIONS } from "../firebase"
 import { ACCOUNT_CODES, getAccountName, AccountType, getAccountsByType } from "../accounting/account-types"
+import { CentralizedAccountingService } from "./centralized-accounting-service"
 
 /**
  * Fiscal Year-End Close Service
@@ -336,6 +337,10 @@ export class FiscalCloseService {
       }, { merge: true })
 
       console.log(`✅ Fiscal year ${fiscalYear} closed. Net Income: EGP ${netIncome}`)
+      
+      // Sync all account balances after close
+      await CentralizedAccountingService.syncAllAccountBalances()
+      
       return { success: true, netIncome, entryIds }
     } catch (error) {
       return {
