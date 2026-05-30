@@ -20,7 +20,7 @@ function getBearerUser(): { id: string; email: string; name: string; role: UserR
 
         if (validTokens.has(bearerToken)) {
             return {
-                id: "api",
+                id: "00000000-0000-0000-0000-000000000000",
                 email: "api@system",
                 name: "API User",
                 role: UserRole.ADMIN,

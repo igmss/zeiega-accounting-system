@@ -42,7 +42,7 @@ export class JournalEntryService {
         lines: JournalLine[],
         referenceDoc: string,
         notes?: string,
-        userId: string = "system",
+        userId: string = "00000000-0000-0000-0000-000000000000",
         customDate?: Date,
         _tx?: unknown,
         metadata?: Record<string, unknown>

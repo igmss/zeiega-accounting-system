@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
             return createErrorResponse("At least 2 journal lines are required", 400)
         }
 
-        const userId = auth.user?.id || "system"
+        const userId = auth.user?.id || "00000000-0000-0000-0000-000000000000"
 
         const entryDate = date ? new Date(date) : new Date()
         const entryType = (type || "GENERAL") as JournalEntryType
