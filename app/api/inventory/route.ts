@@ -34,9 +34,8 @@ export async function POST(request: Request) {
     const now = new Date().toISOString()
     const item = {
       ...itemDataWithoutSource,
-      createdAt: now,
-      updatedAt: now,
-      lastUpdated: now,
+      created_at: now,
+      updated_at: now,
     }
 
     // Validate payment source
