@@ -9,8 +9,11 @@
  * Run: npx ts-node --require dotenv/config scripts/migrate-users.ts
  */
 
+import dotenv from "dotenv"
+dotenv.config({ path: ".env.local" })
 import { db } from "../lib/firebase"
 import { createClient } from "@supabase/supabase-js"
+import ws from "ws"
 import * as crypto from "crypto"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -23,6 +26,7 @@ if (!supabaseUrl || !serviceRoleKey) {
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
+  realtime: { transport: ws },
 })
 
 interface FirestoreUser {

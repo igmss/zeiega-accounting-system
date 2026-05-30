@@ -1,14 +1,29 @@
 import { createClient } from "@supabase/supabase-js"
 import type { Database } from "./database.types"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Missing Supabase environment variables: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY")
+function getSupabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set")
+  return url
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
+function getSupabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!key) throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set")
+  return key
+}
+
+let _supabase: ReturnType<typeof createClient> | null = null
+
+export function getSupabase(): ReturnType<typeof createClient> {
+  if (_supabase) return _supabase
+  _supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey())
+  return _supabase
+}
+
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_, prop) { return (getSupabase() as any)[prop] },
+})
 
 // Server-side client with service role (bypasses RLS)
 let serviceClient: ReturnType<typeof createClient> | null = null
@@ -22,7 +37,7 @@ export function getServiceSupabase(): any {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set")
   }
 
-  serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+  serviceClient = createClient(getSupabaseUrl(), serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 

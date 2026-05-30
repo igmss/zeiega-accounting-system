@@ -10,6 +10,12 @@
  *   (dotenv reads .env.local automatically)
  */
 
+import dotenv from "dotenv"
+dotenv.config({ path: ".env.local" })
+// Node.js 20 polyfill — suppress TS error since ws is only used at runtime
+// @ts-ignore
+import WebSocket from "ws"
+;(globalThis as any).WebSocket = WebSocket
 import { userStore, UserRole } from "../lib/auth/user-model"
 
 const DEFAULT_USERS = [
