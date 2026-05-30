@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
 import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
-import { authOptions } from "@/lib/auth/auth-options"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 
@@ -74,8 +72,7 @@ export async function POST(request: NextRequest) {
             return createErrorResponse("At least 2 journal lines are required", 400)
         }
 
-        const session = await getServerSession(authOptions)
-        const userId = session?.user?.id || "system"
+        const userId = auth.user?.id || "system"
 
         const entryDate = date ? new Date(date) : new Date()
         const entryType = (type || "GENERAL") as JournalEntryType
