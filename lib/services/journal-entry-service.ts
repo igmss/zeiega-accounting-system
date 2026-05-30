@@ -129,14 +129,17 @@ export class JournalEntryService {
                 description: line.description,
             }))
 
-            const { error: linesError } = await client
+            const { data: insertedLines, error: linesError } = await client
                 .from(TABLES.JOURNAL_ENTRY_LINES)
                 .insert(lineInserts)
+                .select("*")
 
             if (linesError) {
                 console.error("Error inserting journal entry lines:", linesError)
                 return { success: false, error: linesError.message }
             }
+
+            console.log(`Inserted ${(insertedLines || []).length} journal entry lines for ${entry.id}`)
 
             for (const line of lines) {
                 const { data: existing } = await client
