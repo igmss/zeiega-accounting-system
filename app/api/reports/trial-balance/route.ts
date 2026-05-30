@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url)
         const asOf = searchParams.get("asOf")
 
-        const asOfDate = asOf ? new Date(asOf) : new Date()
+        const asOfDate = asOf ? new Date(asOf) : new Date("2099-12-31")
         asOfDate.setHours(23, 59, 59, 999)
 
         const trialBalance = await FinancialStatementsService.generateTrialBalance(asOfDate)
