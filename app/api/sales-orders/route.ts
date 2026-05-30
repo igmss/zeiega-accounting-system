@@ -85,8 +85,8 @@ export async function POST(request: Request) {
     const now = new Date().toISOString()
     const manualOrder = {
       carrier: null,
-      createdAt: now,
-      fragranceCodes: [],
+      created_at: now,
+      fragrance_codes: [],
 
       items: orderData.items?.map((item: any) => ({
         adjustedPrice: item.total_price || item.unit_price,
@@ -103,8 +103,8 @@ export async function POST(request: Request) {
         type: "product"
       })) || [],
 
-      paymentMethod: orderData.payment_method || "manual",
-      shippingAddress: {
+      payment_method: orderData.payment_method || "manual",
+      shipping_address: {
         city: orderData.shipping_address?.city || "",
         fullName: orderData.customer_name || "Manual Customer",
         phone: orderData.shipping_address?.phone || "",
@@ -112,15 +112,15 @@ export async function POST(request: Request) {
         street: orderData.shipping_address?.street || "",
         zipCode: orderData.shipping_address?.zipCode || ""
       },
-      shippingMethod: null,
+      shipping_method: null,
 
       status: orderData.status || "pending",
       total: orderData.total || 0,
-      trackingNumber: null,
-      updatedAt: now,
-      userId: orderData.customer_email || "manual_user",
+      tracking_number: null,
+      updated_at: now,
+      user_id: orderData.customer_email || "manual_user",
 
-      orderSource: "manual"
+      order_source: "manual"
     }
 
     const { data: insertedOrders, error: insertError } = await getServiceClient()
@@ -187,7 +187,7 @@ export async function PUT(request: Request) {
       .from(TABLES.MANUAL_ORDERS)
       .update({
         status: status,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       })
       .eq("id", orderId)
 
@@ -225,9 +225,9 @@ export async function PUT(request: Request) {
             orderId,
             orderData.items || [],
             {
-              customer_name: orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer",
-              customer_email: orderData.userId || orderData.customer_email || "unknown_user",
-              total_amount: orderData.total || orderData.total_amount || 0,
+              customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
+              customer_email: (orderData as any).user_id || (orderData as any).customer_email || "unknown_user",
+              total_amount: orderData.total || (orderData as any).total_amount || 0,
               order_source: orderSource
             }
           );
@@ -255,9 +255,9 @@ export async function PUT(request: Request) {
               completionPercentage: 0,
               notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost calculation failed)`,
               items: orderData.items || [],
-              customer_name: orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer",
-              customer_email: orderData.userId || orderData.customer_email || "unknown_user",
-              total_amount: orderData.total || orderData.total_amount || 0,
+              customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
+              customer_email: (orderData as any).user_id || (orderData as any).customer_email || "unknown_user",
+              total_amount: orderData.total || (orderData as any).total_amount || 0,
               order_source: orderSource,
               estimated_cost: 0,
               total_cost: 0,

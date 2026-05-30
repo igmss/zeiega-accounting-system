@@ -90,13 +90,13 @@ export async function POST(request: Request) {
       await serviceDb.from(TABLES.SALES_ORDERS).upsert({
         id: orderId,
         website_order_id: orderId,
-        customer_id: orderData.userId || orderData.customer_id || "unknown",
-        customer_name: orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer",
+        customer_id: (orderData as any).user_id || orderData.customer_id || "unknown",
+        customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
         items: orderData.items || [],
         status: "completed",
         total_amount: orderData.total || orderData.total_amount || 0,
         order_source: orderSource === "orders" ? "web" : "manual",
-        created_at: orderData.createdAt ? new Date(orderData.createdAt) : new Date(),
+        created_at: orderData.created_at ? new Date(orderData.created_at) : new Date(),
         updated_at: new Date()
       }, { onConflict: "id" })
     }
@@ -130,8 +130,8 @@ export async function POST(request: Request) {
       .single()
 
     if (!existingInvoice) {
-      const customerId = orderData.userId || orderData.customer_id || "unknown"
-      const customerName = orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer"
+      const customerId = (orderData as any).user_id || orderData.customer_id || "unknown"
+      const customerName = (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer"
       const totalAmount = orderData.total || orderData.total_amount || 0
 
       const invoice = {
