@@ -338,11 +338,8 @@ export class FinancialStatementsService {
             const account = CHART_OF_ACCOUNTS[code]
             if (!account) continue
 
-            const isDebit = dbBalance > 0 && isDebitNormalBalance(code) ||
-                dbBalance < 0 && !isDebitNormalBalance(code)
-
-            const debit = isDebit ? Math.abs(dbBalance) : 0
-            const credit = !isDebit ? Math.abs(dbBalance) : 0
+            const debit = dbBalance > 0 ? dbBalance : 0
+            const credit = dbBalance < 0 ? -dbBalance : 0
 
             accounts.push({ code, name: account.name, type: account.type, debit, credit })
             totalDebits += debit
