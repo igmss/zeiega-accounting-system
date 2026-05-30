@@ -312,27 +312,51 @@ export class FinancialStatementsService {
         let totalDebits = 0
         let totalCredits = 0
 
-        for (const [code, account] of Object.entries(CHART_OF_ACCOUNTS)) {
-            const balance = await this.getAccountBalance(code, undefined, asOfDate)
+        const asOfISO = asOfDate.toISOString().split("T")[0]
 
-            if (balance !== 0) {
-                const isDebit = balance > 0 && isDebitNormalBalance(code) ||
-                    balance < 0 && !isDebitNormalBalance(code)
+        const { data: lines, error } = await getServiceSupabase()
+            .from(TABLES.JOURNAL_ENTRY_LINES)
+            .select(`account_code, account_name, debit, credit, journal_entries!inner(date)`)
+            .lte("journal_entries.date", asOfISO)
 
-                const debit = isDebit ? Math.abs(balance) : 0
-                const credit = !isDebit ? Math.abs(balance) : 0
+        if (error) {
+            console.error("Trial balance query error:", error)
+            // Fallback: return empty
+        }
 
-                accounts.push({
-                    code,
-                    name: account.name,
-                    type: account.type,
-                    debit,
-                    credit,
-                })
+        const balances: Record<string, { debits: number; credits: number }> = {}
+        for (const line of (lines || [])) {
+            const jeDate = (line as any).journal_entries?.date
+            if (!jeDate) continue
 
-                totalDebits += debit
-                totalCredits += credit
-            }
+            const code = line.account_code
+            if (!balances[code]) balances[code] = { debits: 0, credits: 0 }
+            balances[code].debits += line.debit || 0
+            balances[code].credits += line.credit || 0
+        }
+
+        for (const [code, bal] of Object.entries(balances)) {
+            const dbBalance = bal.debits - bal.credits
+            if (dbBalance === 0) continue
+
+            const account = CHART_OF_ACCOUNTS[code]
+            if (!account) continue
+
+            const isDebit = dbBalance > 0 && isDebitNormalBalance(code) ||
+                dbBalance < 0 && !isDebitNormalBalance(code)
+
+            const debit = isDebit ? Math.abs(dbBalance) : 0
+            const credit = !isDebit ? Math.abs(dbBalance) : 0
+
+            accounts.push({ code, name: account.name, type: account.type, debit, credit })
+            totalDebits += debit
+            totalCredits += credit
+        }
+
+        accounts.sort((a, b) => a.code.localeCompare(b.code))
+
+        return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits }
+    }
         }
 
         accounts.sort((a, b) => a.code.localeCompare(b.code))
