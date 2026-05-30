@@ -34,7 +34,7 @@ export class BudgetService {
     accountCode: string,
     budgetedAmount: number,
     notes: string = "",
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; lineId?: string; error?: string }> {
     if (!CHART_OF_ACCOUNTS[accountCode]) {
       return { success: false, error: `Account ${accountCode} not found in Chart of Accounts` }
@@ -72,7 +72,7 @@ export class BudgetService {
 
   static async setBudgetLines(
     lines: Array<{ fiscalYear: number; period: number; accountCode: string; budgetedAmount: number; notes?: string }>,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ succeeded: number; failed: string[] }> {
     let succeeded = 0
     const failed: string[] = []

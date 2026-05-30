@@ -6,7 +6,7 @@ export class FiscalCloseService {
 
   static async executeYearEndClose(
     fiscalYear: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{
     success: boolean
     netIncome?: number

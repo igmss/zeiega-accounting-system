@@ -93,7 +93,6 @@ export class PurchaseOrderService {
                 status: "draft",
                 created_at: now,
                 updated_at: now,
-                created_by: "system"
             }
 
             const { error } = await getServiceSupabase().from(TABLES.PURCHASE_ORDERS).insert(purchaseOrder)

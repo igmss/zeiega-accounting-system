@@ -56,7 +56,7 @@ export class RevenueRecognitionService {
     estimatedCompletionDate: Date,
     method: Contract["method"] = "cost_to_cost",
     overTimeCriterion: Contract["overTimeCriterion"] = "no_alternative_use",
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; contractId?: string; error?: string }> {
     try {
       if (contractPrice <= 0 || totalEstimatedCost <= 0) {
@@ -113,7 +113,7 @@ export class RevenueRecognitionService {
   static async recognizeRevenue(
     contractId: string,
     costsIncurredThisPeriod: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{
     success: boolean
     recognition?: RevenueRecognitionEntry
@@ -237,7 +237,7 @@ export class RevenueRecognitionService {
     contractId: string,
     invoiceId: string,
     billingAmount: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
       const contract = await this.getContract(contractId)
@@ -312,7 +312,7 @@ export class RevenueRecognitionService {
     contractId: string,
     amount: number,
     accountCode: string = ACCOUNT_CODES.BANK_MAIN,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
       const now = new Date().toISOString()
@@ -362,7 +362,7 @@ export class RevenueRecognitionService {
   static async recognizeOnerousContract(
     contractId: string,
     revisedTotalEstimatedCost: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; expectedLoss?: number; entryId?: string; error?: string }> {
     try {
       const contract = await this.getContract(contractId)
@@ -443,7 +443,7 @@ export class RevenueRecognitionService {
     revisedEstimatedCost: number,
     treatment: "new_contract" | "cumulative_catchup" | "prospective",
     approvedBy: string,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{
     success: boolean
     changeOrderId?: string

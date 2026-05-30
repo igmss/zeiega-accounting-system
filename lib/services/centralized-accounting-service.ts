@@ -104,7 +104,7 @@ export class CentralizedAccountingService {
         lines,
         linkedDoc || `ENTRY_${Date.now()}`,
         `Journal entry for ${linkedDoc || "auto-sync"}`,
-        "system"
+        null
       )
       
       if (!result.success || !result.entryId) {

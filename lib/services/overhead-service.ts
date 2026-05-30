@@ -58,7 +58,7 @@ export class OverheadService {
     estimatedTotalOH: number,
     estimatedActivityLevel: number,
     department?: string,
-    createdBy: string = "system"
+    createdBy: string | null = null
   ): Promise<{ success: boolean; configId?: string; pohr?: number; error?: string }> {
     try {
       if (estimatedTotalOH <= 0 || estimatedActivityLevel <= 0) {
@@ -91,8 +91,8 @@ export class OverheadService {
         department,
         createdAt: now,
         updatedAt: now,
-        createdBy,
-      }
+        createdBy: createdBy as string,
+      } as unknown as OverheadConfig
 
       const { error } = await getServiceSupabase().from(this.TABLE).insert(config)
       if (error) throw error
@@ -133,7 +133,7 @@ export class OverheadService {
     actualActivity: number,
     pohr?: number,
     fiscalYear?: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; appliedOH?: number; error?: string }> {
     try {
       if (actualActivity <= 0) {
@@ -260,7 +260,7 @@ export class OverheadService {
   static async closeOverheadToVariance(
     startDate: Date,
     endDate: Date,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; underApplied?: number; overApplied?: number; disposedAmount?: number; error?: string }> {
     try {
       const actualOH = await this.getActualOverhead(startDate, endDate)
@@ -344,7 +344,7 @@ export class OverheadService {
     startDate: Date,
     endDate: Date,
     materialityThreshold: number = 0.1,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; disposition?: OHDisposition; error?: string }> {
     try {
       const actualOH = await this.getActualOverhead(startDate, endDate)

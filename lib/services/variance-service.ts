@@ -47,7 +47,7 @@ export class VarianceService {
     designId: string,
     designName: string,
     standard: Omit<StandardCost, "designId" | "designName" | "updatedAt">,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const now = new Date().toISOString()
@@ -177,7 +177,7 @@ export class VarianceService {
     actualQuantity: number,
     standardQuantity: number,
     actualQuantityUsed: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
       const priceVar = actualQuantity * (actualPrice - standardPrice)
@@ -267,7 +267,7 @@ export class VarianceService {
   }
 
   static async closeVarianceAccounts(
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; totalClosed?: number; error?: string }> {
     try {
       const varianceAccounts = [

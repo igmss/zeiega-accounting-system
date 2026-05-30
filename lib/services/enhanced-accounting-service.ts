@@ -228,7 +228,7 @@ export class EnhancedAccountingService {
         lines: JournalLine[],
         referenceDoc: string,
         notes?: string,
-        userId: string = "system",
+        userId: string | null = null,
         customDate?: Date,
         tx?: FirebaseFirestore.Transaction,
         metadata?: Record<string, unknown>
@@ -763,7 +763,7 @@ export class EnhancedAccountingService {
         assetEntryId: string,
         year: number,
         month: number,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         try {
             const client = getServiceSupabase()
@@ -879,7 +879,7 @@ export class EnhancedAccountingService {
         salvageValue: number,
         isAbnormal: boolean,
         reason: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; recordId?: string; error?: string }> {
         return ManufacturingAccountingService.recordScrap(workOrderId, sku, quantityScrapped, unitCost, salvageValue, isAbnormal, reason, userId)
     }
@@ -906,7 +906,7 @@ export class EnhancedAccountingService {
         additionalOverheadCost: number,
         isNormalRework: boolean,
         reason: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; reworkOrderId?: string; error?: string }> {
         return ManufacturingAccountingService.recordRework(originalWorkOrderId, additionalMaterialCost, additionalLaborCost, additionalOverheadCost, isNormalRework, reason, userId)
     }
@@ -928,7 +928,7 @@ export class EnhancedAccountingService {
         overtimeHours: number = 0,
         overtimeRate: number = 0,
         idleHours: number = 0,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
         return ManufacturingAccountingService.recordLaborDetailed(workOrderId, regularHours, regularRate, overtimeHours, overtimeRate, idleHours, userId)
     }
@@ -947,7 +947,7 @@ export class EnhancedAccountingService {
         accountCode: string,         // the monetary asset/liability revalued
         exchangeDifference: number,  // positive = gain, negative = loss
         description: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         if (exchangeDifference === 0) return { success: true }
 
@@ -1007,7 +1007,7 @@ export class EnhancedAccountingService {
         fiscalPeriodId: string,
         taxableIncome: number,
         taxRate: number = 0.225,    // Egypt standard rate 22.5%
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; taxAmount?: number; error?: string }> {
         if (taxableIncome <= 0) {
             return { success: true, taxAmount: 0 } // No tax on a loss
@@ -1056,7 +1056,7 @@ export class EnhancedAccountingService {
         currentCost: number,
         netRealisableValue: number,
         quantityOnHand: number,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; writeDownAmount?: number; error?: string }> {
         return InventoryAccountingService.recordInventoryWriteDown(sku, currentCost, netRealisableValue, quantityOnHand, userId)
     }

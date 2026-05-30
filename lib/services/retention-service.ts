@@ -16,7 +16,7 @@ export class RetentionService {
     vatAmount: number = 0,
     revenueAccountCode: string = ACCOUNT_CODES.SALES_CUSTOM_MTO,
     expectedReleaseDate?: Date,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; scheduleId?: string; entryId?: string; error?: string }> {
     if (totalInvoiceAmount <= 0) return { success: false, error: "Invoice amount must be positive" }
     if (retentionPct < 0 || retentionPct >= 100) return { success: false, error: "Retention % must be 0–99" }
@@ -97,7 +97,7 @@ export class RetentionService {
 
   static async releaseRetention(
     scheduleId: string,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
       const { data, error } = await getServiceSupabase().from(this.TABLE).select("*").eq("id", scheduleId).single()

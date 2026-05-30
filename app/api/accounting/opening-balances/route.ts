@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         const journalEntries: string[] = []
         const now = new Date()
         const effectiveDate = new Date(date)
-        const userId = auth.user?.id || "system"
+        const userId = auth.user?.id || null
 
         const recordEntry = async (idPrefix: string, description: string, lines: { account_id: string, debit: number, credit: number, description: string }[]) => {
             const result = await EnhancedAccountingService.createJournalEntry(

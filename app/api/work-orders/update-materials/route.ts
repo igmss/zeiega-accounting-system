@@ -126,7 +126,7 @@ export async function POST(request: Request) {
       }
 
       for (const doc of entriesToVoid) {
-        await JournalEntryService.voidJournalEntry(doc.id, "system")
+        await JournalEntryService.voidJournalEntry(doc.id, null)
       }
 
       const balanceAdjustments: Record<string, { debits: number; credits: number }> = {}

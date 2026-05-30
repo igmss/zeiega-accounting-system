@@ -42,7 +42,7 @@ export class JournalEntryService {
         lines: JournalLine[],
         referenceDoc: string,
         notes?: string,
-        userId: string = "00000000-0000-0000-0000-000000000000",
+        userId: string | null = null,
         customDate?: Date,
         _tx?: unknown,
         metadata?: Record<string, unknown>
@@ -178,7 +178,7 @@ export class JournalEntryService {
         }
     }
 
-    static async voidJournalEntry(entryId: string, userId: string): Promise<{ success: boolean; voidEntryId?: string; error?: string }> {
+    static async voidJournalEntry(entryId: string, userId: string | null): Promise<{ success: boolean; voidEntryId?: string; error?: string }> {
         try {
             const client = getServiceSupabase()
             const { data: entry } = await client

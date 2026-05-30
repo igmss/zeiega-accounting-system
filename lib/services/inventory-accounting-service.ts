@@ -121,7 +121,7 @@ export class InventoryAccountingService {
         currentCost: number,
         netRealisableValue: number,
         quantityOnHand: number,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; writeDownAmount?: number; error?: string }> {
         if (netRealisableValue >= currentCost) {
             return { success: true, writeDownAmount: 0 }
@@ -167,7 +167,7 @@ export class InventoryAccountingService {
         actualAdjustment: number,
         adjustmentValue: number,
         reason: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         if (adjustmentValue <= 0) {
             return { success: true }

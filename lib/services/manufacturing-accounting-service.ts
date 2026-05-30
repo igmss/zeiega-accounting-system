@@ -191,7 +191,7 @@ export class ManufacturingAccountingService {
             lines,
             workOrderId,
             undefined,
-            "system",
+            null,
             undefined,
             tx as any
         )
@@ -205,7 +205,7 @@ export class ManufacturingAccountingService {
         salvageValue: number,
         isAbnormal: boolean,
         reason: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; recordId?: string; error?: string }> {
         const totalCost = quantityScrapped * unitCost
         if (totalCost <= 0) return { success: false, error: "Scrap cost must be positive" }
@@ -294,7 +294,7 @@ export class ManufacturingAccountingService {
         additionalOverheadCost: number,
         isNormalRework: boolean,
         reason: string,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; reworkOrderId?: string; error?: string }> {
         const totalReworkCost = additionalMaterialCost + additionalLaborCost + additionalOverheadCost
         if (totalReworkCost <= 0) return { success: false, error: "Rework cost must be positive" }
@@ -379,7 +379,7 @@ export class ManufacturingAccountingService {
         overtimeHours: number = 0,
         overtimeRate: number = 0,
         idleHours: number = 0,
-        userId: string = "system"
+        userId: string | null = null
     ): Promise<{ success: boolean; entryId?: string; totalCost?: number; error?: string }> {
         const regularCost  = regularHours  * regularRate
         const overtimeCost = overtimeHours * overtimeRate

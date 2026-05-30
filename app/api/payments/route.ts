@@ -139,7 +139,7 @@ export async function POST(request: Request) {
       lines,
       paymentId,
       `Payment receipt for invoice ${invoice_id}. Ref: ${reference_number || 'N/A'}`,
-      "system"
+      null
     )
 
     if (!jeResult.success) {

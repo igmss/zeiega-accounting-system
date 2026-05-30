@@ -287,7 +287,7 @@ export class SalesAccountingService {
                 salesReturnLines,
                 creditMemoId,
                 `Credit memo / return ${returnId}`,
-                "system"
+                null
             )
 
             if (!memoResult.success) {
@@ -316,7 +316,7 @@ export class SalesAccountingService {
                 inventoryLines,
                 creditMemoId,
                 `Inventory restoration journal for return ${returnId}`,
-                "system"
+                null
             )
 
             if (!inventoryResult.success) {
@@ -506,7 +506,7 @@ export class SalesAccountingService {
                 revenueLines,
                 invoiceId,
                 undefined,
-                "system"
+                null
             )
 
             if (!revenueResult.success) {
@@ -535,7 +535,7 @@ export class SalesAccountingService {
                 cogsLines,
                 invoiceId,
                 undefined,
-                "system"
+                null
             )
 
             if (!cogsResult.success) {

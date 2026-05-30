@@ -30,7 +30,6 @@ export interface BOM {
     status: "draft" | "active" | "archived"
     created_at: string
     updated_at: string
-    created_by: string
 }
 
 export interface MaterialRequirement {
@@ -102,7 +101,6 @@ export class BOMService {
                 status: "draft",
                 created_at: now,
                 updated_at: now,
-                created_by: "system"
             }
 
             const { error } = await (getServiceSupabase() as any).from(BOM_TABLE).insert(bom)

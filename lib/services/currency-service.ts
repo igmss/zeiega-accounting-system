@@ -41,7 +41,7 @@ export class CurrencyService {
     toCurrency: CurrencyCode,
     rate: number,
     source: ExchangeRate["source"] = "manual",
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; rateId?: string; error?: string }> {
     try {
       if (rate <= 0) return { success: false, error: "Exchange rate must be positive" }
@@ -109,7 +109,7 @@ export class CurrencyService {
     originalCurrency: CurrencyCode,
     rate: number,
     description: string,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{
     success: boolean
     entryId?: string
@@ -168,7 +168,7 @@ export class CurrencyService {
     originalCurrency: CurrencyCode,
     originalAmount: number,
     paymentRate: number,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{ success: boolean; entryId?: string; fxGainLoss?: number; error?: string }> {
     try {
       const fxGainLoss = Math.round((originalEGPAmount - paymentEGPAmount) * 100) / 100
@@ -223,7 +223,7 @@ export class CurrencyService {
 
   static async revalueMonetaryItems(
     closingRates: Record<CurrencyCode, number>,
-    userId: string = "system"
+    userId: string | null = null
   ): Promise<{
     success: boolean
     totalFXImpact?: number

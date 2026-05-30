@@ -21,7 +21,7 @@ export async function GET() {
         type: data.type || data.movement_type || "unknown",
         qty: data.qty ?? data.quantity ?? 0,
         related_doc: data.related_doc || data.reference || null,
-        user: data.user || data.created_by || "system",
+        user: data.user || data.created_by || null,
         item_id: data.item_id || data.sku || null,
       }
     })
