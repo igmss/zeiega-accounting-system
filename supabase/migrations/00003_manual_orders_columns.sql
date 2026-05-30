@@ -1,9 +1,6 @@
 -- ============================================
 -- Add missing columns to manual_orders
--- The old Firestore version stored arbitrary fields;
--- Postgres needs explicit columns.
 -- ============================================
-
 ALTER TABLE public.manual_orders
   ADD COLUMN IF NOT EXISTS carrier          text,
   ADD COLUMN IF NOT EXISTS fragrance_codes  text[] DEFAULT '{}',
@@ -14,3 +11,9 @@ ALTER TABLE public.manual_orders
   ADD COLUMN IF NOT EXISTS tracking_number  text,
   ADD COLUMN IF NOT EXISTS user_id          text,
   ADD COLUMN IF NOT EXISTS order_source     text DEFAULT 'manual';
+
+-- ============================================
+-- Add missing order_source column to sales_orders
+-- ============================================
+ALTER TABLE public.sales_orders
+  ADD COLUMN IF NOT EXISTS order_source text DEFAULT 'web';

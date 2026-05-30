@@ -147,6 +147,7 @@ CREATE TABLE public.sales_orders (
   notes            text,
   shipping_address text,
   website_order_id text,
+  order_source    text DEFAULT 'web',
   processed        boolean DEFAULT false,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now()
