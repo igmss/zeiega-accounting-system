@@ -294,33 +294,37 @@ export class FinancialStatementsService {
         }
     }
 
-    static async generateTrialBalance(asOfDate: Date): Promise<TrialBalance> {
+    static async generateTrialBalance(asOfDate: Date | null): Promise<TrialBalance> {
         const accounts: TrialBalance["accounts"] = []
         let totalDebits = 0
         let totalCredits = 0
 
-        const asOfISO = asOfDate.toISOString().split("T")[0]
+        const asOfISO = asOfDate ? asOfDate.toISOString().split("T")[0] : null
 
-        // Fetch JE IDs up to the date
-        const { data: jeIds } = await getServiceSupabase()
-            .from(TABLES.JOURNAL_ENTRIES)
-            .select("id")
-            .lte("date", asOfISO)
-
-        const ids = (jeIds || []).map((j: any) => j.id)
-        if (ids.length === 0) {
-            return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: true }
+        let ids: string[] = []
+        if (asOfISO) {
+            const { data: jeIds } = await getServiceSupabase()
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("id")
+                .lte("date", asOfISO)
+            ids = (jeIds || []).map((j: any) => j.id)
+            if (ids.length === 0) {
+                return { asOfDate: asOfISO, accounts, totalDebits, totalCredits, isBalanced: true }
+            }
         }
 
-        // Fetch all lines for those entries
-        const { data: lines, error } = await getServiceSupabase()
+        let query = getServiceSupabase()
             .from(TABLES.JOURNAL_ENTRY_LINES)
             .select("account_code, debit, credit")
-            .in("journal_entry_id", ids)
 
+        if (ids.length > 0) {
+            query = query.in("journal_entry_id", ids)
+        }
+
+        const { data: lines, error } = await query
         if (error) {
             console.error("Trial balance query error:", error)
-            return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: true }
+            return { asOfDate: asOfDate?.toISOString() || "all", accounts, totalDebits, totalCredits, isBalanced: true }
         }
 
         const balances: Record<string, { debits: number; credits: number }> = {}
@@ -347,7 +351,7 @@ export class FinancialStatementsService {
         }
 
         accounts.sort((a, b) => a.code.localeCompare(b.code))
-        return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: Math.abs(totalDebits - totalCredits) < 0.01 }
+        return { asOfDate: asOfDate?.toISOString() || "all", accounts, totalDebits, totalCredits, isBalanced: Math.abs(totalDebits - totalCredits) < 0.01 }
     }
 
     static async getFinancialSummary(year: number): Promise<{

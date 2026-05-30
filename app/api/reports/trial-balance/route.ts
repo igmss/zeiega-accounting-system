@@ -17,14 +17,13 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url)
         const asOf = searchParams.get("asOf")
 
-        const asOfDate = asOf ? new Date(asOf) : new Date("2099-12-31")
-        asOfDate.setHours(23, 59, 59, 999)
+        const asOfDate = asOf ? new Date(asOf) : null
+        if (asOfDate) asOfDate.setHours(23, 59, 59, 999)
 
         const trialBalance = await FinancialStatementsService.generateTrialBalance(asOfDate)
 
         return NextResponse.json({
-            ...trialBalance,
-            asOfDate: typeof trialBalance.asOfDate === 'string' ? trialBalance.asOfDate.split("T")[0] : new Date(trialBalance.asOfDate).toISOString().split("T")[0]
+            ...trialBalance
         })
     } catch (error) {
         console.error("Trial Balance report error:", error)
