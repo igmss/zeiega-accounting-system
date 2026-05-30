@@ -123,15 +123,16 @@ export function SalesOrdersList() {
       })
 
       if (response.ok) {
-        // Update local state
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "producing" as const } : order)),
         )
+        toast.success("Production started — work order is being created")
       } else {
-        console.error('Failed to update order status')
+        const errData = await response.json().catch(() => ({}))
+        toast.error((errData as any).error || "Failed to update order status")
       }
     } catch (error) {
-      console.error('Error updating order status:', error)
+      toast.error("Network error — failed to update order status")
     }
   }
 

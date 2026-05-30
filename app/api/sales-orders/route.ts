@@ -218,6 +218,15 @@ export async function PUT(request: Request) {
           }
         }
 
+        // Update sales_orders status immediately (before attempting WO creation)
+        await getServiceClient()
+          .from(TABLES.SALES_ORDERS)
+          .update({
+            status: "producing",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", orderId)
+
         if (orderData) {
           console.log(`Creating work order for ${orderSource} order ${orderId} with automatic cost calculation...`);
 
@@ -234,16 +243,6 @@ export async function PUT(request: Request) {
 
           if (workOrderResult.success) {
             console.log(`✅ Created work order ${workOrderResult.workOrderId} with auto-calculated cost EGP ${workOrderResult.totalEstimatedCost}`);
-
-            if (orderSource === "manual") {
-              await getServiceClient()
-                .from(TABLES.SALES_ORDERS)
-                .update({
-                  status: "producing",
-                  updated_at: new Date().toISOString()
-                })
-                .eq("id", orderId);
-            }
           } else {
             console.error(`❌ Failed to create work order: ${workOrderResult.error}`);
 
