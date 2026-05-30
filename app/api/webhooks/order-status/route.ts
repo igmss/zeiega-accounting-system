@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { timingSafeEqual } from "crypto"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { orderStatusWebhookSchema } from "@/lib/validation/schemas"
@@ -54,26 +54,23 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔄 Webhook: Processing order ${orderId} -> ${status}`)
 
-    // Get the order from the main website orders collection
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
+    const serviceDb = getServiceClient()
 
-    if (!orderDoc.exists) {
+    const { data: orderData } = await serviceDb
+      .from(TABLES.ORDERS)
+      .select("*")
+      .eq("id", orderId)
+      .single()
+
+    if (!orderData) {
       return NextResponse.json(
         { error: `Order ${orderId} not found` },
         { status: 404 }
       )
     }
 
-    const orderData = orderDoc.data()
-    const orderItems: Array<Record<string, unknown>> = orderData?.items || []
-    const currentStatus = orderData?.status || "pending"
-
-    if (!orderData) {
-      return NextResponse.json(
-        { error: `Order ${orderId} data not found` },
-        { status: 404 }
-      )
-    }
+    const orderItems: Array<Record<string, unknown>> = orderData.items || []
+    const currentStatus = orderData.status || "pending"
 
     const STATUS_PRIORITY: Record<string, number> = { 
       pending: 0, 
@@ -89,27 +86,28 @@ export async function POST(request: NextRequest) {
     const now = new Date()
 
     // 4. Status Regression Protection (Idempotent FIX-007)
-    // Only update the Firestore order status if the new status represents a forward progression
     if (newPriority >= currentPriority || status === "cancelled") {
-      // Update the order status in the main orders collection
-      await orderDoc.ref.update({
+      await serviceDb.from(TABLES.ORDERS).update({
         status: status,
         updatedAt: now
-      })
+      }).eq("id", orderId)
       console.log(`✅ Progressed status: ${currentStatus} -> ${status}`)
     } else {
       console.log(`ℹ️ Status skip: ${currentStatus} is higher priority than ${status}`)
     }
 
     // Create/Update sales order in accounting system (Idempotent FIX-006)
-    const salesOrderRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId);
-    const existingSalesOrder = await salesOrderRef.get();
+    const { data: existingSalesOrder } = await serviceDb
+      .from(TABLES.SALES_ORDERS)
+      .select("*")
+      .eq("id", orderId)
+      .single();
 
-    if (existingSalesOrder.exists) {
-      await salesOrderRef.update({
+    if (existingSalesOrder) {
+      await serviceDb.from(TABLES.SALES_ORDERS).update({
         status: mapOrderStatus(status),
         updated_at: now
-      });
+      }).eq("id", orderId);
       console.log(`✅ Updated existing sales order status for ${orderId}`);
     } else {
       const salesOrder = {
@@ -119,40 +117,38 @@ export async function POST(request: NextRequest) {
         customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",
         items: orderData.items?.map((item: any) => ({
           sku: item.productId,
-          name: item.name || item.sku || item.productId, // (Bug 2 Fix: Display name)
+          name: item.name || item.sku || item.productId,
           qty: item.quantity,
           unit_price: item.basePrice || item.adjustedPrice
         })) || [],
         status: mapOrderStatus(status),
-        created_at: orderData.createdAt?.toDate?.() || now,
-        total_amount: Number(orderData.total) || Number(orderData.subtotal) || 0, // (Bug 1 Fix: No EGPNaN)
+        created_at: orderData.createdAt ? new Date(orderData.createdAt) : now,
+        total_amount: Number(orderData.total) || Number(orderData.subtotal) || 0,
         order_source: "web",
         updated_at: now
       };
-      await salesOrderRef.set(salesOrder);
+      await serviceDb.from(TABLES.SALES_ORDERS).upsert(salesOrder, { onConflict: "id" });
       console.log(`✅ Created new sales order for ${orderId}`);
     }
 
     // If status is "processing", create work order immediately
     if (status === "processing") {
-      // (Bug 3 Fix: Inner try/catch to protect against cost calculation crashes)
       try {
         // Check if work order already exists
-        const existingWorkOrderSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-          .where("sales_order_id", "==", orderId)
-          .get()
+        const { data: existingWorkOrders } = await serviceDb
+          .from(TABLES.WORK_ORDERS)
+          .select("*")
+          .eq("sales_order_id", orderId)
 
-        if (existingWorkOrderSnapshot.empty) {
+        if (!existingWorkOrders || existingWorkOrders.length === 0) {
           console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
 
-          // Calculate costs from designs FIRST (reusing orderItems from top of handler)
           console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
           const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
           if (costCalculation.success) {
             console.log(`✅ Cost calculation successful: ${formatCurrency(costCalculation.totalEstimatedCost)}`);
             
-            // Enrich order items with design images from cost calculation
             const enrichedItems = orderItems.map((item: any) => {
               const match = costCalculation.itemCosts.find(
                 (ic: any) => ic.designId && (ic.item?.productId === item.productId || ic.item?.name === item.name)
@@ -164,21 +160,19 @@ export async function POST(request: NextRequest) {
               console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
             }
 
-            // Construct notes including warnings if any
             let notes = `Work order created with automatic cost calculation (${formatCurrency(costCalculation.totalEstimatedCost)})`;
             if (costCalculation.warnings && costCalculation.warnings.length > 0) {
-              notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map(w => w.split(': ')[1] || w).join(', ')}`;
+              notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map((w: string) => w.split(': ')[1] || w).join(', ')}`;
             }
 
-            // Create work order with calculated costs
             const workOrder = {
               sales_order_id: orderId,
               status: "pending",
               completionPercentage: 0,
               raw_materials_used: [],
               materials_issued: [],
-              overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.overheadCost || 0), 0),
-              labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost || 0), 0),
+              overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.overheadCost || 0), 0),
+              labor_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.laborCost || 0), 0),
               total_cost: 0,
               estimated_cost: costCalculation.totalEstimatedCost,
               created_at: now,
@@ -191,14 +185,18 @@ export async function POST(request: NextRequest) {
               order_source: "web"
             };
 
-            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
-            console.log(`✅ Created work order ${workOrderRef.id} with cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
+            const { data: insertedWorkOrder } = await serviceDb
+              .from(TABLES.WORK_ORDERS)
+              .insert(workOrder)
+              .select("id")
+              .single();
 
-            // Post WIP journal entry (DR WIP / CR Accrued Liabilities)
-            // Use estimated cost for opening (can be overridden manually later)
-            if (costCalculation.totalEstimatedCost > 0) {
+            const workOrderId = insertedWorkOrder?.id;
+            console.log(`✅ Created work order ${workOrderId} with cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
+
+            if (costCalculation.totalEstimatedCost > 0 && workOrderId) {
               const wipResult = await EnhancedAccountingService.recordWIPOpening(
-                workOrderRef.id,
+                workOrderId,
                 costCalculation.totalEstimatedCost
               );
               if (wipResult.success) {
@@ -213,7 +211,6 @@ export async function POST(request: NextRequest) {
           } else {
             console.error(`❌ Cost calculation failed: ${costCalculation.error}`);
 
-            // Fallback: Create basic work order with warning
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
@@ -233,18 +230,20 @@ export async function POST(request: NextRequest) {
               order_source: "web"
             };
 
-            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
-            console.log(`⚠️ Created basic work order ${workOrderRef.id} without costs - manual update required`);
+            const { data: basicWorkOrderResult } = await serviceDb
+              .from(TABLES.WORK_ORDERS)
+              .insert(basicWorkOrder)
+              .select("id")
+              .single();
+            console.log(`⚠️ Created basic work order ${basicWorkOrderResult?.id} without costs - manual update required`);
           }
         } else {
           console.log(`ℹ️ Work order already exists for order ${orderId}`)
         }
       } catch (innerError) {
         console.error("❌ Critical failure in work order creation block:", innerError);
-        // Create basic fallback work order so the order is not lost (Bug 3 Fix)
-        // orderItems is available from outer scope (single read at top of handler)
         try {
-          await db.collection(COLLECTIONS.WORK_ORDERS).add({
+          await serviceDb.from(TABLES.WORK_ORDERS).insert({
             sales_order_id: orderId,
             status: "pending",
             completionPercentage: 0,
@@ -281,8 +280,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("Error processing order status webhook:", error)
-    // CHANGED: Do not leak internal error details to external callers.
-    // Full error is logged server-side; return a generic message to the client.
     return NextResponse.json(
       { error: "Failed to process order status update" },
       { status: 500 }

@@ -1,65 +1,51 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 
-// Centralized Accounting Service for systematic balance management
 export class CentralizedAccountingService {
   
-  /**
-   * @deprecated Universal function to sync any account balance from journal entries.
-   * Account balances should be derived live from journal entries for reports.
-   * This method now only updates the display cache.
-   */
   static async syncAccountBalance(accountId: string): Promise<number> {
     console.warn(`DEPRECATED: syncAccountBalance called for ${accountId}. Use live computation for reports.`)
 
     try {
       console.log(`🔄 Auto-syncing ${accountId} balance...`)
       
-      const now = new Date()
+      const now = new Date().toISOString()
       
-      // First, get the account type
-      const accountRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(accountId)
-      const accountDoc = await accountRef.get()
-      const account = accountDoc.data()
+      const { data: account, error: acctErr } = await (getServiceSupabase() as any).from(TABLES.CHART_OF_ACCOUNTS).select("*").eq("id", accountId).single()
       
-      if (!account) {
+      if (acctErr || !account) {
         console.log(`Account ${accountId} not found, skipping...`)
         return 0
       }
       
-      // Calculate balance from journal entries using indexed query (BUG-11)
-      const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-        .where("account_ids", "array-contains", accountId)
-        .get()
+      const { data: journalRows, error: jeErr } = await (getServiceSupabase() as any).from(TABLES.JOURNAL_ENTRIES)
+        .select("*")
+        .contains("account_ids", [accountId])
+      if (jeErr) throw jeErr
       
       let balance = 0
-      journalSnapshot.docs.forEach(doc => {
-        const entry = doc.data()
+      for (const entry of (journalRows || [])) {
         if (entry.entries) {
-          entry.entries.forEach((subEntry: any) => {
+          for (const subEntry of entry.entries) {
             if (subEntry.account_id === accountId) {
               if (account.type === 'asset') {
-                // For asset accounts: debit increases, credit decreases
                 balance += (subEntry.debit || 0) - (subEntry.credit || 0)
               } else if (account.type === 'liability' || account.type === 'equity') {
-                // For liability and equity accounts: credit increases, debit decreases
                 balance += (subEntry.credit || 0) - (subEntry.debit || 0)
               } else if (account.type === 'revenue') {
-                // For revenue accounts: credit increases, debit decreases
                 balance += (subEntry.credit || 0) - (subEntry.debit || 0)
               } else if (account.type === 'expense') {
-                // For expense accounts: debit increases, credit decreases (same as assets)
                 balance += (subEntry.debit || 0) - (subEntry.credit || 0)
               }
             }
-          })
+          }
         }
-      })
+      }
       
-      // Update account balance
-      await accountRef.update({
+      const { error: updErr } = await (getServiceSupabase() as any).from(TABLES.CHART_OF_ACCOUNTS).update({
         balance: balance,
         last_updated: now
-      })
+      }).eq("id", accountId)
+      if (updErr) throw updErr
       
       console.log(`✅ Auto-synced ${accountId} balance to $${balance.toLocaleString()}`)
       return balance
@@ -70,9 +56,6 @@ export class CentralizedAccountingService {
     }
   }
   
-  /**
-   * @deprecated Sync multiple accounts at once.
-   */
   static async syncMultipleAccountBalances(accountIds: string[]): Promise<Record<string, number>> {
     const results: Record<string, number> = {}
     
@@ -88,16 +71,13 @@ export class CentralizedAccountingService {
     return results
   }
   
-  /**
-   * @deprecated Sync all accounts in chart of accounts.
-   */
   static async syncAllAccountBalances(): Promise<Record<string, number>> {
     try {
       console.log("🔄 Auto-syncing ALL account balances...")
       
-      // Get all accounts from chart of accounts
-      const accountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
-      const accountIds = accountsSnapshot.docs.map(doc => doc.id)
+      const { data: accountsRows, error } = await (getServiceSupabase() as any).from(TABLES.CHART_OF_ACCOUNTS).select("id")
+      if (error) throw error
+      const accountIds = (accountsRows || []).map((row: any) => row.id)
       
       console.log(`Found ${accountIds.length} accounts to sync`)
       
@@ -109,15 +89,10 @@ export class CentralizedAccountingService {
     }
   }
   
-  /**
-   * Create journal entry and optionally auto-sync affected accounts (deprecated).
-   * Default behavior is now to SKIP sync to ensure journal entries are the only source of truth.
-   */
   static async createJournalEntryAndSync(entries: any[], linkedDoc?: string, skipSync: boolean = true): Promise<string> {
     try {
-      const now = new Date()
+      const now = new Date().toISOString()
       
-      // Create journal entry with account_ids index (BUG-12)
       const journalEntry = {
         date: now,
         entries: entries,
@@ -126,18 +101,17 @@ export class CentralizedAccountingService {
         created_at: now
       }
       
-      const docRef = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).add(journalEntry)
-      console.log(`✅ Created journal entry: ${docRef.id}`)
+      const { data, error } = await (getServiceSupabase() as any).from(TABLES.JOURNAL_ENTRIES).insert(journalEntry).select("id").single()
+      if (error) throw error
+      console.log(`✅ Created journal entry: ${data.id}`)
       
-      // Get unique account IDs from entries
       const affectedAccountIds = [...new Set(entries.map(entry => entry.account_id))]
       
-      // Auto-sync all affected accounts ONLY if explicitly requested (DEPRECATED)
       if (!skipSync) {
         await this.syncMultipleAccountBalances(affectedAccountIds)
       }
       
-      return docRef.id
+      return data.id
       
     } catch (error) {
       console.error("Error creating journal entry and syncing:", error)
@@ -145,7 +119,6 @@ export class CentralizedAccountingService {
     }
   }
   
-  // Validate double-entry bookkeeping
   static validateJournalEntry(entries: any[]): { isValid: boolean; error?: string } {
     let totalDebits = 0
     let totalCredits = 0

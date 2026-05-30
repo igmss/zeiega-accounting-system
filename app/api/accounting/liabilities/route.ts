@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission, requireAuth } from "@/lib/auth"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 
@@ -67,29 +67,22 @@ export async function GET() {
         const auth = await requireAuth()
         if (!auth.authenticated) return auth.response
 
-        const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            .where('type', 'in', ['LIABILITY_INCURED', 'LIABILITY_REPAYMENT', 'OPENING_BALANCE']) // Include Opening?
-            .orderBy('date', 'desc')
-            .get()
+        const { data, error } = await getServiceClient()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .in('type', ['LIABILITY_INCURED', 'LIABILITY_REPAYMENT', 'OPENING_BALANCE'])
+            .order('date', { ascending: false })
 
-        // We probably want to fetch ALL entries touching 2xxx accounts?
-        // Simpler for now: fetch recent entries typed as LIABILITY_*
-        // Or if we want to show ALL liabilities, we should query COA.
+        if (error) throw error
 
-        // Let's stick to returning specific transactions like Assets/Expenses page does.
-        // But maybe also filter for any manual Journal Entry involving 2xxx?
-
-        // For MVP: Return check output
         const liabilities: any[] = []
-        snapshot.docs.forEach(doc => {
-            const data = doc.data()
-            // Format for UI
+        ;(data || []).forEach((row: Record<string, any>) => {
             liabilities.push({
-                id: doc.id,
-                date: data.date?.toDate ? data.date.toDate() : data.date,
-                description: data.description,
-                amount: data.total_credits || data.total_debits,
-                type: data.type
+                id: row.id,
+                date: row.date || null,
+                description: row.description,
+                amount: row.total_credits || row.total_debits,
+                type: row.type
             })
         })
 

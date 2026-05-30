@@ -1,4 +1,4 @@
-import { db, COLLECTIONS, FieldValue } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNTS } from "./enhanced-accounting-service"
 import { JournalEntryType, JournalEntryService, JournalLine } from "./journal-entry-service"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
@@ -10,21 +10,26 @@ export class InventoryAccountingService {
         const lowStockAlerts: string[] = []
 
         try {
-            const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
+            const { data: inventorySnapshot } = await getServiceSupabase()
+                .from(TABLES.INVENTORY_ITEMS)
+                .select("*")
 
-            for (const itemDoc of inventorySnapshot.docs) {
-                const item = itemDoc.data() as any
+            if (!inventorySnapshot) return { updated, lowStockAlerts }
 
+            for (const item of inventorySnapshot) {
                 if (item.qty_on_hand <= (item.reorder_point || 10)) {
                     lowStockAlerts.push(`${item.sku}: ${item.qty_on_hand} units remaining`)
                 }
 
                 const updatedValue = item.qty_on_hand * (item.unit_cost || 0)
 
-                await itemDoc.ref.update({
-                    total_value: updatedValue,
-                    last_updated: new Date(),
-                })
+                await getServiceSupabase()
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .update({
+                        total_value: updatedValue,
+                        last_updated: new Date().toISOString(),
+                    })
+                    .eq("id", item.id)
 
                 updated.push(item.sku)
             }
@@ -40,32 +45,37 @@ export class InventoryAccountingService {
         quantity: number,
         type: "issue" | "receipt" | "return" | "adjustment",
     ) {
-        const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku)
-        const inventoryDoc = await inventoryRef.get()
+        const { data: inventoryDoc, error } = await getServiceSupabase()
+            .from(TABLES.INVENTORY_ITEMS)
+            .select("*")
+            .eq("id", sku)
+            .single()
 
-        if (inventoryDoc.exists) {
-            const currentQty = inventoryDoc.data()?.qty_on_hand || 0
+        if (inventoryDoc) {
+            const currentQty = inventoryDoc.qty_on_hand || 0
             const newQty = type === "issue" ? currentQty - quantity : currentQty + quantity
 
-            await inventoryRef.update({
-                qty_on_hand: Math.max(0, newQty),
-                last_movement: new Date(),
-            })
+            await getServiceSupabase()
+                .from(TABLES.INVENTORY_ITEMS)
+                .update({
+                    qty_on_hand: Math.max(0, newQty),
+                    last_movement: new Date().toISOString(),
+                })
+                .eq("id", sku)
 
             const movementId = `MOV-${Date.now()}`
-            await db
-                .collection(COLLECTIONS.INVENTORY_MOVEMENTS)
-                .doc(movementId)
-                .set({
+            await getServiceSupabase()
+                .from(TABLES.INVENTORY_MOVEMENTS)
+                .upsert({
                     id: movementId,
                     sku,
                     type,
                     quantity,
                     previous_qty: currentQty,
                     new_qty: Math.max(0, newQty),
-                    date: new Date(),
-                    created_at: new Date(),
-                })
+                    date: new Date().toISOString(),
+                    created_at: new Date().toISOString(),
+                }, { onConflict: "id" })
         }
     }
 

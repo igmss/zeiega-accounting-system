@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 import { EnhancedAccountingService, JournalEntryType, ACCOUNTS } from "@/lib/services/enhanced-accounting-service"
 import { requirePermission } from "@/lib/auth"
@@ -15,7 +14,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "amount and paymentMethod are required" }, { status: 400 })
     }
 
-    // 1. Validate against current VAT balance (2110)
     const vatAccount = ACCOUNTS.VAT_PAYABLE || "2110"
     const currentBalance = await FinancialStatementsService.getAccountBalance(vatAccount)
 
@@ -25,11 +23,9 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // 2. Map payment account
     const creditAccount = (paymentMethod === "bank") ? (ACCOUNTS.BANK || "1103") : (ACCOUNTS.CASH || "1101")
     const creditAccountName = (paymentMethod === "bank") ? "Bank Account" : "Cash on Hand"
 
-    // 3. Construct VAT Payment Journal Entry
     const lines = [
       {
         accountCode: vatAccount,

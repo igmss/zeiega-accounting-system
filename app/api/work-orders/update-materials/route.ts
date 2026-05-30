@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { isDebitNormalBalance } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
@@ -20,58 +20,70 @@ export async function POST(request: Request) {
       )
     }
 
-    const workOrderRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId)
-    const workOrderDoc = await workOrderRef.get()
+    const serviceDb = getServiceClient()
+
+    const { data: workOrderData, error: woError } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .eq("id", workOrderId)
+      .single()
     
-    if (!workOrderDoc.exists) {
+    if (!workOrderData) {
       return NextResponse.json(
         { error: "Work Order not found" },
         { status: 404 }
       )
     }
     
-    const workOrderData = workOrderDoc.data()
-    const previousMaterials = workOrderData?.raw_materials_used || []
+    const previousMaterials = workOrderData.raw_materials_used || []
 
     // 1. Revert previous inventory deductions
     for (const prevMaterial of previousMaterials) {
       if (prevMaterial.item_id && prevMaterial.qty) {
-        const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
-          .where("sku", "==", prevMaterial.item_id)
+        const { data: inventoryData } = await serviceDb
+          .from(TABLES.INVENTORY_ITEMS)
+          .select("*")
+          .eq("sku", prevMaterial.item_id)
           .limit(1)
-          .get()
-        const inventoryDoc = invSnapshot.docs[0]
-        if (inventoryDoc) {
-          const currentQty = inventoryDoc.data()?.quantity_on_hand || 0
-          await inventoryDoc.ref.update({
+          .single()
+        
+        if (inventoryData) {
+          const currentQty = inventoryData.quantity_on_hand || 0
+          await serviceDb.from(TABLES.INVENTORY_ITEMS).update({
             quantity_on_hand: currentQty + prevMaterial.qty,
-            last_updated: new Date()
-          })
+            last_updated: new Date().toISOString()
+          }).eq("id", inventoryData.id)
         }
       }
     }
 
     // 2. Delete previous inventory movements for this work order
-    const prevMovementsRef = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS)
-      .where("reference", "==", workOrderId)
-      .get()
-    const prevMovementsRelated = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS)
-      .where("related_doc", "==", workOrderId)
-      .get()
+    const { data: prevMovementsRef } = await serviceDb
+      .from(TABLES.INVENTORY_MOVEMENTS)
+      .select("id")
+      .eq("reference", workOrderId)
     
-    const movementsBatch = db.batch()
-    const uniqueMovementRefs = new Set()
+    const { data: prevMovementsRelated } = await serviceDb
+      .from(TABLES.INVENTORY_MOVEMENTS)
+      .select("id")
+      .eq("related_doc", workOrderId)
     
-    const addMovementToBatch = (doc: any) => {
-      if (!uniqueMovementRefs.has(doc.id)) {
-        uniqueMovementRefs.add(doc.id)
-        movementsBatch.delete(doc.ref)
+    const uniqueMovementIds = new Set<string>()
+    
+    if (prevMovementsRef) {
+      for (const doc of prevMovementsRef) {
+        uniqueMovementIds.add(doc.id)
+      }
+    }
+    if (prevMovementsRelated) {
+      for (const doc of prevMovementsRelated) {
+        uniqueMovementIds.add(doc.id)
       }
     }
     
-    prevMovementsRef.docs.forEach(addMovementToBatch)
-    prevMovementsRelated.docs.forEach(addMovementToBatch)
-    await movementsBatch.commit()
+    for (const id of uniqueMovementIds) {
+      await serviceDb.from(TABLES.INVENTORY_MOVEMENTS).delete().eq("id", id)
+    }
 
     // 3. Delete only the journal entries that are being replaced
     const cleanMaterials = Array.isArray(materials) ? materials : []
@@ -81,41 +93,47 @@ export async function POST(request: Request) {
     if (overheadCost > 0) jeTypesToDelete.push("OVERHEAD_APPLIED")
 
     if (jeTypesToDelete.length > 0) {
-      const prevByRef = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-        .where("reference_doc", "==", workOrderId)
-        .where("type", "in", jeTypesToDelete)
-        .get()
-      const prevByLink = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-        .where("linked_doc", "==", workOrderId)
-        .where("type", "in", jeTypesToDelete)
-        .get()
+      const { data: prevByRef } = await serviceDb
+        .from(TABLES.JOURNAL_ENTRIES)
+        .select("*")
+        .eq("reference_doc", workOrderId)
+        .in("type", jeTypesToDelete)
+      
+      const { data: prevByLink } = await serviceDb
+        .from(TABLES.JOURNAL_ENTRIES)
+        .select("*")
+        .eq("linked_doc", workOrderId)
+        .in("type", jeTypesToDelete)
       
       const entriesToVoid: any[] = []
-      const uniqueIds = new Set()
+      const uniqueIds = new Set<string>()
       
-      const addEntryToVoid = (doc: any) => {
-        if (!uniqueIds.has(doc.id)) {
-          uniqueIds.add(doc.id)
-          entriesToVoid.push(doc)
+      if (prevByRef) {
+        for (const doc of prevByRef) {
+          if (!uniqueIds.has(doc.id)) {
+            uniqueIds.add(doc.id)
+            entriesToVoid.push(doc)
+          }
         }
       }
-      
-      prevByRef.docs.forEach(addEntryToVoid)
-      prevByLink.docs.forEach(addEntryToVoid)
-
-      const deleteBatch = db.batch()
-      for (const doc of entriesToVoid) {
-        deleteBatch.delete(doc.ref)
+      if (prevByLink) {
+        for (const doc of prevByLink) {
+          if (!uniqueIds.has(doc.id)) {
+            uniqueIds.add(doc.id)
+            entriesToVoid.push(doc)
+          }
+        }
       }
-      await deleteBatch.commit()
 
-      // Adjust the balance cache for deleted entries
+      for (const doc of entriesToVoid) {
+        await serviceDb.from(TABLES.JOURNAL_ENTRIES).delete().eq("id", doc.id)
+      }
+
       const balanceAdjustments: Record<string, { debits: number; credits: number }> = {}
       
       for (const doc of entriesToVoid) {
-        const data = doc.data()
-        if (data.entries && Array.isArray(data.entries)) {
-          for (const entry of data.entries) {
+        if (doc.entries && Array.isArray(doc.entries)) {
+          for (const entry of doc.entries) {
             const accountCode = entry.account_id
             if (!balanceAdjustments[accountCode]) {
               balanceAdjustments[accountCode] = { debits: 0, credits: 0 }
@@ -127,24 +145,27 @@ export async function POST(request: Request) {
       }
 
       for (const [accountCode, adjustment] of Object.entries(balanceAdjustments)) {
-        const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
-        const balDoc = await balRef.get()
-        if (balDoc.exists) {
-          const existing = balDoc.data()!
-          const newTotalDebits = Math.max(0, (existing.totalDebits || 0) - adjustment.debits)
-          const newTotalCredits = Math.max(0, (existing.totalCredits || 0) - adjustment.credits)
+        const { data: balDoc } = await serviceDb
+          .from(TABLES.ACCOUNT_BALANCES)
+          .select("*")
+          .eq("id", accountCode)
+          .single()
+        
+        if (balDoc) {
+          const newTotalDebits = Math.max(0, (balDoc.totalDebits || 0) - adjustment.debits)
+          const newTotalCredits = Math.max(0, (balDoc.totalCredits || 0) - adjustment.credits)
           
           const isDebit = isDebitNormalBalance(accountCode)
           const balance = isDebit
             ? newTotalDebits - newTotalCredits
             : newTotalCredits - newTotalDebits
           
-          await balRef.update({
+          await serviceDb.from(TABLES.ACCOUNT_BALANCES).update({
             totalDebits: newTotalDebits,
             totalCredits: newTotalCredits,
             balance,
-            updatedAt: new Date()
-          })
+            updatedAt: new Date().toISOString()
+          }).eq("id", accountCode)
         }
       }
     }
@@ -155,25 +176,25 @@ export async function POST(request: Request) {
     for (const material of cleanMaterials) {
       if (!material.item_id || !material.qty) continue
 
-      const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
-        .where("sku", "==", material.item_id)
+      const { data: inventoryData } = await serviceDb
+        .from(TABLES.INVENTORY_ITEMS)
+        .select("*")
+        .eq("sku", material.item_id)
         .limit(1)
-        .get()
-      const inventoryDoc = invSnapshot.docs[0]
-      const inventoryRef = inventoryDoc ? inventoryDoc.ref : null
-      const itemName = inventoryDoc ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+        .single()
       
-      if (inventoryDoc && inventoryRef) {
-        const currentQty = inventoryDoc.data()?.quantity_on_hand || 0
-        const newQty = Math.max(0, currentQty - material.qty) // Prevent negative quantities
-        const itemNameFromDoc = inventoryDoc.data()?.name || 'Unknown Item'
+      const itemName = inventoryData ? (inventoryData.name || 'Unknown Item') : 'Unknown Item'
+      
+      if (inventoryData) {
+        const currentQty = inventoryData.quantity_on_hand || 0
+        const newQty = Math.max(0, currentQty - material.qty)
+        const itemNameFromDoc = inventoryData.name || 'Unknown Item'
         
-        await inventoryRef.update({
+        await serviceDb.from(TABLES.INVENTORY_ITEMS).update({
           quantity_on_hand: newQty,
-          last_updated: new Date()
-        })
+          last_updated: new Date().toISOString()
+        }).eq("id", inventoryData.id)
 
-        // Create inventory movement record
         const movement = {
           item_id: material.item_id,
           item_name: itemNameFromDoc,
@@ -183,14 +204,13 @@ export async function POST(request: Request) {
           total_cost: material.qty * (material.cost || 0),
           reason: 'Work Order Material Usage',
           reference: workOrderId,
-          created_at: new Date(),
+          created_at: new Date().toISOString(),
           created_by: 'system'
         }
         
-        await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).add(movement)
+        await serviceDb.from(TABLES.INVENTORY_MOVEMENTS).insert(movement)
       }
 
-      // Always record the accounting entry, even if inventory item doesn't exist
       accountingMaterials.push({
         itemId: material.item_id,
         itemName: itemName,
@@ -204,7 +224,7 @@ export async function POST(request: Request) {
       sum + (material.qty * (material.cost || 0)), 0)
 
     const finalLaborCost = laborCost || 0
-    const finalOverheadCost = overheadCost !== undefined ? overheadCost : (workOrderData?.overhead_cost || 0)
+    const finalOverheadCost = overheadCost !== undefined ? overheadCost : (workOrderData.overhead_cost || 0)
     const totalCost = totalMaterialCost + finalLaborCost + finalOverheadCost
 
     // 6. Update work order document with new costs
@@ -215,10 +235,10 @@ export async function POST(request: Request) {
       overhead_cost: finalOverheadCost,
       material_cost: totalMaterialCost,
       total_cost: totalCost,
-      updated_at: new Date()
+      updated_at: new Date().toISOString()
     }
 
-    await workOrderRef.update(updatedWOData)
+    await serviceDb.from(TABLES.WORK_ORDERS).update(updatedWOData).eq("id", workOrderId)
 
     // 7. Record balanced journal entries using EnhancedAccountingService
     if (accountingMaterials.length > 0) {

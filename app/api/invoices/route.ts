@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 export async function GET(request: Request) {
@@ -15,40 +15,48 @@ export async function GET(request: Request) {
     let hasMore = false
 
     try {
-      let query = db.collection(COLLECTIONS.INVOICES) as FirebaseFirestore.Query
-      
-      // Try ordered query first, fall back to unordered if mixed types exist
-      try {
-        query = db.collection(COLLECTIONS.INVOICES)
-          .orderBy("created_at", "desc")
-          .limit(limit)
-        
-        if (cursor) {
-          const lastDoc = await db.collection(COLLECTIONS.INVOICES).doc(cursor).get()
-          if (lastDoc.exists) {
-            query = query.startAfter(lastDoc)
-          }
+      let query = getServiceClient()
+        .from(TABLES.INVOICES)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit + 1)
+
+      if (cursor) {
+        const { data: cursorDoc } = await getServiceClient()
+          .from(TABLES.INVOICES)
+          .select("created_at")
+          .eq("id", cursor)
+          .single()
+
+        if (cursorDoc?.created_at) {
+          query = query.lt("created_at", cursorDoc.created_at)
         }
-      } catch {
-        query = db.collection(COLLECTIONS.INVOICES).limit(limit)
       }
 
-      const invoicesSnapshot = await query.get()
-      invoices = invoicesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        created_at: doc.data().created_at?.toDate?.() || doc.data().created_at || null,
-        due_date: doc.data().due_date?.toDate?.() || doc.data().due_date || null,
-        paid_at: doc.data().paid_at?.toDate?.() || doc.data().paid_at || null,
-      }))
+      const { data, error } = await query
 
-      const lastVisible = invoicesSnapshot.docs[invoicesSnapshot.docs.length - 1]
-      nextCursor = lastVisible ? lastVisible.id : null
-      hasMore = invoicesSnapshot.docs.length === limit
+      if (!error && data) {
+        hasMore = data.length > limit
+        invoices = data.slice(0, limit).map((doc: Record<string, any>) => ({
+          id: doc.id,
+          ...doc,
+          created_at: doc.created_at || null,
+          due_date: doc.due_date || null,
+          paid_at: doc.paid_at || null,
+        }))
+
+        const lastVisible = invoices[invoices.length - 1]
+        nextCursor = lastVisible ? lastVisible.id : null
+      }
     } catch {
-      // Final fallback — fetch without ordering if structured queries fail
-      const snapshot = await db.collection(COLLECTIONS.INVOICES).limit(limit).get()
-      invoices = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const { data, error } = await getServiceClient()
+        .from(TABLES.INVOICES)
+        .select("*")
+        .limit(limit)
+
+      if (!error && data) {
+        invoices = data.map((doc: Record<string, any>) => ({ id: doc.id, ...doc }))
+      }
     }
 
     return NextResponse.json({
@@ -71,7 +79,7 @@ export async function POST(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const body = await request.json()
-    const { 
+    const {
       amount,       // Net amount
       tax_amount,   // VAT (14%)
       total_amount, // Gross amount
@@ -99,25 +107,25 @@ export async function POST(request: Request) {
       cost_of_goods_sold: cost_of_goods_sold || 0,
       paid_amount: 0,
       due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      created_at: new Date(),
+      created_at: new Date().toISOString(),
       status: "unpaid"
     }
 
     // 1. Record Revenue and AR (BUG-3)
     const revenueLines = [
-      { 
+      {
         accountCode: "1110", // Accounts Receivable
         accountName: "Accounts Receivable",
-        debit: total_amount || 0, 
-        credit: 0, 
-        description: `Invoice ${invoiceId} to ${customer_name || 'Customer'}` 
+        debit: total_amount || 0,
+        credit: 0,
+        description: `Invoice ${invoiceId} to ${customer_name || 'Customer'}`
       },
-      { 
+      {
         accountCode: "4001", // Sales Revenue
         accountName: "Sales Revenue",
-        debit: 0, 
-        credit: amount || 0, 
-        description: `Net sales for ${invoiceId}` 
+        debit: 0,
+        credit: amount || 0,
+        description: `Net sales for ${invoiceId}`
       }
     ]
 
@@ -150,15 +158,16 @@ export async function POST(request: Request) {
     if (finalCOGS <= 0 && body.sales_order_id) {
       try {
         // Look up completed work orders for this sales order
-        const woSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-          .where("sales_order_id", "==", body.sales_order_id)
-          .where("status", "==", "completed")
+        const { data: woData, error: woError } = await getServiceClient()
+          .from(TABLES.WORK_ORDERS)
+          .select("*")
+          .eq("sales_order_id", body.sales_order_id)
+          .eq("status", "completed")
           .limit(1)
-          .get()
-        
-        if (!woSnapshot.empty) {
-          const woData = woSnapshot.docs[0].data() as any
-          finalCOGS = woData.final_completion_cost || woData.total_cost || woData.estimated_cost || 0
+
+        if (!woError && woData && woData.length > 0) {
+          const wo: any = woData[0]
+          finalCOGS = wo.final_completion_cost || wo.total_cost || wo.estimated_cost || 0
         }
       } catch (err) {
         console.warn(`⚠️ Failed to auto-calculate COGS for invoice ${invoiceId}:`, err)
@@ -189,7 +198,7 @@ export async function POST(request: Request) {
         invoiceId,
         `COGS recording for invoice ${invoiceId}`
       )
-      
+
       if (cogsResult.success) {
         cogsEntryId = cogsResult.entryId
       } else {
@@ -200,9 +209,11 @@ export async function POST(request: Request) {
     }
 
     // Save invoice to database
-    await db.collection(COLLECTIONS.INVOICES).doc(invoiceId).set(invoice)
+    await getServiceClient()
+      .from(TABLES.INVOICES)
+      .insert(invoice)
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       ...invoice,
       revenueJournalEntryId: revenueResult.entryId,
       cogsJournalEntryId: cogsEntryId
@@ -217,4 +228,3 @@ export async function POST(request: Request) {
 }
 
 // PUT endpoint removed to ensure journal entry immutability (BUG-011)
-

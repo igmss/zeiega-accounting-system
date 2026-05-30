@@ -1,4 +1,4 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import type { WorkOrder } from "../types"
 import { ACCOUNTS } from "./enhanced-accounting-service"
 import { JournalEntryType, JournalEntryService, JournalLine } from "./journal-entry-service"
@@ -22,7 +22,9 @@ export class ManufacturingAccountingService {
             created_at: new Date(),
         }
 
-        await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).set(workOrder)
+        await getServiceSupabase()
+            .from(TABLES.WORK_ORDERS)
+            .upsert(workOrder, { onConflict: "id" })
     }
 
     static async recordLaborApplied(
@@ -104,10 +106,14 @@ export class ManufacturingAccountingService {
         }
 
         try {
-            await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-                estimated_cost: estimatedCost,
-                updated_at: new Date(),
-            })
+            await getServiceSupabase()
+                .from(TABLES.WORK_ORDERS)
+                .update({
+                    estimated_cost: estimatedCost,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", workOrderId)
+
             console.log(`📋 Work order ${workOrderId}: estimated cost recorded as ${formatCurrency(estimatedCost)} (no journal entry)`)
             return { success: true, entryId: `EST-${workOrderId}` }
         } catch (error) {
@@ -119,7 +125,7 @@ export class ManufacturingAccountingService {
     static async recordWIPToFinishedGoods(
         workOrderId: string,
         totalCost: number,
-        tx?: FirebaseFirestore.Transaction
+        tx?: unknown
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         if (totalCost <= 0) {
             return { success: false, error: "Total cost must be positive" }
@@ -129,12 +135,16 @@ export class ManufacturingAccountingService {
         let labCost = 0
         let ohCost = 0
         try {
-            const woDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-            if (woDoc.exists) {
-                const wo = woDoc.data()!
-                matCost = wo.material_cost || 0
-                labCost = wo.labor_cost || 0
-                ohCost = wo.overhead_cost || 0
+            const { data: woDoc } = await getServiceSupabase()
+                .from(TABLES.WORK_ORDERS)
+                .select("*")
+                .eq("id", workOrderId)
+                .single()
+
+            if (woDoc) {
+                matCost = woDoc.material_cost || 0
+                labCost = woDoc.labor_cost || 0
+                ohCost = woDoc.overhead_cost || 0
             }
         } catch {}
 
@@ -183,7 +193,7 @@ export class ManufacturingAccountingService {
             undefined,
             "system",
             undefined,
-            tx
+            tx as any
         )
     }
 
@@ -257,20 +267,22 @@ export class ManufacturingAccountingService {
         if (!result.success) return result
 
         const recordId = `SCRAP-${Date.now()}`
-        await db.collection(COLLECTIONS.SCRAP_RECORDS).doc(recordId).set({
-            id: recordId,
-            workOrderId,
-            sku,
-            quantityScrapped,
-            unitCost,
-            totalCost,
-            salvageValue,
-            isAbnormal,
-            reason,
-            journalEntryId: result.entryId,
-            created_at: new Date(),
-            created_by: userId,
-        })
+        await getServiceSupabase()
+            .from(TABLES.SCRAP_RECORDS)
+            .upsert({
+                id: recordId,
+                workOrderId,
+                sku,
+                quantityScrapped,
+                unitCost,
+                totalCost,
+                salvageValue,
+                isAbnormal,
+                reason,
+                journalEntryId: result.entryId,
+                created_at: new Date().toISOString(),
+                created_by: userId,
+            }, { onConflict: "id" })
 
         return { ...result, recordId }
     }
@@ -340,20 +352,22 @@ export class ManufacturingAccountingService {
         if (!result.success) return result
 
         const reworkOrderId = `RWK-${Date.now()}`
-        await db.collection(COLLECTIONS.REWORK_ORDERS).doc(reworkOrderId).set({
-            id: reworkOrderId,
-            originalWorkOrderId,
-            reason,
-            additionalMaterialCost,
-            additionalLaborCost,
-            additionalOverheadCost,
-            totalReworkCost,
-            isNormalRework,
-            journalEntryId: result.entryId,
-            status: "completed",
-            created_at: new Date(),
-            created_by: userId,
-        })
+        await getServiceSupabase()
+            .from(TABLES.REWORK_ORDERS)
+            .upsert({
+                id: reworkOrderId,
+                originalWorkOrderId,
+                reason,
+                additionalMaterialCost,
+                additionalLaborCost,
+                additionalOverheadCost,
+                totalReworkCost,
+                isNormalRework,
+                journalEntryId: result.entryId,
+                status: "completed",
+                created_at: new Date().toISOString(),
+                created_by: userId,
+            }, { onConflict: "id" })
 
         return { ...result, reworkOrderId }
     }

@@ -1,6 +1,4 @@
-import { db, COLLECTIONS } from "../firebase"
-
-
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 
 export interface Vendor {
     id: string
@@ -9,16 +7,16 @@ export interface Vendor {
     email?: string
     phone?: string
     address?: string
-    payment_terms?: string // e.g., "Net 30"
+    payment_terms?: string
     lead_time_days?: number
-    rating?: number // 1-5 stars
+    rating?: number
     notes?: string
     status: "active" | "inactive"
     total_orders?: number
     total_amount?: number
-    last_order_date?: Date
-    created_at: Date
-    updated_at: Date
+    last_order_date?: string
+    created_at: string
+    updated_at: string
 }
 
 export interface VendorFilter {
@@ -27,19 +25,13 @@ export interface VendorFilter {
     minRating?: number
 }
 
-/**
- * Vendor Management Service
- */
 export class VendorService {
 
-    /**
-     * Create a new vendor
-     */
     static async createVendor(
         data: Omit<Vendor, "id" | "created_at" | "updated_at" | "total_orders" | "total_amount">
     ): Promise<{ success: boolean; vendorId?: string; error?: string }> {
         try {
-            const now = new Date()
+            const now = new Date().toISOString()
             const vendorId = `VND-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
             const vendor: Vendor = {
@@ -51,7 +43,8 @@ export class VendorService {
                 updated_at: now,
             }
 
-            await db.collection(COLLECTIONS.VENDORS).doc(vendorId).set(vendor)
+            const { error } = await getServiceSupabase().from(TABLES.VENDORS).insert(vendor)
+            if (error) throw error
 
             console.log(`✅ Created vendor ${vendor.name} (${vendorId})`)
             return { success: true, vendorId }
@@ -61,38 +54,32 @@ export class VendorService {
         }
     }
 
-    /**
-     * Get vendor by ID
-     */
     static async getVendor(vendorId: string): Promise<Vendor | null> {
         try {
-            const doc = await db.collection(COLLECTIONS.VENDORS).doc(vendorId).get()
-            if (!doc.exists) return null
-            return doc.data() as Vendor
+            const { data, error } = await getServiceSupabase().from(TABLES.VENDORS).select("*").eq("id", vendorId).single()
+            if (error || !data) return null
+            return data as Vendor
         } catch (error) {
             console.error("Error getting vendor:", error)
             return null
         }
     }
 
-    /**
-     * Get all vendors with optional filtering
-     */
     static async getAllVendors(filter?: VendorFilter): Promise<Vendor[]> {
         try {
-            let query = db.collection(COLLECTIONS.VENDORS) as any
+            let query = getServiceSupabase().from(TABLES.VENDORS).select("*")
 
             if (filter?.status) {
-                query = query.where("status", "==", filter.status)
+                query = query.eq("status", filter.status)
             }
             if (filter?.minRating) {
-                query = query.where("rating", ">=", filter.minRating)
+                query = query.gte("rating", filter.minRating)
             }
 
-            const snapshot = await query.get()
-            let vendors = snapshot.docs.map((doc: any) => doc.data() as Vendor)
+            const { data, error } = await query
+            if (error) throw error
+            let vendors = (data || []) as Vendor[]
 
-            // Client-side search filter
             if (filter?.search) {
                 const searchLower = filter.search.toLowerCase()
                 vendors = vendors.filter((v: Vendor) =>
@@ -103,8 +90,8 @@ export class VendorService {
             }
 
             return vendors.sort((a: Vendor, b: Vendor) => {
-                const aTime = a.updated_at instanceof Date ? a.updated_at.getTime() : 0
-                const bTime = b.updated_at instanceof Date ? b.updated_at.getTime() : 0
+                const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0
+                const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0
                 return bTime - aTime
             })
         } catch (error) {
@@ -113,9 +100,6 @@ export class VendorService {
         }
     }
 
-    /**
-     * Update vendor
-     */
     static async updateVendor(
         vendorId: string,
         updates: Partial<Omit<Vendor, "id" | "created_at">>
@@ -126,10 +110,11 @@ export class VendorService {
                 return { success: false, error: "Vendor not found" }
             }
 
-            await db.collection(COLLECTIONS.VENDORS).doc(vendorId).update({
+            const { error } = await getServiceSupabase().from(TABLES.VENDORS).update({
                 ...updates,
-                updated_at: new Date()
-            })
+                updated_at: new Date().toISOString()
+            }).eq("id", vendorId)
+            if (error) throw error
 
             return { success: true }
         } catch (error) {
@@ -138,35 +123,27 @@ export class VendorService {
         }
     }
 
-    /**
-     * Update vendor statistics (called when PO is completed)
-     */
     static async recordOrder(vendorId: string, amount: number): Promise<void> {
         try {
             const vendor = await this.getVendor(vendorId)
             if (!vendor) return
 
-            await db.collection(COLLECTIONS.VENDORS).doc(vendorId).update({
+            const { error } = await getServiceSupabase().from(TABLES.VENDORS).update({
                 total_orders: (vendor.total_orders || 0) + 1,
                 total_amount: (vendor.total_amount || 0) + amount,
-                last_order_date: new Date(),
-                updated_at: new Date()
-            })
+                last_order_date: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }).eq("id", vendorId)
+            if (error) console.error("Error recording vendor order:", error)
         } catch (error) {
             console.error("Error recording vendor order:", error)
         }
     }
 
-    /**
-     * Deactivate vendor
-     */
     static async deactivateVendor(vendorId: string): Promise<{ success: boolean; error?: string }> {
         return this.updateVendor(vendorId, { status: "inactive" })
     }
 
-    /**
-     * Get vendor statistics
-     */
     static async getVendorStats(): Promise<{
         total: number
         active: number

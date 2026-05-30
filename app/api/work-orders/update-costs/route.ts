@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, COLLECTIONS } from "@/lib/firebase";
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
 import { requirePermission } from "@/lib/auth";
 
@@ -16,16 +16,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔄 Updating work order ${workOrderId} with automatic costs...`);
 
-    // 1. Get the order data
-    const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get();
-    if (!orderDoc.exists) {
+    const serviceDb = getServiceClient()
+
+    const { data: orderData } = await serviceDb
+      .from(TABLES.ORDERS)
+      .select("*")
+      .eq("id", orderId)
+      .single();
+
+    if (!orderData) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    const orderData = orderDoc.data();
-    const orderItems = orderData?.items || [];
+    const orderItems = orderData.items || [];
 
-    // 2. Calculate costs from designs
     const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
     if (!costCalculation.success) {
@@ -35,24 +39,26 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 3. Update the work order with calculated costs
-    const workOrderRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId);
-    const workOrderDoc = await workOrderRef.get();
+    const { data: workOrderDoc } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .eq("id", workOrderId)
+      .single();
 
-    if (!workOrderDoc.exists) {
+    if (!workOrderDoc) {
       return NextResponse.json({ error: 'Work order not found' }, { status: 404 });
     }
 
     const updateData = {
       estimated_cost: costCalculation.totalEstimatedCost,
-      labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
-      overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
+      labor_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + item.laborCost, 0),
+      overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + item.overheadCost, 0),
       item_costs: costCalculation.itemCosts,
       notes: `Updated with automatic cost calculation from designs (EGP ${costCalculation.totalEstimatedCost})`,
       updated_at: new Date()
     };
 
-    await workOrderRef.update(updateData);
+    await serviceDb.from(TABLES.WORK_ORDERS).update(updateData).eq("id", workOrderId);
 
     console.log(`✅ Updated work order ${workOrderId} with costs: EGP ${costCalculation.totalEstimatedCost}`);
 

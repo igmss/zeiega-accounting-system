@@ -1,10 +1,13 @@
 ﻿/**
- * Seed Script for Creating Initial ERP Users
- * 
- * Run this script to create initial users in Firestore:
- * npx ts-node scripts/seed-users.ts
- * 
- * Or run via the API endpoint: POST /api/admin/seed-users (requires admin auth)
+ * Seed Script for Creating Initial ERP Users via Supabase Auth
+ *
+ * Prerequisites:
+ *   1. Add Supabase env vars to .env.local (NEXT_PUBLIC_SUPABASE_URL,
+ *      NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)
+ *   2. Apply SQL migrations first (tables must exist)
+ *
+ * Run: npx ts-node --require dotenv/config scripts/seed-users.ts
+ *   (dotenv reads .env.local automatically)
  */
 
 import { userStore, UserRole } from "../lib/auth/user-model"

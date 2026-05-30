@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requireAuth } from "@/lib/auth"
 
 export async function GET() {
@@ -7,50 +7,54 @@ export async function GET() {
     const auth = await requireAuth()
     if (!auth.authenticated) return auth.response
 
-    // Fetch chart of accounts from Firestore
-    const accountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
-    const accounts = accountsSnapshot.docs.map(doc => {
-      const data = doc.data()
+    // Fetch chart of accounts from Supabase
+    const { data: accountsData, error: accountsError } = await getServiceClient()
+      .from(TABLES.CHART_OF_ACCOUNTS)
+      .select("*")
+
+    const accounts = (accountsData || []).map((data: Record<string, any>) => {
       return {
-        id: doc.id,
-        code: data.code || doc.id,
+        code: data.code,
         name: data.name || "",
         type: data.type || "",
         normal_balance: data.normal_balance || "debit",
         isActive: data.is_active !== false,
         deprecatedReason: data.deprecated_reason || null,
-        balance: data.balance || 0,
+        balance: 0,
         description: data.description || null,
         parent_code: data.parent_code || null,
       }
     })
 
-    // Fallback: use acc_account_balances only for accounts with no chart-doc balance
-    const balanceSnapshot = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).get()
+    // Fallback: use account_balances only for accounts with no chart-doc balance
+    const { data: balanceData, error: balanceError } = await getServiceClient()
+      .from(TABLES.ACCOUNT_BALANCES)
+      .select("*")
+
     const balanceMap: Record<string, number> = {}
-    balanceSnapshot.docs.forEach(doc => {
-      const data = doc.data()
-      if (data.balance !== undefined) {
-        balanceMap[doc.id] = data.balance
-      }
-    })
+    if (!balanceError && balanceData) {
+      ;(balanceData as any[]).forEach((row: Record<string, any>) => {
+        if (row.closing_balance !== undefined) {
+          balanceMap[row.account_code] = row.closing_balance
+        }
+      })
+    }
 
     for (const account of accounts) {
-      if (account.balance === 0) {
-        if (balanceMap[account.code] !== undefined) {
-          account.balance = balanceMap[account.code]
-        } else if (balanceMap[account.id] !== undefined) {
-          account.balance = balanceMap[account.id]
-        }
+      if (balanceMap[account.code] !== undefined) {
+        account.balance = balanceMap[account.code]
       }
     }
 
-    // Fetch journal entries from Firestore
-    const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
-    const journalEntries = journalSnapshot.docs.map(doc => ({
+    // Fetch journal entries from Supabase
+    const { data: journalData, error: journalError } = await getServiceClient()
+      .from(TABLES.JOURNAL_ENTRIES)
+      .select("*")
+
+    const journalEntries = (journalData || []).map((doc: Record<string, any>) => ({
       id: doc.id,
-      ...doc.data(),
-      date: doc.data().date?.toDate() || new Date()
+      ...doc,
+      date: doc.date || null
     }))
 
     return NextResponse.json({
@@ -74,14 +78,20 @@ export async function POST(request: NextRequest) {
 
     if (type === "account") {
       // Add new account
-      const accountRef = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).add({
-        ...data,
-        created_at: new Date(),
-        updated_at: new Date()
-      })
+      const result = await getServiceClient()
+        .from(TABLES.CHART_OF_ACCOUNTS)
+        .insert({
+          ...data,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+
+      const created = result.data as any[] | null
+      if (result.error || !created || created.length === 0) throw result.error || new Error("Failed to create account")
 
       return NextResponse.json({
-        id: accountRef.id,
+        code: created[0].code,
         message: "Account created successfully"
       })
     }

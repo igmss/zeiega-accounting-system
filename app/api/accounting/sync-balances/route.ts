@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { CHART_OF_ACCOUNTS } from "@/lib/accounting/account-types"
@@ -11,9 +11,9 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { accountIds, syncAll } = body
-    
+
     let results: Record<string, number> = {}
-    
+
     if (syncAll) {
       console.log("🔄 Refreshing ALL account balances...")
       for (const code of Object.keys(CHART_OF_ACCOUNTS)) {
@@ -32,14 +32,14 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    
+
     return NextResponse.json({
       success: true,
       message: "Account balances synchronized successfully",
       results: results,
       timestamp: new Date().toISOString()
     })
-    
+
   } catch (error) {
     console.error("Error in balance sync API:", error)
     return NextResponse.json(
@@ -53,19 +53,19 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     console.log("📊 Fetching current account balances...")
-    
-    const accountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
-    const accounts = accountsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-    
+
+    const { data: accounts, error } = await getServiceClient()
+      .from(TABLES.CHART_OF_ACCOUNTS)
+      .select("*")
+
+    if (error) throw error
+
     return NextResponse.json({
       success: true,
-      accounts: accounts,
+      accounts: accounts || [],
       timestamp: new Date().toISOString()
     })
-    
+
   } catch (error) {
     console.error("Error fetching account balances:", error)
     return NextResponse.json(

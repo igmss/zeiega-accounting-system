@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { getServiceClient, TABLES } from "@/lib/supabase"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
 export async function GET(request: Request) {
@@ -10,29 +10,35 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
     const cursor = searchParams.get("cursor")
 
-    let query = db.collection(COLLECTIONS.CUSTOMERS)
-      .orderBy("createdAt", "desc")
+    let query = getServiceClient()
+      .from(TABLES.CUSTOMERS)
+      .select("*")
+      .order("created_at", { ascending: false })
       .limit(limit)
-    
+
     if (cursor) {
-      const lastDoc = await db.collection(COLLECTIONS.CUSTOMERS).doc(cursor).get()
-      if (lastDoc.exists) {
-        query = query.startAfter(lastDoc)
+      const { data: cursorDoc } = await getServiceClient()
+        .from(TABLES.CUSTOMERS)
+        .select("created_at")
+        .eq("id", cursor)
+        .single()
+
+      if (cursorDoc) {
+        query = query.lt("created_at", (cursorDoc as any).created_at)
       }
     }
 
-    const customersSnapshot = await query.get()
-    const customers = customersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: customers, error } = await query
 
-    const lastVisible = customersSnapshot.docs[customersSnapshot.docs.length - 1]
+    if (error) throw error
+
+    const arr = (customers || []) as any[]
+    const lastVisible = arr.length > 0 ? arr[arr.length - 1] : null
     const nextCursor = lastVisible ? lastVisible.id : null
-    const hasMore = customersSnapshot.docs.length === limit
+    const hasMore = arr.length === limit
 
     return NextResponse.json({
-      data: customers,
+      data: arr,
       nextCursor,
       hasMore
     })
@@ -50,21 +56,21 @@ export async function POST(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const customerData = await request.json()
-    
-    // Add timestamps
-    const now = new Date()
-    const customer = {
-      ...customerData,
-      createdAt: now,
-      updatedAt: now,
-      totalOrders: 0,
-      totalSpent: 0,
-      lastOrderDate: null,
-    }
-    
-    const docRef = await db.collection(COLLECTIONS.CUSTOMERS).add(customer)
-    
-    return NextResponse.json({ id: docRef.id, ...customer })
+
+    const { data, error } = await (getServiceClient()
+      .from(TABLES.CUSTOMERS)
+      .insert({
+        name: customerData.name,
+        email: customerData.email,
+        phone: customerData.phone || "",
+        address: customerData.address || "",
+      } as any)
+      .select()
+      .single())
+
+    if (error) throw error
+
+    return NextResponse.json(data)
   } catch (error) {
     console.error("Error creating customer:", error)
     return NextResponse.json(
@@ -79,15 +85,20 @@ export async function PUT(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const { id, ...customerData } = await request.json()
-    
-    const customer = {
-      ...customerData,
-      updatedAt: new Date(),
-    }
-    
-    await db.collection(COLLECTIONS.CUSTOMERS).doc(id).update(customer)
-    
-    return NextResponse.json({ id, ...customer })
+
+    const { error } = await getServiceClient()
+      .from(TABLES.CUSTOMERS)
+      .update({
+        name: customerData.name,
+        email: customerData.email,
+        phone: customerData.phone,
+        address: customerData.address,
+      })
+      .eq("id", id)
+
+    if (error) throw error
+
+    return NextResponse.json({ id, ...customerData })
   } catch (error) {
     console.error("Error updating customer:", error)
     return NextResponse.json(
@@ -102,17 +113,22 @@ export async function DELETE(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-    
+    const id = searchParams.get("id")
+
     if (!id) {
       return NextResponse.json(
         { error: "Customer ID is required" },
         { status: 400 }
       )
     }
-    
-    await db.collection(COLLECTIONS.CUSTOMERS).doc(id).delete()
-    
+
+    const { error } = await getServiceClient()
+      .from(TABLES.CUSTOMERS)
+      .delete()
+      .eq("id", id)
+
+    if (error) throw error
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error deleting customer:", error)

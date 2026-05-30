@@ -1,4 +1,4 @@
-import { db, COLLECTIONS } from "../firebase";
+import { supabase, TABLES, getServiceSupabase } from "../supabase";
 import { SizeCostService } from "./size-cost-service";
 import { formatCurrency } from "@/lib/utils"
 import type { 
@@ -12,11 +12,8 @@ import type {
 } from "../types/designs";
 
 export class DesignService {
-  private static readonly COLLECTION_NAME = COLLECTIONS.DESIGNS;
+  private static readonly TABLE_NAME = TABLES.DESIGNS;
 
-  /**
-   * Get all designs with optional filtering and pagination
-   */
   static async getDesigns(
     filter?: DesignFilter,
     lastDocId?: string,
@@ -24,46 +21,42 @@ export class DesignService {
   ): Promise<{ designs: Design[]; lastDoc?: any; hasMore: boolean }> {
     try {
       console.log("DesignService.getDesigns called with:", { filter, lastDocId, pageSize });
-      console.log("Collection name:", this.COLLECTION_NAME);
+      console.log("Table name:", this.TABLE_NAME);
       
-      let query = db.collection(this.COLLECTION_NAME).orderBy("createdAt", "desc").limit(pageSize);
+      let query = getServiceSupabase().from(this.TABLE_NAME).select("*").order("createdAt", { ascending: false }).limit(pageSize);
 
-      // Apply filters
       if (filter?.category) {
-        query = query.where("category", "==", filter.category);
+        query = query.eq("category", filter.category);
       }
       if (filter?.subcategory) {
-        query = query.where("subcategory", "==", filter.subcategory);
+        query = query.eq("subcategory", filter.subcategory);
       }
       if (filter?.status) {
-        query = query.where("status", "==", filter.status);
+        query = query.eq("status", filter.status);
       }
       if (filter?.complexity) {
-        query = query.where("complexity", "==", filter.complexity);
+        query = query.eq("complexity", filter.complexity);
       }
 
-      // Add pagination
       if (lastDocId) {
-        const lastDoc = await db.collection(this.COLLECTION_NAME).doc(lastDocId).get();
-        if (lastDoc.exists) {
-          query = query.startAfter(lastDoc);
+        const { data: lastDoc } = await getServiceSupabase().from(this.TABLE_NAME).select("createdAt").eq("id", lastDocId).single();
+        if (lastDoc) {
+          query = query.lt("createdAt", lastDoc.createdAt);
         }
       }
 
-      const snapshot = await query.get();
-      console.log("Query executed successfully, found", snapshot.docs.length, "documents");
+      const { data: rows, error } = await query;
+      console.log("Query executed successfully, found", rows?.length || 0, "rows");
       
-      const designs = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt || new Date()),
-          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : (data.updatedAt || new Date())
-        };
-      }) as Design[];
+      if (error) throw error;
 
-      // Apply client-side filters for cost ranges
+      const designs = (rows || []).map((row: any) => ({
+        ...row,
+        id: row.id,
+        createdAt: row.createdAt || new Date().toISOString(),
+        updatedAt: row.updatedAt || new Date().toISOString()
+      })) as Design[];
+
       let filteredDesigns = designs;
       if (filter?.minCost !== undefined) {
         filteredDesigns = filteredDesigns.filter(d => d.totalCost >= filter.minCost!);
@@ -76,8 +69,8 @@ export class DesignService {
       
       return {
         designs: filteredDesigns,
-        lastDoc: snapshot.docs[snapshot.docs.length - 1],
-        hasMore: snapshot.docs.length === pageSize
+        lastDoc: (rows && rows.length > 0) ? rows[rows.length - 1] : null,
+        hasMore: (rows || []).length === pageSize
       };
     } catch (error) {
       console.error("Error fetching designs:", error);
@@ -86,44 +79,35 @@ export class DesignService {
     }
   }
 
-  /**
-   * Get a single design by ID
-   */
   static async getDesign(id: string): Promise<Design | null> {
     try {
-      const docRef = db.collection(this.COLLECTION_NAME).doc(id);
-      const docSnap = await docRef.get();
+      const { data, error } = await getServiceSupabase().from(this.TABLE_NAME).select("*").eq("id", id).single();
       
-          if (docSnap.exists) {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              ...data,
-              createdAt: data?.createdAt?.toDate ? data.createdAt.toDate() : (data?.createdAt || new Date()),
-              updatedAt: data?.updatedAt?.toDate ? data.updatedAt.toDate() : (data?.updatedAt || new Date())
-            } as Design;
-          }
-      return null;
+      if (error || !data) {
+        return null;
+      }
+      return {
+        ...data,
+        id: data.id,
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || new Date().toISOString()
+      } as Design;
     } catch (error) {
       console.error("Error fetching design:", error);
       throw new Error("Failed to fetch design");
     }
   }
 
-  /**
-   * Create a new design
-   */
   static async createDesign(designData: Omit<Design, "id" | "createdAt" | "updatedAt">): Promise<string> {
     try {
-      const now = new Date();
-      // Duplicate prevention: check by productId if present, else by normalized name+category
+      const now = new Date().toISOString();
       if ((designData as any).productId) {
-        const dupByProduct = await db.collection(this.COLLECTION_NAME)
-          .where("productId", "==", (designData as any).productId)
-          .limit(1)
-          .get();
-        if (!dupByProduct.empty) {
-          const id = dupByProduct.docs[0].id;
+        const { data: dupRows } = await getServiceSupabase().from(this.TABLE_NAME)
+          .select("id")
+          .eq("productId", (designData as any).productId)
+          .limit(1);
+        if (dupRows && dupRows.length > 0) {
+          const id = dupRows[0].id;
           console.log("Design already exists by productId, returning existing ID:", id);
           return id;
         }
@@ -131,52 +115,47 @@ export class DesignService {
         const nameLower = (designData.name || "").trim().toLowerCase();
         const categoryLower = (designData.category || "").trim().toLowerCase();
         if (nameLower) {
-          const dupByName = await db.collection(this.COLLECTION_NAME)
-            .where("name_lower", "==", nameLower)
-            .where("category_lower", "==", categoryLower)
-            .limit(1)
-            .get();
-          if (!dupByName.empty) {
-            const id = dupByName.docs[0].id;
+          const { data: dupRows } = await getServiceSupabase().from(this.TABLE_NAME)
+            .select("id")
+            .eq("name_lower", nameLower)
+            .eq("category_lower", categoryLower)
+            .limit(1);
+          if (dupRows && dupRows.length > 0) {
+            const id = dupRows[0].id;
             console.log("Design already exists by name+category, returning existing ID:", id);
             return id;
           }
         }
       }
+      const id = crypto.randomUUID();
       const designDoc = {
+        id,
         ...designData,
         totalCost: this.calculateTotalCost(designData),
         sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
         createdAt: now,
         updatedAt: now,
-        // store normalized fields to enable fast duplicate lookups
         name_lower: (designData.name || "").trim().toLowerCase(),
         category_lower: (designData.category || "").trim().toLowerCase()
       };
 
-      const docRef = await db.collection(this.COLLECTION_NAME).add(designDoc);
-      console.log("Design created with ID:", docRef.id);
-      return docRef.id;
+      const { error } = await getServiceSupabase().from(this.TABLE_NAME).insert(designDoc);
+      if (error) throw error;
+      console.log("Design created with ID:", id);
+      return id;
     } catch (error) {
       console.error("Error creating design:", error);
       throw new Error("Failed to create design");
     }
   }
 
-  /**
-   * Update an existing design
-   */
   static async updateDesign(id: string, updates: Partial<Omit<Design, "id" | "createdAt" | "updatedAt">>): Promise<void> {
     try {
-      const docRef = db.collection(this.COLLECTION_NAME).doc(id);
-      
-      // Fetch existing design to prevent cost corruption on partial updates
       const existingDesign = await this.getDesign(id);
       if (!existingDesign) {
         throw new Error("Design not found");
       }
 
-      // Check if any cost-related fields are being updated
       const costFields: Array<keyof Design> = [
         'materialCost', 
         'laborCost', 
@@ -187,17 +166,17 @@ export class DesignService {
       
       const updateData: any = {
         ...updates,
-        updatedAt: new Date()
+        updatedAt: new Date().toISOString()
       };
 
-        if (shouldRecalculate) {
-          // Merge with existing data for comprehensive cost calculation
-          const mergedDesign = { ...existingDesign, ...updates };
-          updateData.totalCost = this.calculateTotalCost(mergedDesign);
+      if (shouldRecalculate) {
+        const mergedDesign = { ...existingDesign, ...updates };
+        updateData.totalCost = this.calculateTotalCost(mergedDesign);
         console.log(`Recalculated totalCost for design ${id}: ${formatCurrency(updateData.totalCost)}`);
-        }
+      }
 
-      await docRef.update(updateData);
+      const { error } = await getServiceSupabase().from(this.TABLE_NAME).update(updateData).eq("id", id);
+      if (error) throw error;
       console.log("Design updated successfully:", id);
     } catch (error) {
       console.error("Error updating design:", error);
@@ -205,13 +184,10 @@ export class DesignService {
     }
   }
 
-  /**
-   * Delete a design
-   */
   static async deleteDesign(id: string): Promise<void> {
     try {
-      const docRef = db.collection(this.COLLECTION_NAME).doc(id);
-      await docRef.delete();
+      const { error } = await getServiceSupabase().from(this.TABLE_NAME).delete().eq("id", id);
+      if (error) throw error;
       console.log("Design deleted:", id);
     } catch (error) {
       console.error("Error deleting design:", error);
@@ -219,13 +195,11 @@ export class DesignService {
     }
   }
 
-  /**
-   * Get design statistics
-   */
   static async getDesignStats(): Promise<DesignStats> {
     try {
-      const snapshot = await db.collection(this.COLLECTION_NAME).get();
-      const designs = snapshot.docs.map(doc => doc.data()) as Design[];
+      const { data: rows, error } = await getServiceSupabase().from(this.TABLE_NAME).select("*");
+      if (error) throw error;
+      const designs = (rows || []) as Design[];
 
       const activeDesigns = designs.filter(d => d.status === 'active');
 
@@ -239,7 +213,6 @@ export class DesignService {
         categoryBreakdown: {}
       };
 
-      // Calculate category breakdown
       designs.forEach(design => {
         stats.categoryBreakdown[design.category] = (stats.categoryBreakdown[design.category] || 0) + 1;
       });
@@ -251,46 +224,30 @@ export class DesignService {
     }
   }
 
-  /**
-   * Import designs from main website products collection
-   */
   static async importFromProducts(): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
     try {
       console.log("Starting import of designs from products collection...");
       
-      // Fetch active products from main website
-      const productsSnapshot = await db.collection(COLLECTIONS.PRODUCTS)
-        .where("isActive", "==", true)
-        .get();
-      const products = productsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as any));
+      const { data: products, error: prodErr } = await getServiceSupabase().from(TABLES.PRODUCTS)
+        .select("*")
+        .eq("isActive", true);
+      if (prodErr) throw prodErr;
 
-      console.log(`Found ${products.length} products to import`);
+      console.log(`Found ${products?.length || 0} products to import`);
 
-      // Pre-fetch ALL existing designs once for fast duplicate checking
       console.log("Fetching existing designs for duplicate check...");
-      const existingDesignsSnapshot = await db.collection(this.COLLECTION_NAME).get();
-      const existingDesigns = existingDesignsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ref: doc.ref,
-        ...doc.data()
-      } as any));
+      const { data: existingDesigns, error: existErr } = await getServiceSupabase().from(this.TABLE_NAME).select("*");
+      if (existErr) throw existErr;
 
-      console.log(`Found ${existingDesigns.length} existing designs`);
+      console.log(`Found ${existingDesigns?.length || 0} existing designs`);
 
-      // Build lookup maps for fast duplicate detection
       const byProductId = new Map<string, any>();
       const byNameCategory = new Map<string, any>();
       
-      existingDesigns.forEach((design: any) => {
-        // Map by productId (most reliable)
-        if ((design as any).productId) {
-          byProductId.set((design as any).productId, design);
+      (existingDesigns || []).forEach((design: any) => {
+        if (design.productId) {
+          byProductId.set(design.productId, design);
         }
-        
-        // Map by normalized name+category (handle both normalized fields and original fields)
         const nameLower = (design.name_lower || (design.name || "").trim().toLowerCase());
         const categoryLower = (design.category_lower || (design.category || "").trim().toLowerCase());
         const key = `${nameLower}|||${categoryLower}`;
@@ -299,14 +256,12 @@ export class DesignService {
         }
       });
 
-      const batch = db.batch();
       let imported = 0;
       let updated = 0;
       const errors: string[] = [];
 
-      for (const product of products) {
+      for (const product of (products || [])) {
         try {
-          // Convert product to design format
           const designData: Omit<Design, "id" | "createdAt" | "updatedAt"> = {
             name: product.name || "Unnamed Design",
             description: product.description || "",
@@ -314,46 +269,36 @@ export class DesignService {
             subcategory: product.subcategory || "",
             image: product.image || "",
             images: product.images || [],
-            
-            // Default cost configuration (to be updated manually)
             materialCost: product.basePrice ? product.basePrice * 0.15 : 150,
             laborCost: product.basePrice ? product.basePrice * 0.1 : 100,
             overheadCost: product.basePrice ? product.basePrice * 0.05 : 50,
-            totalCost: 0, // Will be calculated
-            
-            // Manufacturing details
-            manufacturingTime: 2, // Default 2 hours
+            totalCost: 0,
+            manufacturingTime: 2,
             complexity: 'medium',
             materials: [],
             processes: [],
-            
-            // Status
             status: 'active',
             createdBy: 'system-import',
             updatedBy: 'system-import',
-            
-            // Additional fields
             tags: product.tags || [],
             notes: `Imported from product: ${product.id}`,
             variants: []
           };
-          // include productId for exact mapping
           (designData as any).productId = product.id;
 
-          // Calculate total cost
           designData.totalCost = this.calculateTotalCost(designData);
+          const now = new Date().toISOString();
           const payload = {
             ...designData,
             totalCost: this.calculateTotalCost(designData),
             sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
             name_lower: (designData.name || "").trim().toLowerCase(),
             category_lower: (designData.category || "").trim().toLowerCase(),
-            createdAt: new Date(),
-            updatedAt: new Date()
+            createdAt: now,
+            updatedAt: now
           };
 
-          // Fast duplicate check using pre-built maps (no database queries in loop!)
-          let existingDesign = byProductId.get(product.id);
+          let existingDesign = byProductId.get(product.id as string);
           let duplicateReason = "";
           
           if (!existingDesign) {
@@ -367,35 +312,32 @@ export class DesignService {
           }
 
           if (existingDesign) {
-            // This is either an existing design from DB or a duplicate within the same import batch
-            if (existingDesign.ref) {
-              // Update existing design (merge to preserve manual cost edits)
-              batch.set(existingDesign.ref, payload, { merge: true });
-              updated++;
+            if (existingDesign.id) {
+              const { error: updErr } = await getServiceSupabase().from(this.TABLE_NAME)
+                .upsert({ id: existingDesign.id, ...payload }, { onConflict: "id" });
+              if (!updErr) updated++;
               if (duplicateReason && !duplicateReason.includes("productId")) {
-                // Only log if it's not a productId duplicate (those are expected from database)
                 console.log(`  ⚠️  Product "${product.name}" (${product.id}): ${duplicateReason} - updating existing design`);
               }
             }
           } else {
-            // Create new design
-            const designRef = db.collection(this.COLLECTION_NAME).doc();
-            batch.set(designRef, payload);
-            imported++;
-            
-            // Add to lookup maps for future checks in this batch (to prevent duplicates within same import)
-            byProductId.set(product.id, { id: designRef.id, ref: designRef, ...payload } as any);
-            const key = `${payload.name_lower}|||${payload.category_lower}`;
-            byNameCategory.set(key, { id: designRef.id, ref: designRef, ...payload } as any);
+            const newId = crypto.randomUUID();
+            const { error: insErr } = await getServiceSupabase().from(this.TABLE_NAME)
+              .insert({ id: newId, ...payload });
+            if (!insErr) {
+              imported++;
+              byProductId.set(product.id as string, { id: newId, ...payload } as any);
+              const key = `${payload.name_lower}|||${payload.category_lower}`;
+              byNameCategory.set(key, { id: newId, ...payload } as any);
+            }
           }
         } catch (error) {
-          console.error(`Error importing product ${product.id}:`, error);
-          errors.push(`Product ${product.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(`Error importing product ${(product as any).id}:`, error);
+          errors.push(`Product ${(product as any).id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
 
-      await batch.commit();
-      const skipped = products.length - imported - updated - errors.length;
+      const skipped = (products || []).length - imported - updated - errors.length;
       console.log(`Successfully imported ${imported} new designs, updated ${updated} existing designs`);
       if (skipped > 0) {
         console.log(`⚠️  ${skipped} products skipped (likely duplicates in source or missing data)`);
@@ -403,7 +345,7 @@ export class DesignService {
       if (errors.length > 0) {
         console.log(`❌ ${errors.length} errors encountered`);
       }
-      console.log(`📊 Summary: ${imported + updated} total designs processed out of ${products.length} products`);
+      console.log(`📊 Summary: ${imported + updated} total designs processed out of ${products?.length || 0} products`);
 
       return { imported, updated, skipped, errors };
     } catch (error) {
@@ -412,35 +354,26 @@ export class DesignService {
     }
   }
 
-  /**
-   * Calculate total cost for a design
-   */
   private static calculateTotalCost(design: Partial<Design>): number {
     const materialCost = design.materialCost || 0;
     const laborCostPerHour = design.laborCost || 0;
     const manufacturingTime = design.manufacturingTime || 0;
     const overheadCost = design.overheadCost || 0;
-    
-    // Labor cost = cost per hour × manufacturing time
     const totalLaborCost = laborCostPerHour * manufacturingTime;
-    
     return materialCost + totalLaborCost + overheadCost;
   }
 
-  /**
-   * Migrate a design to use per-size costs.
-   * Auto-populates sizeCosts from current single values + size multipliers.
-   */
   static async migrateToSizeCosts(designId: string): Promise<boolean> {
     try {
       const design = await this.getDesign(designId);
       if (!design) return false;
 
       const sizeCosts = SizeCostService.generateSizeCosts(design);
-      await db.collection(this.COLLECTION_NAME).doc(designId).update({
+      const { error } = await getServiceSupabase().from(this.TABLE_NAME).update({
         sizeCosts,
-        updatedAt: new Date()
-      });
+        updatedAt: new Date().toISOString()
+      }).eq("id", designId);
+      if (error) throw error;
       console.log(`Migrated design ${designId} to per-size costs`);
       return true;
     } catch (error) {
@@ -449,9 +382,6 @@ export class DesignService {
     }
   }
 
-  /**
-   * Update a single size cost for a design
-   */
   static async updateSizeCost(
     designId: string,
     size: string,
@@ -479,10 +409,11 @@ export class DesignService {
       updated.totalCost = updated.materialCost + (updated.laborCostPerHour * updated.manufacturingTime) + updated.overheadCost;
 
       const sizeCosts = { ...design.sizeCosts, [size]: updated };
-      await db.collection(this.COLLECTION_NAME).doc(designId).update({
+      const { error } = await getServiceSupabase().from(this.TABLE_NAME).update({
         sizeCosts,
-        updatedAt: new Date()
-      });
+        updatedAt: new Date().toISOString()
+      }).eq("id", designId);
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error(`Error updating size cost for ${size}:`, error);
@@ -490,20 +421,17 @@ export class DesignService {
     }
   }
 
-  /**
-   * Bulk migrate all designs that don't have sizeCosts yet
-   */
   static async migrateAllToSizeCosts(): Promise<{ migrated: number; skipped: number }> {
-    const snapshot = await db.collection(this.COLLECTION_NAME).get();
+    const { data: rows, error } = await getServiceSupabase().from(this.TABLE_NAME).select("*");
+    if (error) throw error;
     let migrated = 0;
     let skipped = 0;
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      if (!data.sizeCosts) {
-        const design = { id: doc.id, ...data } as Design;
+    for (const row of (rows || [])) {
+      if (!row.sizeCosts) {
+        const design = { ...row } as Design;
         const sizeCosts = SizeCostService.generateSizeCosts(design);
-        await doc.ref.update({ sizeCosts, updatedAt: new Date() });
+        await getServiceSupabase().from(this.TABLE_NAME).update({ sizeCosts, updatedAt: new Date().toISOString() }).eq("id", row.id);
         migrated++;
       } else {
         skipped++;
@@ -513,22 +441,16 @@ export class DesignService {
     return { migrated, skipped };
   }
 
-
-  /**
-   * Get categories for filtering
-   */
   static async getCategories(): Promise<string[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION_NAME).get();
+      const { data: rows, error } = await getServiceSupabase().from(this.TABLE_NAME).select("category");
+      if (error) throw error;
       const categories = new Set<string>();
-      
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.category) {
-          categories.add(data.category);
+      (rows || []).forEach((row: any) => {
+        if (row.category) {
+          categories.add(row.category);
         }
       });
-
       return Array.from(categories).sort();
     } catch (error) {
       console.error("Error fetching categories:", error);
@@ -536,24 +458,19 @@ export class DesignService {
     }
   }
 
-  /**
-   * Get subcategories for a given category
-   */
   static async getSubcategories(category: string): Promise<string[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION_NAME)
-        .where("category", "==", category)
-        .get();
+      const { data: rows, error } = await getServiceSupabase().from(this.TABLE_NAME)
+        .select("subcategory")
+        .eq("category", category);
+      if (error) throw error;
       
       const subcategories = new Set<string>();
-      
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.subcategory) {
-          subcategories.add(data.subcategory);
+      (rows || []).forEach((row: any) => {
+        if (row.subcategory) {
+          subcategories.add(row.subcategory);
         }
       });
-
       return Array.from(subcategories).sort();
     } catch (error) {
       console.error("Error fetching subcategories:", error);
@@ -561,9 +478,6 @@ export class DesignService {
     }
   }
 
-  /**
-   * Get material requirements for a design (for work order creation)
-   */
   static async getMaterialRequirements(designId: string, quantity: number = 1): Promise<MaterialRequirement[]> {
     try {
       const design = await this.getDesign(designId);
@@ -575,16 +489,15 @@ export class DesignService {
 
       for (const material of design.materials) {
         if (material.inventoryItemId) {
-          // Get current inventory data
-          const inventoryDoc = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
-            .doc(material.inventoryItemId)
-            .get();
+          const { data: inventoryData, error } = await getServiceSupabase().from(TABLES.INVENTORY_ITEMS)
+            .select("*")
+            .eq("id", material.inventoryItemId)
+            .single();
 
-          if (inventoryDoc.exists) {
-            const inventoryData = inventoryDoc.data();
+          if (!error && inventoryData) {
             const requiredQuantity = material.quantityPerUnit * quantity;
-            const availableQuantity = inventoryData?.quantity_on_hand || 0;
-            const costPerUnit = inventoryData?.cost_per_unit || material.costPerUnit;
+            const availableQuantity = inventoryData.quantity_on_hand || 0;
+            const costPerUnit = inventoryData.cost_per_unit || material.costPerUnit;
 
             materialRequirements.push({
               inventoryItemId: material.inventoryItemId,
@@ -608,9 +521,6 @@ export class DesignService {
     }
   }
 
-  /**
-   * Check if materials are available for a design
-   */
   static async checkMaterialAvailability(designId: string, quantity: number = 1): Promise<{
     isAvailable: boolean;
     unavailableMaterials: MaterialRequirement[];

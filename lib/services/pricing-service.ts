@@ -1,22 +1,16 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 
-/**
- * Pricing Analysis Result
- */
 export interface PricingAnalysis {
   totalCost: number
-  suggestedPrice15: number   // Cost + 15%
-  suggestedPrice25: number   // Cost + 25%
-  suggestedPrice35: number   // Cost + 35%
+  suggestedPrice15: number
+  suggestedPrice25: number
+  suggestedPrice35: number
   contributionMargin: number
   contributionMarginRatio: number
   breakEvenUnits: number
   breakEvenRevenue: number
 }
 
-/**
- * Special Order Decision Result
- */
 export interface SpecialOrderDecision {
   accept: boolean
   reason: string
@@ -30,9 +24,6 @@ export interface SpecialOrderDecision {
   idleCapacity: boolean
 }
 
-/**
- * Make vs Buy Decision
- */
 export interface MakeBuyDecision {
   decision: "make" | "buy"
   makeCost: number
@@ -41,17 +32,8 @@ export interface MakeBuyDecision {
   reasoning: string
 }
 
-/**
- * Pricing & Contribution Margin Service
- *
- * Cost-plus pricing, special order decisions, break-even analysis,
- * make-vs-buy analysis for MTO/ETO manufacturing.
- */
 export class PricingService {
 
-  /**
-   * Cost-plus pricing analysis
-   */
   static costPlusPricing(
     directMaterials: number,
     directLabor: number,
@@ -75,13 +57,6 @@ export class PricingService {
     }
   }
 
-  /**
-   * Contribution margin analysis
-   *
-   * CM = Revenue − Variable Costs
-   * CM Ratio = CM ÷ Revenue
-   * Break-even ($) = Fixed Costs ÷ CM Ratio
-   */
   static contributionMarginAnalysis(
     sellingPricePerUnit: number,
     variableCostPerUnit: number,
@@ -117,13 +92,6 @@ export class PricingService {
     }
   }
 
-  /**
-   * Special order decision framework
-   *
-   * Rule:
-   *  - Idle capacity exists: Accept if Price > Variable Cost per unit
-   *  - Capacity constrained: Accept if CM > opportunity cost of displaced orders
-   */
   static specialOrderDecision(
     orderUnits: number,
     offeredPricePerUnit: number,
@@ -135,7 +103,6 @@ export class PricingService {
     const contributionPerUnit = offeredPricePerUnit - variableCostPerUnit
 
     if (orderUnits <= idleCapacity) {
-      // Idle capacity – only relevant costs matter
       const incrementalRevenue = orderUnits * offeredPricePerUnit
       const incrementalCost = orderUnits * variableCostPerUnit
       const incrementalProfit = incrementalRevenue - incrementalCost
@@ -156,7 +123,6 @@ export class PricingService {
       }
     }
 
-    // Capacity constrained – consider opportunity cost of displaced regular sales
     const displacedUnits = orderUnits - idleCapacity
     const opportunityCost = displacedUnits * regularCMPerUnit
     const incrementalRevenue = orderUnits * offeredPricePerUnit
@@ -179,11 +145,6 @@ export class PricingService {
     }
   }
 
-  /**
-   * Make vs. Buy decision
-   *
-   * Compare relevant costs only (ignore sunk costs and unavoidable fixed costs)
-   */
   static makeVsBuy(
     makeDM: number,
     makeDL: number,
@@ -217,10 +178,6 @@ export class PricingService {
     }
   }
 
-  /**
-   * Minimum acceptable price (special order floor)
-   * = Variable Cost + Opportunity Cost per unit
-   */
   static minimumAcceptablePrice(
     variableCostPerUnit: number,
     opportunityCostPerUnit: number = 0
@@ -228,12 +185,6 @@ export class PricingService {
     return Math.round((variableCostPerUnit + opportunityCostPerUnit) * 100) / 100
   }
 
-  /**
-   * Throughput accounting per constrained resource
-   *
-   * Throughput = Price − Direct Materials (only truly variable cost in TOC)
-   * Throughput per Constraint Hour = Throughput ÷ Hours on Bottleneck
-   */
   static throughputPerConstraint(
     pricePerUnit: number,
     directMaterialCostPerUnit: number,
@@ -247,9 +198,6 @@ export class PricingService {
     return { throughput, throughputPerHour }
   }
 
-  /**
-   * Calculate job profitability from work order
-   */
   static async getJobProfitability(workOrderId: string): Promise<{
     revenue: number
     materials: number
@@ -262,17 +210,15 @@ export class PricingService {
     cmRatio: number
   }> {
     try {
-      const woDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-      if (!woDoc.exists) throw new Error("Work order not found")
+      const { data: wo, error } = await getServiceSupabase().from(TABLES.WORK_ORDERS).select("*").eq("id", workOrderId).single()
+      if (error || !wo) throw new Error("Work order not found")
 
-      const wo = woDoc.data()
-      const revenue = wo?.total_amount || 0
-      const labor = wo?.labor_cost || 0
-      const overhead = wo?.overhead_cost || 0
+      const revenue = wo.total_amount || 0
+      const labor = wo.labor_cost || 0
+      const overhead = wo.overhead_cost || 0
 
-      // Calculate material cost from issued materials
-      const materialsIssued = wo?.materials_issued || []
-      const rawMaterials = wo?.raw_materials_used || []
+      const materialsIssued = wo.materials_issued || []
+      const rawMaterials = wo.raw_materials_used || []
       const allMats = materialsIssued.length > 0 ? materialsIssued : rawMaterials
       const materials = allMats.reduce(
         (sum: number, m: any) => sum + (m.totalCost || (m.qty * (m.unitCost || m.cost || 0)) || 0),
@@ -282,7 +228,7 @@ export class PricingService {
       const totalCost = materials + labor + overhead
       const grossProfit = revenue - totalCost
       const grossMarginPercent = revenue > 0 ? (grossProfit / revenue) * 100 : 0
-      const contributionMargin = revenue - materials // Direct materials are variable in MTO
+      const contributionMargin = revenue - materials
       const cmRatio = revenue > 0 ? (contributionMargin / revenue) * 100 : 0
 
       return {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { getServiceClient, TABLES } from "@/lib/supabase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
@@ -13,33 +13,37 @@ export async function GET(request: Request) {
 
     console.log(`Fetching unified sales orders (limit: ${limit}, cursor: ${cursor})`)
 
-    // Use unified acc_sales_orders collection for consistent pagination
-    let query = db.collection(COLLECTIONS.SALES_ORDERS)
-      .orderBy("created_at", "desc")
+    let query = getServiceClient()
+      .from(TABLES.SALES_ORDERS)
+      .select("*")
+      .order("created_at", { ascending: false })
       .limit(limit)
     
     if (cursor) {
-      const lastDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(cursor).get()
-      if (lastDoc.exists) {
-        query = query.startAfter(lastDoc)
+      const { data: cursorDoc } = await getServiceClient()
+        .from(TABLES.SALES_ORDERS)
+        .select("created_at")
+        .eq("id", cursor)
+        .single()
+      
+      if (cursorDoc) {
+        query = query.lt("created_at", cursorDoc.created_at)
       }
     }
 
-    const snapshot = await query.get()
-    const salesOrders = snapshot.docs.map(doc => {
-      const data = doc.data()
-      return {
-        id: doc.id,
-        ...data,
-        // Ensure standard date format for UI
-        created_at: (data.created_at as any)?.toDate?.() || data.created_at || new Date(),
-        updated_at: (data.updated_at as any)?.toDate?.() || data.updated_at || new Date()
-      }
-    })
+    const { data, error } = await query
 
-    const lastVisible = snapshot.docs[snapshot.docs.length - 1]
+    if (error) throw error
+
+    const salesOrders = (data || []).map((item: any) => ({
+      ...item,
+      created_at: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
+      updated_at: item.updated_at ? new Date(item.updated_at).toISOString() : new Date().toISOString()
+    }))
+
+    const lastVisible = (data || []).length > 0 ? data![data!.length - 1] : null
     const nextCursor = lastVisible ? lastVisible.id : null
-    const hasMore = snapshot.docs.length === limit
+    const hasMore = (data || []).length === limit
 
     return NextResponse.json({
       data: salesOrders,
@@ -78,15 +82,12 @@ export async function POST(request: Request) {
   try {
     const orderData = await request.json()
 
-    // Create manual order with same structure as web orders
-    const now = new Date()
+    const now = new Date().toISOString()
     const manualOrder = {
-      // Basic order info
       carrier: null,
       createdAt: now,
       fragranceCodes: [],
 
-      // Items array (same structure as web orders)
       items: orderData.items?.map((item: any) => ({
         adjustedPrice: item.total_price || item.unit_price,
         basePrice: item.unit_price,
@@ -102,7 +103,6 @@ export async function POST(request: Request) {
         type: "product"
       })) || [],
 
-      // Payment and shipping
       paymentMethod: orderData.payment_method || "manual",
       shippingAddress: {
         city: orderData.shipping_address?.city || "",
@@ -114,23 +114,25 @@ export async function POST(request: Request) {
       },
       shippingMethod: null,
 
-      // Status and tracking
       status: orderData.status || "pending",
       total: orderData.total || 0,
       trackingNumber: null,
       updatedAt: now,
       userId: orderData.customer_email || "manual_user",
 
-      // Mark as manual order
       orderSource: "manual"
     }
 
-    // Create in manual_orders collection
-    const docRef = await db.collection(COLLECTIONS.MANUAL_ORDERS).add(manualOrder)
+    const { data: insertedOrders, error: insertError } = await getServiceClient()
+      .from(TABLES.MANUAL_ORDERS)
+      .insert(manualOrder)
+      .select()
 
-    // Create accounting records for the manual order
+    if (insertError) throw insertError
+
+    const docRef = insertedOrders[0]
+
     try {
-      // Create sales order record in accounting system
       const salesOrderId = docRef.id
       const accountingSalesOrder = {
         id: salesOrderId,
@@ -149,13 +151,13 @@ export async function POST(request: Request) {
         order_source: "manual"
       }
 
-      // Save to accounting sales orders collection
-      await db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId).set(accountingSalesOrder)
+      await getServiceClient()
+        .from(TABLES.SALES_ORDERS)
+        .upsert(accountingSalesOrder, { onConflict: "id" })
 
       console.log(`Created accounting sales order ${salesOrderId}`)
     } catch (accountingError) {
       console.error("Error creating accounting records:", accountingError)
-      // Don't fail the main request if accounting fails
     }
 
     return NextResponse.json({ id: docRef.id, ...manualOrder })
@@ -181,29 +183,37 @@ export async function PUT(request: Request) {
       )
     }
 
-    // Update manual order status in Firestore
-    await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).update({
-      status: status,
-      updatedAt: new Date()
-    })
+    await getServiceClient()
+      .from(TABLES.MANUAL_ORDERS)
+      .update({
+        status: status,
+        updatedAt: new Date().toISOString()
+      })
+      .eq("id", orderId)
 
-    // If starting production, create a work order
     if (status === "producing") {
       try {
-        // Get the order details - check both manual and web orders
         let orderData = null
         let orderSource = "manual"
 
-        // First try manual orders
-        const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).get()
-        if (manualOrderDoc.exists) {
-          orderData = manualOrderDoc.data()
+        const { data: manualOrderDoc } = await getServiceClient()
+          .from(TABLES.MANUAL_ORDERS)
+          .select("*")
+          .eq("id", orderId)
+          .single()
+
+        if (manualOrderDoc) {
+          orderData = manualOrderDoc
           orderSource = "manual"
         } else {
-          // Try web orders
-          const webOrderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
-          if (webOrderDoc.exists) {
-            orderData = webOrderDoc.data()
+          const { data: webOrderDoc } = await getServiceClient()
+            .from(TABLES.ORDERS)
+            .select("*")
+            .eq("id", orderId)
+            .single()
+
+          if (webOrderDoc) {
+            orderData = webOrderDoc
             orderSource = "web"
           }
         }
@@ -211,7 +221,6 @@ export async function PUT(request: Request) {
         if (orderData) {
           console.log(`Creating work order for ${orderSource} order ${orderId} with automatic cost calculation...`);
 
-          // Create work order with automatic cost calculation from designs
           const workOrderResult = await OrderItemDesignService.createWorkOrderWithAutoCosts(
             orderId,
             orderData.items || [],
@@ -226,22 +235,23 @@ export async function PUT(request: Request) {
           if (workOrderResult.success) {
             console.log(`✅ Created work order ${workOrderResult.workOrderId} with auto-calculated cost EGP ${workOrderResult.totalEstimatedCost}`);
 
-            // Update accounting sales order status to "producing" (only for manual orders)
             if (orderSource === "manual") {
-              await db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId).update({
-                status: "producing",
-                updated_at: new Date()
-              });
+              await getServiceClient()
+                .from(TABLES.SALES_ORDERS)
+                .update({
+                  status: "producing",
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", orderId);
             }
           } else {
             console.error(`❌ Failed to create work order: ${workOrderResult.error}`);
 
-            // Fallback: Create basic work order without auto costs
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
-              created_at: new Date(),
-              updated_at: new Date(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
               completionPercentage: 0,
               notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost calculation failed)`,
               items: orderData.items || [],
@@ -256,13 +266,18 @@ export async function PUT(request: Request) {
               materials_issued: []
             };
 
-            const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(basicWorkOrder);
-            console.log(`Created basic work order ${workOrderRef.id} as fallback`);
+            const { data: insertedWO } = await getServiceClient()
+              .from(TABLES.WORK_ORDERS)
+              .insert(basicWorkOrder)
+              .select()
+
+            if (insertedWO) {
+              console.log(`Created basic work order ${insertedWO[0].id} as fallback`);
+            }
           }
         }
       } catch (workOrderError) {
         console.error("Error creating work order:", workOrderError)
-        // Don't fail the main request if work order creation fails
       }
     }
 
@@ -275,4 +290,3 @@ export async function PUT(request: Request) {
     )
   }
 }
-

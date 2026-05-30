@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { timingSafeEqual } from "crypto"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 import { getCORSHeaders, handlePreflight } from "@/lib/cors"
 
@@ -44,43 +44,34 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔄 Webhook: Processing return ${returnId} -> ${status}`)
 
-    // Get the return document from Firestore
-    const returnRef = db.collection(COLLECTIONS.RETURNS).doc(returnId)
-    const returnSnapshot = await returnRef.get()
+    const serviceDb = getServiceClient()
 
-    if (!returnSnapshot.exists) {
+    const { data: returnData } = await serviceDb
+      .from(TABLES.RETURNS)
+      .select("*")
+      .eq("id", returnId)
+      .single()
+
+    if (!returnData) {
       return NextResponse.json(
         { error: `Return ${returnId} not found` },
         { status: 404 }
       )
     }
 
-    const returnData = returnSnapshot.data()
-    if (!returnData) {
-      return NextResponse.json({ error: "No data found for return" }, { status: 404 })
-    }
-
     const now = new Date()
 
-    // 1. Update the return status in Firestore (if not already updated)
+    // 1. Update the return status (if not already updated)
     if (returnData.status !== status) {
-      await returnRef.update({
+      await serviceDb.from(TABLES.RETURNS).update({
         status: status,
         updated_at: now
-      })
+      }).eq("id", returnId)
     }
 
     // 2. Trigger accounting actions based on status
     if (status === "completed") {
       console.log(`📝 Return ${returnId} completed. Creating credit memo and adjusting inventory...`)
-      
-      // Use internal processReturn logic (which creates journal entry and adjusts inventory)
-      // This is private, so we might need to expose a public wrapper or replicate logic
-      // For now, let's call EnhancedAccountingService logic assuming we've added the FIX-003
-      
-      // Since processReturn is private, we will replicate the essential part or expose it.
-      // Actually, EnhancedAccountingService.processReturn is private in the viewed version.
-      // I'll make it public or create a public wrapper.
       
       const result = await EnhancedAccountingService.processReturn(returnData)
 

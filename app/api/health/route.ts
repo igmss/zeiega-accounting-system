@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 
 export async function GET() {
     let dbStatus = "ok"
 
     try {
-        await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).limit(1).get()
+        const { error } = await getServiceClient()
+            .from(TABLES.CHART_OF_ACCOUNTS)
+            .select("id")
+            .limit(1)
+
+        if (error) {
+            dbStatus = "degraded"
+        }
     } catch {
         dbStatus = "degraded"
     }

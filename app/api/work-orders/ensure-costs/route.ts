@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, COLLECTIONS } from "@/lib/firebase";
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
 import { requirePermission } from "@/lib/auth";
 
@@ -14,12 +14,14 @@ export async function POST(request: NextRequest) {
 
     console.log("🔄 Ensuring all work orders have automatic cost calculation...");
 
-    // Get all work orders that don't have estimated costs
-    const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS).get();
+    const serviceDb = getServiceClient()
 
-    const workOrdersToUpdate = workOrdersSnapshot.docs.filter(doc => {
-      const data = doc.data();
-      return !data.estimated_cost || data.estimated_cost === 0;
+    const { data: workOrders } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*");
+
+    const workOrdersToUpdate = (workOrders || []).filter((doc: any) => {
+      return !doc.estimated_cost || doc.estimated_cost === 0;
     });
 
     console.log(`Found ${workOrdersToUpdate.length} work orders without costs`);
@@ -30,25 +32,27 @@ export async function POST(request: NextRequest) {
       errors: [] as string[]
     };
 
-    for (const workOrderDoc of workOrdersToUpdate) {
-      const workOrder = workOrderDoc.data();
-      const workOrderId = workOrderDoc.id;
+    for (const workOrder of workOrdersToUpdate) {
+      const workOrderId = workOrder.id;
       const salesOrderId = workOrder.sales_order_id;
 
       console.log(`Updating work order ${workOrderId} for sales order ${salesOrderId}...`);
 
       try {
-        // Get the order data
-        const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(salesOrderId).get();
-        if (!orderDoc.exists) {
+        const { data: orderData } = await serviceDb
+          .from(TABLES.ORDERS)
+          .select("*")
+          .eq("id", salesOrderId)
+          .single();
+
+        if (!orderData) {
           console.warn(`Order ${salesOrderId} not found`);
           results.failed++;
           results.errors.push(`Order ${salesOrderId} not found`);
           continue;
         }
 
-        const orderData = orderDoc.data();
-        const orderItems = orderData?.items || [];
+        const orderItems = orderData.items || [];
 
         if (orderItems.length === 0) {
           console.warn(`No items found for order ${salesOrderId}`);
@@ -57,7 +61,6 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Calculate costs from designs
         const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
 
         if (!costCalculation.success) {
@@ -67,17 +70,16 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Update the work order with calculated costs
         const updateData = {
           estimated_cost: costCalculation.totalEstimatedCost,
-          labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
-          overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
+          labor_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + item.laborCost, 0),
+          overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + item.overheadCost, 0),
           item_costs: costCalculation.itemCosts,
           notes: `Auto-calculated costs from designs (EGP ${costCalculation.totalEstimatedCost})`,
           updated_at: new Date()
         };
 
-        await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update(updateData);
+        await serviceDb.from(TABLES.WORK_ORDERS).update(updateData).eq("id", workOrderId);
 
         console.log(`✅ Updated work order ${workOrderId} with cost EGP ${costCalculation.totalEstimatedCost}`);
         results.updated++;

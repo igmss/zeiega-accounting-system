@@ -245,7 +245,7 @@ export interface RetentionSchedule {
   expectedReleaseDate?: Date
   actualReleaseDate?: Date
   releaseJournalEntryId?: string
-  created_at: Date
+  created_at: string
 }
 
 /**
@@ -260,7 +260,7 @@ export interface BudgetLine {
   accountName: string
   budgetedAmount: number      // EGP
   notes?: string
-  created_at: Date
+  created_at: string
   created_by: string
-  updated_at?: Date
+  updated_at?: string
 }

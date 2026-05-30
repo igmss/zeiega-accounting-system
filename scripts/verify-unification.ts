@@ -1,5 +1,5 @@
 
-import { db, COLLECTIONS } from "../lib/firebase"
+import { supabase, TABLES, getServiceSupabase } from "../lib/supabase"
 import { FinancialStatementsService } from "../lib/services/financial-statements-service"
 
 async function verify() {
@@ -8,19 +8,22 @@ async function verify() {
   const testAccountCode = "1101" // Cash on Hand
   
   // 1. Get initial states
-  const accountDoc = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).where("code", "==", testAccountCode).get()
-  const initialDocBalance = accountDoc.docs[0].data().balance || 0
+  const { data: accountData } = await getServiceSupabase()
+    .from(TABLES.CHART_OF_ACCOUNTS)
+    .select("*")
+    .eq("code", testAccountCode)
+  const initialDocBalance = (accountData && accountData[0] && accountData[0].balance) || 0
   const initialLiveBalance = await FinancialStatementsService["getAccountBalance"](testAccountCode)
 
   console.log(`Initial Doc Balance: ${initialDocBalance}`)
   console.log(`Initial Live Balance: ${initialLiveBalance}`)
 
-  // 2. Create a dummy journal entry (direct Firestore write)
+  // 2. Create a dummy journal entry (direct Supabase write)
   const entryId = `TEST-VERIFY-${Date.now()}`
   const amount = 100
   const journalEntry = {
     id: entryId,
-    date: new Date(),
+    date: new Date().toISOString(),
     description: "Verification Test Entry",
     type: "TEST",
     entries: [
@@ -40,16 +43,21 @@ async function verify() {
     account_ids: [testAccountCode, "3001"],
     total_debits: amount,
     total_credits: amount,
-    created_at: new Date(),
+    created_at: new Date().toISOString(),
     status: "posted"
   }
 
   console.log(`Creating test journal entry ${entryId} for ${amount}...`)
-  await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+  await getServiceSupabase()
+    .from(TABLES.JOURNAL_ENTRIES)
+    .upsert(journalEntry, { onConflict: "id" })
 
   // 3. Get final states
-  const finalAccountDoc = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).where("code", "==", testAccountCode).get()
-  const finalDocBalance = finalAccountDoc.docs[0].data().balance || 0
+  const { data: finalAccountData } = await getServiceSupabase()
+    .from(TABLES.CHART_OF_ACCOUNTS)
+    .select("*")
+    .eq("code", testAccountCode)
+  const finalDocBalance = (finalAccountData && finalAccountData[0] && finalAccountData[0].balance) || 0
   const finalLiveBalance = await FinancialStatementsService["getAccountBalance"](testAccountCode)
 
   console.log(`Final Doc Balance: ${finalDocBalance}`)
@@ -69,7 +77,10 @@ async function verify() {
 
   // Cleanup
   console.log("Cleaning up test entry...")
-  await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).delete()
+  await getServiceSupabase()
+    .from(TABLES.JOURNAL_ENTRIES)
+    .delete()
+    .eq("id", entryId)
 }
 
 verify().catch(console.error)

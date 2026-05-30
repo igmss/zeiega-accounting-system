@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requireAuth } from "@/lib/auth"
 
 export async function GET() {
@@ -7,15 +7,17 @@ export async function GET() {
     const auth = await requireAuth()
     if (!auth.authenticated) return auth.response
 
-    const movementsSnapshot = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).get()
-    const movements = movementsSnapshot.docs.map(doc => {
-      const data = doc.data()
+    const { data: movementsData, error } = await getServiceClient()
+      .from(TABLES.INVENTORY_MOVEMENTS)
+      .select("*")
+
+    if (error) throw error
+
+    const movements = (movementsData || []).map((data: Record<string, any>) => {
       return {
-        id: doc.id,
+        id: data.id,
         ...data,
-        // Normalize dates: convert Firestore Timestamps to ISO strings
-        created_at: data.created_at?.toDate?.()?.toISOString() || data.created_at || null,
-        // Normalize field name aliases
+        created_at: data.created_at || null,
         type: data.type || data.movement_type || "unknown",
         qty: data.qty ?? data.quantity ?? 0,
         related_doc: data.related_doc || data.reference || null,
@@ -23,7 +25,7 @@ export async function GET() {
         item_id: data.item_id || data.sku || null,
       }
     })
-    
+
     return NextResponse.json(movements)
   } catch (error) {
     console.error("Error fetching inventory movements:", error)
@@ -40,18 +42,23 @@ export async function POST(request: Request) {
     if (!auth.authenticated) return auth.response
 
     const movementData = await request.json()
-    
+
     // Add timestamps
-    const now = new Date()
+    const now = new Date().toISOString()
     const movement = {
       ...movementData,
       createdAt: now,
       created_at: now,
     }
-    
-    const docRef = await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).add(movement)
-    
-    return NextResponse.json({ id: docRef.id, ...movement })
+
+    const { data: created, error } = await getServiceClient()
+      .from(TABLES.INVENTORY_MOVEMENTS)
+      .insert(movement)
+      .select()
+
+    if (error || !created || created.length === 0) throw error || new Error("Failed to create movement")
+
+    return NextResponse.json(created[0])
   } catch (error) {
     console.error("Error creating inventory movement:", error)
     return NextResponse.json(

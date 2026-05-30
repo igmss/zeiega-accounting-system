@@ -1,13 +1,10 @@
-import { db, COLLECTIONS } from "../firebase";
+import { supabase, TABLES, getServiceSupabase } from "../supabase";
 import { DesignService } from "./design-service";
 import { SizeCostService } from "./size-cost-service";
 import { BOMService } from "./bom-service";
 import { formatCurrency } from "@/lib/utils"
 
 export class OrderItemDesignService {
-  /**
-   * Map order items to designs and calculate total costs
-   */
   static async calculateOrderCostsFromDesigns(orderItems: any[]): Promise<{
     success: boolean;
     totalEstimatedCost: number;
@@ -25,30 +22,25 @@ export class OrderItemDesignService {
       for (const item of orderItems) {
         console.log(`Processing item: ${item.name} (${item.productId})`);
         
-        // Try to find design by product ID or name
         const design = await this.findDesignForItem(item);
         
         if (design) {
           console.log(`Found design: ${design.name} for item: ${item.name}`);
           
           const quantity = item.quantity || 1;
-          const size = item.size || 'M'; // Default size if not specified
+          const size = item.size || 'M';
           
-          // Get actual material requirements and calculate real material cost from current inventory prices
           let actualMaterialCost = 0;
           try {
-            // Check if there's an active BOM for this design (BOMs include waste factors)
             const activeBOM = await BOMService.getActiveBOMForDesign(design.id);
             
             if (activeBOM) {
               console.log(`Using active BOM ${activeBOM.id} for design ${design.name} (includes waste factors)`);
               const bomRequirements = await BOMService.calculateMaterialRequirements(activeBOM.id, quantity);
               if (bomRequirements.success && bomRequirements.requirements) {
-                // Sum the total_cost which includes quantity_with_waste
                 actualMaterialCost = bomRequirements.requirements.reduce((sum, req) => sum + req.total_cost, 0);
               }
             } else {
-              // Fallback to simple material requirements if no active BOM
               const materialRequirements = await DesignService.getMaterialRequirements(design.id, quantity);
               actualMaterialCost = materialRequirements.reduce((sum, req) => sum + req.totalCost, 0);
             }
@@ -58,26 +50,19 @@ export class OrderItemDesignService {
             console.warn(`Failed to get material requirements for design ${design.id}, using stored materialCost fallback:`, error);
           }
           
-          // Calculate size-specific costs
           const sizeSpecificCosts = SizeCostService.calculateSizeSpecificCosts(
             design, 
             size, 
             quantity
           );
           
-          // Use actual material cost from requirements if available, otherwise use size-specific calculation
           let finalMaterialCost = sizeSpecificCosts.materialCost;
           let finalEstimatedCost = sizeSpecificCosts.totalCost;
           
           if (actualMaterialCost > 0) {
-            // Use actual material cost from current inventory directly
-            // No size multiplier is applied to actual inventory costs as per requirements
             finalMaterialCost = actualMaterialCost;
-            
-            // Recalculate total with actual material cost + size-specific labor/overhead
             finalEstimatedCost = finalMaterialCost + sizeSpecificCosts.laborCost + sizeSpecificCosts.overheadCost;
-            
-                console.log(`Using actual inventory material cost ${formatCurrency(finalMaterialCost)} instead of size-multiplied estimate ${formatCurrency(sizeSpecificCosts.materialCost)}`);
+            console.log(`Using actual inventory material cost ${formatCurrency(finalMaterialCost)} instead of size-multiplied estimate ${formatCurrency(sizeSpecificCosts.materialCost)}`);
           }
           
           itemCosts.push({
@@ -102,7 +87,6 @@ export class OrderItemDesignService {
         } else {
           console.warn(`No design found for item: ${item.name} (${item.productId})`);
           
-          // Fallback to 0 if no design found - don't guess costs silently
           const quantity = item.quantity || 1;
           const defaultCost = 0;
           
@@ -145,9 +129,6 @@ export class OrderItemDesignService {
     }
   }
 
-  /**
-   * Calculate costs for multiple items of the same design with different sizes
-   */
   static async calculateMultiSizeDesignCosts(
     designId: string,
     sizeQuantities: Array<{ size: string; quantity: number }>
@@ -215,24 +196,18 @@ export class OrderItemDesignService {
     }
   }
 
-  /**
-   * Find design for an order item
-   */
   private static async findDesignForItem(item: any): Promise<any | null> {
     try {
-      // Method 1: Try to find by productId
       if (item.productId) {
         const designByProductId = await this.findDesignByProductId(item.productId);
         if (designByProductId) return designByProductId;
       }
 
-      // Method 2: Try to find by product name
       if (item.name) {
         const designByName = await this.findDesignByName(item.name);
         if (designByName) return designByName;
       }
 
-      // Method 3: Try to find by category
       if (item.category) {
         const designByCategory = await this.findDesignByCategory(item.category);
         if (designByCategory) return designByCategory;
@@ -245,56 +220,45 @@ export class OrderItemDesignService {
     }
   }
 
-  /**
-   * Find design by product ID
-   */
   private static async findDesignByProductId(productId: string): Promise<any | null> {
     try {
-      const snapshot = await db.collection(COLLECTIONS.DESIGNS)
-        .where("productId", "==", productId)
+      const { data, error } = await getServiceSupabase().from(TABLES.DESIGNS)
+        .select("*")
+        .eq("productId", productId)
         .limit(1)
-        .get();
+        .single();
 
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        return { id: doc.id, ...doc.data() };
-      }
-
-      return null;
+      if (error || !data) return null;
+      return { id: data.id, ...data };
     } catch (error) {
       console.error("Error finding design by product ID:", error);
       return null;
     }
   }
 
-  /**
-   * Find design by name (fuzzy matching)
-   */
   private static async findDesignByName(itemName: string): Promise<any | null> {
     try {
       const term = itemName.toLowerCase().trim();
       
-      // 1. Try exact match on normalized name
-      const exactSnapshot = await db.collection(COLLECTIONS.DESIGNS)
-        .where("name_lower", "==", term)
+      const { data: exactData } = await getServiceSupabase().from(TABLES.DESIGNS)
+        .select("*")
+        .eq("name_lower", term)
         .limit(1)
-        .get();
+        .single();
       
-      if (!exactSnapshot.empty) {
-        const doc = exactSnapshot.docs[0];
-        return { id: doc.id, ...doc.data() };
+      if (exactData) {
+        return { id: exactData.id, ...exactData };
       }
       
-      // 2. Fallback to prefix match (starts with) using range query
-      const prefixSnapshot = await db.collection(COLLECTIONS.DESIGNS)
-        .where("name_lower", ">=", term)
-        .where("name_lower", "<=", term + "\uf8ff")
+      const { data: prefixData } = await getServiceSupabase().from(TABLES.DESIGNS)
+        .select("*")
+        .gte("name_lower", term)
+        .lte("name_lower", term + "\uf8ff")
         .limit(1)
-        .get();
+        .single();
         
-      if (!prefixSnapshot.empty) {
-        const doc = prefixSnapshot.docs[0];
-        return { id: doc.id, ...doc.data() };
+      if (prefixData) {
+        return { id: prefixData.id, ...prefixData };
       }
 
       return null;
@@ -304,31 +268,22 @@ export class OrderItemDesignService {
     }
   }
 
-  /**
-   * Find design by category
-   */
   private static async findDesignByCategory(category: string): Promise<any | null> {
     try {
-      const snapshot = await db.collection(COLLECTIONS.DESIGNS)
-        .where("category", "==", category)
+      const { data, error } = await getServiceSupabase().from(TABLES.DESIGNS)
+        .select("*")
+        .eq("category", category)
         .limit(1)
-        .get();
+        .single();
 
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        return { id: doc.id, ...doc.data() };
-      }
-
-      return null;
+      if (error || !data) return null;
+      return { id: data.id, ...data };
     } catch (error) {
       console.error("Error finding design by category:", error);
       return null;
     }
   }
 
-  /**
-   * Create work order with automatic cost calculation from designs
-   */
   static async createWorkOrderWithAutoCosts(
     salesOrderId: string,
     orderItems: any[],
@@ -343,43 +298,42 @@ export class OrderItemDesignService {
     try {
       console.log(`Creating work order with auto costs for sales order ${salesOrderId}...`);
 
-      // Calculate costs from designs
       const costCalculation = await this.calculateOrderCostsFromDesigns(orderItems);
       
       if (!costCalculation.success) {
         throw new Error(costCalculation.error || 'Failed to calculate costs');
       }
 
-      // Create work order with calculated costs
+      const workOrderId = `WO-${salesOrderId.split("-").slice(-1)[0]}-${Date.now()}`;
       const workOrder = {
-        id: `WO-${salesOrderId.split("-").slice(-1)[0]}-${Date.now()}`,
+        id: workOrderId,
         sales_order_id: salesOrderId,
         raw_materials_used: [],
         materials_issued: [],
         labor_hours: costCalculation.itemCosts.reduce((sum, item) => 
-          sum + (item.laborCost / 50), 0), // Assuming EGP 50/hour labor rate
+          sum + (item.laborCost / 50), 0),
         labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
         overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
-        total_cost: 0, // Will be updated when materials are issued
+        total_cost: 0,
         estimated_cost: costCalculation.totalEstimatedCost,
         status: "pending",
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         completionPercentage: 0,
         notes: `Auto-generated work order with design-based costs (${formatCurrency(costCalculation.totalEstimatedCost)})`,
         items: orderItems,
-        item_costs: costCalculation.itemCosts, // Store item-level cost breakdown
+        item_costs: costCalculation.itemCosts,
         ...additionalData
       };
 
-      // Save work order to database
-      const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
+      const { error } = await getServiceSupabase().from(TABLES.WORK_ORDERS).insert(workOrder);
+      if (error) throw error;
 
-      console.log(`✅ Created work order ${workOrderRef.id} with auto-calculated cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
+      console.log(`✅ Created work order ${workOrderId} with auto-calculated cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
 
       return {
         success: true,
-        workOrderId: workOrderRef.id,
+        workOrderId,
         totalEstimatedCost: costCalculation.totalEstimatedCost,
         itemCosts: costCalculation.itemCosts
       };

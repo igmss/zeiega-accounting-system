@@ -78,10 +78,10 @@ export async function GET(request: Request) {
 
     // Transform to the expected API response format
     const response = {
-      periodStart: incomeStatement.periodStart.toISOString().split("T")[0],
-      periodEnd: incomeStatement.periodEnd.toISOString().split("T")[0],
+      periodStart: typeof incomeStatement.periodStart === 'string' ? incomeStatement.periodStart.split("T")[0] : new Date(incomeStatement.periodStart).toISOString().split("T")[0],
+      periodEnd: typeof incomeStatement.periodEnd === 'string' ? incomeStatement.periodEnd.split("T")[0] : new Date(incomeStatement.periodEnd).toISOString().split("T")[0],
       revenue: {
-        items: incomeStatement.revenue.items.map(item => ({
+        items: incomeStatement.revenue.items.map((item: any) => ({
           code: item.code,
           name: item.name,
           amount: Math.round(item.amount * 100) / 100

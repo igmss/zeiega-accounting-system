@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
     // Transform to the expected API response format
     const response = {
-      asOfDate: balanceSheet.asOfDate.toISOString().split("T")[0],
+      asOfDate: typeof balanceSheet.asOfDate === 'string' ? balanceSheet.asOfDate.split("T")[0] : new Date(balanceSheet.asOfDate).toISOString().split("T")[0],
       assets: {
         current_assets: {
           items: balanceSheet.assets.currentAssets.items.map(item => ({

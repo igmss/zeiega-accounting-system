@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth/auth-helpers"
 
 export const dynamic = 'force-dynamic'
@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const { orderId } = await request.json()
+    const serviceDb = getServiceClient()
 
     if (!orderId) {
       return NextResponse.json(
@@ -17,26 +18,37 @@ export async function POST(request: Request) {
       )
     }
 
-    // Try to get the order from multiple possible collections
-    let orderData = null
-    let orderSource = null
+    let orderData: any = null
+    let orderSource: string | null = null
 
-    // Try manual_orders first
-    const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).get()
-    if (manualOrderDoc.exists) {
-      orderData = manualOrderDoc.data()
+    const { data: manualOrder } = await serviceDb
+      .from(TABLES.MANUAL_ORDERS)
+      .select("*")
+      .eq("id", orderId)
+      .single()
+
+    if (manualOrder) {
+      orderData = manualOrder
       orderSource = "manual_orders"
     } else {
-      // Try orders collection (web orders)
-      const webOrderDoc = await db.collection(COLLECTIONS.ORDERS).doc(orderId).get()
-      if (webOrderDoc.exists) {
-        orderData = webOrderDoc.data()
+      const { data: webOrder } = await serviceDb
+        .from(TABLES.ORDERS)
+        .select("*")
+        .eq("id", orderId)
+        .single()
+
+      if (webOrder) {
+        orderData = webOrder
         orderSource = "orders"
       } else {
-        // Try acc_sales_orders (accounting system)
-        const salesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId).get()
-        if (salesOrderDoc.exists) {
-          orderData = salesOrderDoc.data()
+        const { data: salesOrder } = await serviceDb
+          .from(TABLES.SALES_ORDERS)
+          .select("*")
+          .eq("id", orderId)
+          .single()
+
+        if (salesOrder) {
+          orderData = salesOrder
           orderSource = "acc_sales_orders"
         }
       }
@@ -51,29 +63,31 @@ export async function POST(request: Request) {
 
     // 1. Update order status to completed in the source collection
     if (orderSource === "manual_orders") {
-      await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(orderId).update({
+      await serviceDb.from(TABLES.MANUAL_ORDERS).update({
         status: "completed",
         updatedAt: new Date()
-      })
+      }).eq("id", orderId)
     } else if (orderSource === "orders") {
-      await db.collection(COLLECTIONS.ORDERS).doc(orderId).update({
+      await serviceDb.from(TABLES.ORDERS).update({
         status: "completed",
         updatedAt: new Date()
-      })
+      }).eq("id", orderId)
     }
 
     // 2. Update accounting sales order status (create if doesn't exist)
-    const salesOrderRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(orderId)
-    const salesOrderDoc = await salesOrderRef.get()
+    const { data: salesOrderDoc } = await serviceDb
+      .from(TABLES.SALES_ORDERS)
+      .select("*")
+      .eq("id", orderId)
+      .single()
 
-    if (salesOrderDoc.exists) {
-      await salesOrderRef.update({
+    if (salesOrderDoc) {
+      await serviceDb.from(TABLES.SALES_ORDERS).update({
         status: "completed",
         updated_at: new Date()
-      })
+      }).eq("id", orderId)
     } else {
-      // Create sales order if it doesn't exist in accounting system
-      await salesOrderRef.set({
+      await serviceDb.from(TABLES.SALES_ORDERS).upsert({
         id: orderId,
         website_order_id: orderId,
         customer_id: orderData.userId || orderData.customer_id || "unknown",
@@ -82,28 +96,26 @@ export async function POST(request: Request) {
         status: "completed",
         total_amount: orderData.total || orderData.total_amount || 0,
         order_source: orderSource === "orders" ? "web" : "manual",
-        created_at: orderData.createdAt?.toDate?.() || new Date(),
+        created_at: orderData.createdAt ? new Date(orderData.createdAt) : new Date(),
         updated_at: new Date()
-      })
+      }, { onConflict: "id" })
     }
 
     // 3. Complete work order (if not already completed)
-    const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-      .where("sales_order_id", "==", orderId)
-      .get()
+    const { data: workOrders } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .eq("sales_order_id", orderId)
 
-    if (!workOrdersSnapshot.empty) {
-      const workOrderDoc = workOrdersSnapshot.docs[0]
-      const workOrderData = workOrderDoc.data()
+    if (workOrders && workOrders.length > 0) {
+      const workOrderDoc = workOrders[0]
 
       const { WorkOrderMaterialService } = await import("@/lib/services/work-order-material-service")
-      const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
-      // Only update if not already completed
-      if (workOrderData.status !== "completed") {
+      if (workOrderDoc.status !== "completed") {
         await WorkOrderMaterialService.completeWorkOrder(
           workOrderDoc.id,
-          workOrderData.design_id
+          workOrderDoc.design_id
         )
       }
     }
@@ -111,11 +123,13 @@ export async function POST(request: Request) {
     // 5. Generate invoice (if not already generated)
     const invoiceId = `INV-${orderId.slice(-8)}`
 
-    // Check if invoice already exists
-    const existingInvoice = await db.collection(COLLECTIONS.INVOICES).doc(invoiceId).get()
+    const { data: existingInvoice } = await serviceDb
+      .from(TABLES.INVOICES)
+      .select("*")
+      .eq("id", invoiceId)
+      .single()
 
-    if (!existingInvoice.exists) {
-      // Extract customer info based on order source
+    if (!existingInvoice) {
       const customerId = orderData.userId || orderData.customer_id || "unknown"
       const customerName = orderData.shippingAddress?.fullName || orderData.customer_name || "Unknown Customer"
       const totalAmount = orderData.total || orderData.total_amount || 0
@@ -126,32 +140,31 @@ export async function POST(request: Request) {
         customer_id: customerId,
         customer_name: customerName,
         amount: totalAmount,
-        total: totalAmount, // Also include 'total' field for consistency
-        tax_amount: 0, // You can add tax calculation here
+        total: totalAmount,
+        tax_amount: 0,
         total_amount: totalAmount,
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         status: "unpaid",
         created_at: new Date(),
         items: orderData.items || []
       }
 
-      await db.collection(COLLECTIONS.INVOICES).doc(invoiceId).set(invoice)
+      await serviceDb.from(TABLES.INVOICES).upsert(invoice, { onConflict: "id" })
 
-      // 6. Create journal entry for invoice (Revenue)
       const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
       
       await EnhancedAccountingService.createJournalEntry(
         JournalEntryType.SALES_INVOICE,
         [
           { 
-            accountCode: "1110", // AR
+            accountCode: "1110",
             accountName: "Accounts Receivable", 
             debit: totalAmount, 
             credit: 0, 
             description: `Invoice ${invoiceId}` 
           },
           { 
-            accountCode: "4001", // Sales Revenue
+            accountCode: "4001",
             accountName: "Sales Revenue", 
             debit: 0, 
             credit: totalAmount, 
@@ -162,14 +175,13 @@ export async function POST(request: Request) {
         `Invoice ${invoiceId}`
       )
 
-      // 7. Create COGS journal entry (Cost)
-      // Fetch the associated work order to get the cost
-      const woSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-        .where("sales_order_id", "==", orderId)
-        .get()
+      const { data: woSnapshot } = await serviceDb
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .eq("sales_order_id", orderId)
 
-      if (!woSnapshot.empty) {
-        const woData = woSnapshot.docs[0].data()
+      if (woSnapshot && woSnapshot.length > 0) {
+        const woData = woSnapshot[0]
         const cogsAmount = woData.total_cost || woData.estimated_cost || 0
 
         if (cogsAmount > 0) {
@@ -177,14 +189,14 @@ export async function POST(request: Request) {
             JournalEntryType.SALES_COGS,
             [
               { 
-                accountCode: "5001", // COGS / Raw Materials Used
+                accountCode: "5001",
                 accountName: "Cost of Goods Sold", 
                 debit: cogsAmount, 
                 credit: 0, 
                 description: `COGS for order ${orderId}` 
               },
               { 
-                accountCode: "1220", // Finished Goods Inventory
+                accountCode: "1220",
                 accountName: "Finished Goods Inventory", 
                 debit: 0, 
                 credit: cogsAmount, 

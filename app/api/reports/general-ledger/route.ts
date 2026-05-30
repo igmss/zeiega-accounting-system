@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { CHART_OF_ACCOUNTS, getAccountName } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 
@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
         endDate.setHours(23, 59, 59, 999)
         const filterAccountCode = searchParams.get("accountCode")
 
-        // Query all journal entries
-        const journalEntriesRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-        const journalSnapshot = await journalEntriesRef
-            .orderBy("date", "asc")
-            .get()
+        const { data: journalEntries, error } = await getServiceClient()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .order("date", { ascending: true })
 
-        // Build ledger by account
+        if (error) throw error
+
         const ledger: {
             [accountCode: string]: {
                 code: string
@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
             }
         } = {}
 
-        // Initialize all accounts or just the filtered one
         const accountCodes = filterAccountCode
             ? [filterAccountCode]
             : Object.keys(CHART_OF_ACCOUNTS)
@@ -65,46 +64,41 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        // Process journal entries
-        journalSnapshot.docs.forEach((doc) => {
-            const entry = doc.data()
+        journalEntries.forEach((entry: any) => {
             const lines = entry.entries || entry.lines || []
-            const entryDate = entry.date?.toDate?.()
-                ? entry.date.toDate().toISOString().split("T")[0]
-                : entry.date || ""
+            const entryDate = typeof entry.date === 'string'
+                ? entry.date.split("T")[0]
+                : entry.date
 
-            // Check if within date range
             if (entryDate < fromDate || entryDate > toDate) return
 
             lines.forEach((line: any) => {
                 const accountCode = line.account_id || line.accountCode || ""
 
-                if (!ledger[accountCode]) return // Skip if not tracking this account
+                if (!ledger[accountCode]) return
 
                 const debit = line.debit || 0
                 const credit = line.credit || 0
 
                 ledger[accountCode].transactions.push({
                     date: entryDate,
-                    entryId: entry.entryNumber || doc.id,
+                    entryId: entry.entryNumber || entry.id,
                     description: entry.description || line.description || "",
                     debit,
                     credit,
-                    runningBalance: 0 // Will calculate after
+                    runningBalance: 0
                 })
             })
         })
 
-        // Calculate running balances for each account
         for (const code of Object.keys(ledger)) {
             let runningBalance = ledger[code].openingBalance
 
-            // Determine if debit-normal account
             const isDebitNormal = ["ASSET", "EXPENSE", "COGS"].some(type =>
                 CHART_OF_ACCOUNTS[code]?.type.toLowerCase().includes(type.toLowerCase())
             ) || code.startsWith("1") || code.startsWith("5") || code.startsWith("6")
 
-            ledger[code].transactions.forEach((tx, index) => {
+            ledger[code].transactions.forEach((tx: any, index: any) => {
                 if (isDebitNormal) {
                     runningBalance += tx.debit - tx.credit
                 } else {
@@ -116,7 +110,6 @@ export async function GET(request: NextRequest) {
             ledger[code].closingBalance = runningBalance
         }
 
-        // Convert to array and filter out accounts with no transactions
         const accounts = Object.values(ledger)
             .filter(account => account.transactions.length > 0 || filterAccountCode)
             .sort((a, b) => a.code.localeCompare(b.code))

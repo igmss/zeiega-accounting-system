@@ -1,6 +1,6 @@
 ﻿import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { userStore, getSafeUser, UserRole } from "./user-model"
+import { userStore, getSafeUser, UserRole } from "../supabase-auth-service"
 
 /**
  * Extend NextAuth types

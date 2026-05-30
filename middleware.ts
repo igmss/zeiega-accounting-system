@@ -278,7 +278,8 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    // Verify JWT using dedicated middleware secret (falls back to NEXTAUTH_SECRET for compat)
+    // Verify JWT using next-auth getToken (works with both Firebase and Supabase Credentials providers)
+    // The JWT is signed with NEXTAUTH_SECRET or MIDDLEWARE_SECRET
     let token = null
     try {
         token = await getToken({

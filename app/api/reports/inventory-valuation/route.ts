@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
@@ -9,15 +9,13 @@ export async function GET() {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    // Fetch inventory items
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: inventoryItems, error } = await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .select("*")
 
-    // Calculate inventory valuation
-    const inventoryData = inventoryItems.map(item => ({
+    if (error) throw error
+
+    const inventoryData = inventoryItems.map((item: any) => ({
       sku: item.id,
       name: item.name,
       type: item.type,
@@ -25,10 +23,9 @@ export async function GET() {
       cost_per_unit: item.cost_per_unit || 0,
       total_value: (item.quantity_on_hand || 0) * (item.cost_per_unit || 0),
       last_movement: item.last_updated || item.createdAt || new Date(),
-      turnover_days: 0, // Would come from inventory movement analysis
+      turnover_days: 0,
     }))
 
-    // If no inventory data, return empty structure
     if (inventoryData.length === 0) {
       return NextResponse.json({
         inventoryData: [],
@@ -49,18 +46,17 @@ export async function GET() {
       })
     }
 
-    // Calculate totals by type
     const rawMaterialsValue = inventoryData
-      .filter(item => item.type === 'raw')
-      .reduce((sum, item) => sum + item.total_value, 0)
+      .filter((item: any) => item.type === 'raw')
+      .reduce((sum: any, item: any) => sum + item.total_value, 0)
 
     const finishedGoodsValue = inventoryData
-      .filter(item => item.type === 'finished')
-      .reduce((sum, item) => sum + item.total_value, 0)
+      .filter((item: any) => item.type === 'finished')
+      .reduce((sum: any, item: any) => sum + item.total_value, 0)
 
     const wipValue = inventoryData
-      .filter(item => item.type === 'wip')
-      .reduce((sum, item) => sum + item.total_value, 0)
+      .filter((item: any) => item.type === 'wip')
+      .reduce((sum: any, item: any) => sum + item.total_value, 0)
 
     const totalInventoryValue = rawMaterialsValue + finishedGoodsValue + wipValue
 
@@ -80,7 +76,7 @@ export async function GET() {
         finishedGoodsValue,
         totalInventoryValue,
         itemCount: inventoryData.length,
-        lowStockItems: inventoryData.filter(item => item.quantity < 10).length,
+        lowStockItems: inventoryData.filter((item: any) => item.quantity < 10).length,
       }
     }
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 import { InventoryAccountingService } from "@/lib/services/inventory-accounting-service"
 
@@ -17,17 +17,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(itemId)
-    const inventoryDoc = await inventoryRef.get()
+    const { data: inventoryDoc, error: fetchError } = await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .select("*")
+      .eq("id", itemId)
+      .single()
 
-    if (!inventoryDoc.exists) {
+    if (fetchError || !inventoryDoc) {
       return NextResponse.json(
         { error: "Inventory item not found" },
         { status: 404 }
       )
     }
 
-    const currentData = inventoryDoc.data()
+    const currentData = inventoryDoc
     const currentQty = currentData?.quantity_on_hand || 0
     const unitCost = currentData?.cost_per_unit || 0
     const itemName = currentData?.name || "Unknown Item"
@@ -47,24 +50,30 @@ export async function POST(request: Request) {
       actualAdjustment = -adjustmentQty
     }
 
-    await inventoryRef.update({
-      quantity_on_hand: newQty,
-      last_updated: new Date()
-    })
+    await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .update({
+        quantity_on_hand: newQty,
+        last_updated: new Date().toISOString()
+      })
+      .eq("id", itemId)
 
     const movementId = `MOV-${Date.now()}`
-    await db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).doc(movementId).set({
-      item_id: itemId,
-      item_name: itemName,
-      movement_type: 'adjustment',
-      quantity: actualAdjustment,
-      unit_cost: unitCost,
-      total_cost: Math.abs(actualAdjustment) * unitCost,
-      reason: reason,
-      reference: `ADJ-${Date.now()}`,
-      created_at: new Date(),
-      created_by: auth.user?.id || 'manual'
-    })
+    await getServiceClient()
+      .from(TABLES.INVENTORY_MOVEMENTS)
+      .insert({
+        id: movementId,
+        item_id: itemId,
+        item_name: itemName,
+        movement_type: 'adjustment',
+        quantity: actualAdjustment,
+        unit_cost: unitCost,
+        total_cost: Math.abs(actualAdjustment) * unitCost,
+        reason: reason,
+        reference: `ADJ-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        created_by: auth.user?.id || 'manual'
+      })
 
     const adjustmentValue = Math.abs(actualAdjustment) * unitCost
 

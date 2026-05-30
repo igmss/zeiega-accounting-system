@@ -45,7 +45,7 @@ export async function PUT(
                 result = await PurchaseOrderService.receiveGoods({
                     purchase_order_id: params.id,
                     items: body.items,
-                    receipt_date: new Date(),
+                    receipt_date: new Date().toISOString(),
                     notes: body.notes
                 })
                 break

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
-import { FieldValue } from "firebase-admin/firestore"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
 
@@ -18,42 +17,45 @@ export async function POST(request: Request) {
       )
     }
     
-    // Get work order
-    const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-    if (!workOrderDoc.exists) {
+    const serviceDb = getServiceClient()
+    
+    const { data: workOrder, error: woError } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .eq("id", workOrderId)
+      .single()
+    
+    if (!workOrder) {
       return NextResponse.json(
         { error: "Work order not found" },
         { status: 404 }
       )
     }
     
-    const workOrder = workOrderDoc.data()
-    
-    // Calculate total material cost
-    const totalMaterialCost = materials.reduce((sum, material) => {
+    const totalMaterialCost = materials.reduce((sum: number, material: any) => {
       return sum + (material.qty * material.cost)
     }, 0)
     
-    // Update work order with issued materials
-    await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
+    await serviceDb.from(TABLES.WORK_ORDERS).update({
       raw_materials_used: materials,
       status: "in_progress",
-      updated_at: new Date()
-    })
+      updated_at: new Date().toISOString()
+    }).eq("id", workOrderId)
     
-    // Create journal entry for materials usage using EnhancedAccountingService
     const accountingMaterials = []
-    const inventoryRefs: Array<{ ref: FirebaseFirestore.DocumentReference; qty: number }> = []
+    const inventoryRefs: Array<{ id: string; qty: number }> = []
     for (const material of materials) {
-      const invSnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS)
-        .where("sku", "==", material.item_id)
+      const { data: inventoryData } = await serviceDb
+        .from(TABLES.INVENTORY_ITEMS)
+        .select("*")
+        .eq("sku", material.item_id)
         .limit(1)
-        .get()
-      const inventoryDoc = invSnapshot.docs[0]
-      const itemName = inventoryDoc ? (inventoryDoc.data()?.name || 'Unknown Item') : 'Unknown Item'
+        .single()
       
-      if (inventoryDoc) {
-        inventoryRefs.push({ ref: inventoryDoc.ref, qty: material.qty })
+      const itemName = inventoryData ? (inventoryData.name || 'Unknown Item') : 'Unknown Item'
+      
+      if (inventoryData) {
+        inventoryRefs.push({ id: inventoryData.id, qty: material.qty })
       }
       
       accountingMaterials.push({
@@ -78,15 +80,20 @@ export async function POST(request: Request) {
       }
     }
     
-    // Update inventory quantities
     for (const inv of inventoryRefs) {
-      await inv.ref.update({
-        quantity_on_hand: FieldValue.increment(-inv.qty),
-        last_updated: new Date()
-      })
+      const { data: currentInv } = await serviceDb
+        .from(TABLES.INVENTORY_ITEMS)
+        .select("quantity_on_hand")
+        .eq("id", inv.id)
+        .single()
+      
+      const currentQty = currentInv?.quantity_on_hand || 0
+      await serviceDb.from(TABLES.INVENTORY_ITEMS).update({
+        quantity_on_hand: currentQty - inv.qty,
+        last_updated: new Date().toISOString()
+      }).eq("id", inv.id)
     }
     
-    // Update Chart of Accounts balances
     await syncInventoryWithChartOfAccounts()
     
     return NextResponse.json({
@@ -106,30 +113,28 @@ export async function POST(request: Request) {
   }
 }
 
-// Helper function to sync inventory with chart of accounts
 async function syncInventoryWithChartOfAccounts() {
   try {
-    // Fetch all inventory items
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const serviceDb = getServiceClient()
 
-    // Calculate totals by type
+    const { data: inventoryItems } = await serviceDb
+      .from(TABLES.INVENTORY_ITEMS)
+      .select("*")
+
+    if (!inventoryItems) return
+
     const rawMaterialsValue = inventoryItems
-      .filter(item => item.type === 'raw')
-      .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
+      .filter((item: any) => item.type === 'raw')
+      .reduce((sum: number, item: any) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
     const finishedGoodsValue = inventoryItems
-      .filter(item => item.type === 'finished')
-      .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
+      .filter((item: any) => item.type === 'finished')
+      .reduce((sum: number, item: any) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
     const wipValue = inventoryItems
-      .filter(item => item.type === 'wip')
-      .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
+      .filter((item: any) => item.type === 'wip')
+      .reduce((sum: number, item: any) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
-    // Update chart of accounts balances
     const accountsToUpdate = [
       { account_id: "INVENTORY_RAW", balance: rawMaterialsValue },
       { account_id: "INVENTORY_WIP", balance: wipValue },
@@ -137,14 +142,17 @@ async function syncInventoryWithChartOfAccounts() {
     ]
 
     for (const accountUpdate of accountsToUpdate) {
-      const accountRef = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(accountUpdate.account_id)
-      const accountDoc = await accountRef.get()
+      const { data: accountDoc } = await serviceDb
+        .from(TABLES.CHART_OF_ACCOUNTS)
+        .select("*")
+        .eq("id", accountUpdate.account_id)
+        .single()
       
-      if (accountDoc.exists) {
-        await accountRef.update({
+      if (accountDoc) {
+        await serviceDb.from(TABLES.CHART_OF_ACCOUNTS).update({
           balance: accountUpdate.balance,
-          last_updated: new Date()
-        })
+          last_updated: new Date().toISOString()
+        }).eq("id", accountUpdate.account_id)
       }
     }
 

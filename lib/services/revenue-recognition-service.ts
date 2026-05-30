@@ -1,13 +1,8 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
 import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
-/**
- * Contract for IFRS 15 over-time revenue recognition.
- * Applies to MTO/ETO contracts where the asset has no alternative use
- * AND the entity has an enforceable right to payment for performance to date.
- */
 export interface Contract {
   id: string
   salesOrderId: string
@@ -16,38 +11,29 @@ export interface Contract {
   description: string
   contractPrice: number
   totalEstimatedCost: number
-  startDate: Date
-  estimatedCompletionDate: Date
-  actualCompletionDate?: Date
-
-  // Revenue recognition method
+  startDate: string
+  estimatedCompletionDate: string
+  actualCompletionDate?: string
   method: "cost_to_cost" | "point_in_time"
   overTimeCriterion: "no_alternative_use" | "customer_controls" | "simultaneous_receipt"
-
-  // Progress tracking
   costsIncurredToDate: number
   revenueRecognizedToDate: number
   amountsBilledToDate: number
-  percentageComplete: number  // 0-100
-
-  // Contract balances
-  contractAsset: number       // Revenue recognized > billed
-  contractLiability: number   // Amount billed > revenue recognized (advances)
-
-  // Onerous contract
+  percentageComplete: number
+  contractAsset: number
+  contractLiability: number
   isOnerous: boolean
   expectedLoss: number
   lossProvisionRecognized: boolean
   lossProvisionEntryId?: string
-
   status: "active" | "completed" | "terminated" | "onerous"
-  createdAt: Date
-  updatedAt: Date
+  createdAt: string
+  updatedAt: string
 }
 
 export interface RevenueRecognitionEntry {
-  periodStart: Date
-  periodEnd: Date
+  periodStart: string
+  periodEnd: string
   contractId: string
   percentageComplete: number
   revenueThisPeriod: number
@@ -56,28 +42,10 @@ export interface RevenueRecognitionEntry {
   journalEntryId?: string
 }
 
-/**
- * IFRS 15 Revenue Recognition Service
- *
- * 5-Step Model applied to MTO/ETO contracts:
- * Step 1: Identify the contract (Contract entity)
- * Step 2: Identify performance obligations (assumed single PO for manufacturing)
- * Step 3: Determine transaction price (contractPrice)
- * Step 4: Allocate transaction price (single PO → all to the contract)
- * Step 5: Recognize revenue over time using cost-to-cost input method
- *
- * Over-time criterion met when (IFRS 15.35):
- * - The asset has no alternative use to the entity, AND
- * - The entity has an enforceable right to payment for performance to date
- *   (common in MTO/ETO with milestone billing or cost-plus contracts)
- */
 export class RevenueRecognitionService {
-  private static readonly COLLECTION = "acc_contracts"
-  private static readonly RECOGNITION_COLLECTION = "acc_revenue_recognition"
+  private static readonly TABLE = TABLES.CONTRACTS
+  private static readonly RECOGNITION_TABLE = TABLES.REVENUE_RECOGNITION
 
-  /**
-   * Create a new contract for over-time revenue recognition
-   */
   static async createContract(
     salesOrderId: string,
     customerId: string,
@@ -96,7 +64,7 @@ export class RevenueRecognitionService {
       }
 
       const contractId = `CTR-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
-      const now = new Date()
+      const now = new Date().toISOString()
 
       const contract: Contract = {
         id: contractId,
@@ -107,7 +75,7 @@ export class RevenueRecognitionService {
         contractPrice,
         totalEstimatedCost,
         startDate: now,
-        estimatedCompletionDate,
+        estimatedCompletionDate: estimatedCompletionDate.toISOString(),
         method,
         overTimeCriterion,
         costsIncurredToDate: 0,
@@ -124,7 +92,8 @@ export class RevenueRecognitionService {
         updatedAt: now,
       }
 
-      await db.collection(this.COLLECTION).doc(contractId).set(contract)
+      const { error } = await getServiceSupabase().from(this.TABLE).insert(contract)
+      if (error) throw error
       console.log(`✅ Contract ${contractId} created (${method}, ${formatCurrency(contractPrice)})`)
       return { success: true, contractId }
     } catch (error) {
@@ -132,31 +101,15 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Get contract by ID
-   */
   static async getContract(contractId: string): Promise<Contract | null> {
     try {
-      const doc = await db.collection(this.COLLECTION).doc(contractId).get()
-      return doc.exists ? (doc.data() as Contract) : null
+      const { data, error } = await getServiceSupabase().from(this.TABLE).select("*").eq("id", contractId).single()
+      return (!error && data) ? (data as Contract) : null
     } catch {
       return null
     }
   }
 
-  /**
-   * Recognize revenue for a contract using cost-to-cost percentage of completion.
-   *
-   * Formula:
-   *   % Complete = Costs Incurred to Date ÷ Total Estimated Costs
-   *   Revenue This Period = (% Complete × Contract Price) − Revenue Recognized in Prior Periods
-   *
-   * Journal Entry:
-   *   DR Contract Asset (Unbilled Receivable)   Revenue for period
-   *   DR COGS                                     Costs for period
-   *       CR Revenue from Contracts                    Revenue for period
-   *       CR WIP Inventory                             Costs for period
-   */
   static async recognizeRevenue(
     contractId: string,
     costsIncurredThisPeriod: number,
@@ -179,27 +132,22 @@ export class RevenueRecognitionService {
         return { success: false, error: "Total estimated cost must be positive" }
       }
 
-      // Update costs incurred
       contract.costsIncurredToDate += costsIncurredThisPeriod
 
-      // Calculate % complete — capped at 100%
       const pctComplete = Math.min(
         (contract.costsIncurredToDate / contract.totalEstimatedCost) * 100,
         100
       )
 
-      // Revenue to date per POC
       const revenueToDate = (pctComplete / 100) * contract.contractPrice
-
-      // Revenue this period
       const revenueThisPeriod = revenueToDate - contract.revenueRecognizedToDate
 
       if (revenueThisPeriod <= 0 && pctComplete < 100) {
         return {
           success: true,
           recognition: {
-            periodStart: new Date(),
-            periodEnd: new Date(),
+            periodStart: new Date().toISOString(),
+            periodEnd: new Date().toISOString(),
             contractId,
             percentageComplete: pctComplete,
             revenueThisPeriod: 0,
@@ -210,15 +158,11 @@ export class RevenueRecognitionService {
         }
       }
 
-      // Update contract balances
       contract.percentageComplete = pctComplete
       contract.revenueRecognizedToDate = revenueToDate
-
-      // Contract asset = revenue recognized - amount billed
       contract.contractAsset = Math.max(0, revenueToDate - contract.amountsBilledToDate)
       contract.contractLiability = Math.max(0, contract.amountsBilledToDate - revenueToDate)
 
-      // Check for onerous contract
       if (pctComplete >= 100 || contract.costsIncurredToDate > contract.totalEstimatedCost) {
         if (contract.totalEstimatedCost > contract.contractPrice && !contract.lossProvisionRecognized) {
           contract.isOnerous = true
@@ -226,24 +170,21 @@ export class RevenueRecognitionService {
         }
         if (pctComplete >= 100) {
           contract.status = "completed"
-          contract.actualCompletionDate = new Date()
+          contract.actualCompletionDate = new Date().toISOString()
         }
       }
 
-      // Journal entry for revenue recognition
       const entryId = `REV-${contractId}-${Date.now()}`
-      const now = new Date()
+      const now = new Date().toISOString()
 
       const entries = [
-        // Contract Asset — unbilled revenue (IFRS 15, account 1113)
         {
-          account_id: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+          account_id: ACCOUNT_CODES.CONTRACT_ASSET,
           account_name: "Contract Asset (Unbilled Revenue)",
           debit: revenueThisPeriod,
           credit: 0,
           description: `Revenue recognized: ${pctComplete.toFixed(1)}% complete`,
         },
-        // Revenue
         {
           account_id: ACCOUNT_CODES.SALES_CUSTOM_MTO,
           account_name: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
@@ -267,16 +208,16 @@ export class RevenueRecognitionService {
         created_by: userId,
       }
 
-      // Save journal entry
-      await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+      const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
+      if (jeErr) throw jeErr
 
-      // Save contract update
       contract.updatedAt = now
-      await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+      const { error: updErr } = await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
+      if (updErr) throw updErr
 
       const recognition: RevenueRecognitionEntry = {
-        periodStart: new Date(),
-        periodEnd: new Date(),
+        periodStart: new Date().toISOString(),
+        periodEnd: new Date().toISOString(),
         contractId,
         percentageComplete: pctComplete,
         revenueThisPeriod,
@@ -299,13 +240,6 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Record milestone billing — customer is invoiced but revenue recognized separately
-   *
-   * Journal Entry:
-   *   DR Accounts Receivable     Amount billed
-   *       CR Contract Asset (or Contract Liability)     Amount billed
-   */
   static async recordMilestoneBilling(
     contractId: string,
     invoiceId: string,
@@ -318,23 +252,18 @@ export class RevenueRecognitionService {
         return { success: false, error: "Contract not found" }
       }
 
-      const now = new Date()
-
-      // Update amounts billed
+      const now = new Date().toISOString()
       contract.amountsBilledToDate += billingAmount
 
-      // Recalculate contract asset/liability
       const billed = contract.amountsBilledToDate
       const recognized = contract.revenueRecognizedToDate
       contract.contractAsset = Math.max(0, recognized - billed)
       contract.contractLiability = Math.max(0, billed - recognized)
 
-      // Determine if this billing is to contract asset or creates a liability
       const isOverBilling = billed > recognized
-      const liabilityAccount = ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY // 2105
+      const liabilityAccount = ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY
 
       const entries = [
-        // Debit AR for billed amount
         {
           account_id: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE,
           account_name: getAccountName(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE),
@@ -342,9 +271,8 @@ export class RevenueRecognitionService {
           credit: 0,
           description: `Milestone billing: Invoice ${invoiceId}`,
         },
-        // Credit Contract Asset (1113) or Contract Liability (2105)
         {
-          account_id: isOverBilling ? liabilityAccount : ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+          account_id: isOverBilling ? liabilityAccount : ACCOUNT_CODES.CONTRACT_ASSET,
           account_name: isOverBilling
             ? getAccountName(liabilityAccount)
             : "Contract Asset (Unbilled Revenue)",
@@ -374,9 +302,8 @@ export class RevenueRecognitionService {
         return { success: false, error: result.error }
       }
 
-      // Update contract
       contract.updatedAt = now
-      await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+      await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
 
       console.log(`✅ Milestone billed: ${formatCurrency(billingAmount)} (Total billed: ${formatCurrency(contract.amountsBilledToDate)})`)
       return { success: true, entryId: result.entryId }
@@ -388,13 +315,6 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Record advance payment from customer before performance
-   *
-   * Journal Entry:
-   *   DR Cash/Bank              Amount
-   *       CR Contract Liability (Customer Deposits)     Amount
-   */
   static async recordAdvancePayment(
     contractId: string,
     amount: number,
@@ -402,7 +322,7 @@ export class RevenueRecognitionService {
     userId: string = "system"
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
-      const now = new Date()
+      const now = new Date().toISOString()
 
       const result = await JournalEntryService.createJournalEntry(
         JournalEntryType.PAYMENT_RECEIVED,
@@ -431,13 +351,12 @@ export class RevenueRecognitionService {
         return { success: false, error: result.error }
       }
 
-      // Update contract amounts billed
       const contract = await this.getContract(contractId)
       if (contract) {
         contract.amountsBilledToDate += amount
         contract.contractLiability = Math.max(0, contract.amountsBilledToDate - contract.revenueRecognizedToDate)
         contract.updatedAt = now
-        await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+        await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
       }
 
       console.log(`✅ Advance payment ${formatCurrency(amount)} recorded for contract ${contractId}`)
@@ -447,14 +366,6 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Check and record onerous contract provision
-   * When total estimated costs exceed contract price, recognize the expected loss immediately.
-   *
-   * Per IAS 37 / IFRS 15.BC258:
-   *   DR Loss on Onerous Contract (expense)
-   *       CR Provision for Onerous Contract (liability)
-   */
   static async recognizeOnerousContract(
     contractId: string,
     revisedTotalEstimatedCost: number,
@@ -466,10 +377,8 @@ export class RevenueRecognitionService {
         return { success: false, error: "Contract not found" }
       }
 
-      // Update estimated costs
       contract.totalEstimatedCost = revisedTotalEstimatedCost
 
-      // Calculate expected loss
       if (revisedTotalEstimatedCost > contract.contractPrice) {
         const expectedLoss = revisedTotalEstimatedCost - contract.contractPrice
 
@@ -482,7 +391,7 @@ export class RevenueRecognitionService {
         }
 
         const entryId = `ONEROUS-${contractId}-${Date.now()}`
-        const now = new Date()
+        const now = new Date().toISOString()
 
         const journalEntry = {
           id: entryId,
@@ -492,14 +401,14 @@ export class RevenueRecognitionService {
           description: `Onerous contract provision: ${formatCurrency(expectedLoss)} loss on ${contract.description}`,
           entries: [
             {
-              account_id: "7002", // Penalties & Fines — or dedicated loss account
+              account_id: "7002",
               account_name: "Loss on Onerous Contract",
               debit: expectedLoss,
               credit: 0,
               description: `Expected loss on contract ${contractId}`,
             },
             {
-              account_id: "2150", // Provision - Expenses
+              account_id: "2150",
               account_name: "Provision for Onerous Contract",
               debit: 0,
               credit: expectedLoss,
@@ -513,7 +422,8 @@ export class RevenueRecognitionService {
           created_by: userId,
         }
 
-        await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId).set(journalEntry)
+        const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
+        if (jeErr) throw jeErr
 
         contract.isOnerous = true
         contract.expectedLoss = expectedLoss
@@ -522,15 +432,14 @@ export class RevenueRecognitionService {
         contract.status = "onerous"
         contract.updatedAt = now
 
-        await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+        await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
 
         console.log(`⚠️ Onerous contract ${contractId}: ${formatCurrency(expectedLoss)} loss provisioned`)
         return { success: true, expectedLoss, entryId }
       }
 
-      // Not onerous — just update costs
-      contract.updatedAt = new Date()
-      await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+      contract.updatedAt = new Date().toISOString()
+      await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
       return { success: true, expectedLoss: 0 }
     } catch (error) {
       return {
@@ -540,17 +449,6 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Apply a change order / contract modification per IFRS 15.18–21.
-   *
-   * Treatment logic:
-   *  - "new_contract"      → Treat as separate contract (new price/cost do not affect existing %).
-   *  - "cumulative_catchup"→ Update totals and re-calculate revenue to date; record catch-up in current period.
-   *  - "prospective"       → Update totals; apply to remaining performance only (no catch-up).
-   *
-   * The most common MTO/ETO treatment is cumulative_catchup when the modification changes
-   * the remaining performance obligation without adding distinct new goods.
-   */
   static async applyChangeOrder(
     contractId: string,
     description: string,
@@ -581,10 +479,9 @@ export class RevenueRecognitionService {
       let revenueAdjustment        = 0
       let entryId: string | undefined
 
-      const now = new Date()
+      const now = new Date().toISOString()
 
       if (treatment === "cumulative_catchup") {
-        // Recalculate % complete with revised estimates
         const newPctComplete = Math.min(
           (contract.costsIncurredToDate / revisedEstimatedCost) * 100,
           100
@@ -599,14 +496,14 @@ export class RevenueRecognitionService {
           const lines = isUpward
             ? [
                 {
-                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET,
                   accountName: "Contract Asset (Unbilled Revenue)",
                   debit: amount,
                   credit: 0,
                   description: `Change order cumulative catch-up — ${description}`,
                 },
                 {
-                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO, // 4003
+                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO,
                   accountName: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
                   debit: 0,
                   credit: amount,
@@ -615,14 +512,14 @@ export class RevenueRecognitionService {
               ]
             : [
                 {
-                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO, // 4003
+                  accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO,
                   accountName: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
                   debit: amount,
                   credit: 0,
                   description: `Revenue reduction from contract modification`,
                 },
                 {
-                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET, // 1113
+                  accountCode: ACCOUNT_CODES.CONTRACT_ASSET,
                   accountName: "Contract Asset (Unbilled Revenue)",
                   debit: 0,
                   credit: amount,
@@ -630,14 +527,13 @@ export class RevenueRecognitionService {
                 },
               ]
 
-          // Use a simple journal entry structure matching the existing pattern
           const jeId = `CO-${contractId}-${Date.now()}`
           const journalEntry = {
             id: jeId,
             date: now,
             type: "GENERAL",
             reference_doc: contractId,
-        description: `IFRS 15.18 change order catch-up: ${description}`,
+            description: `IFRS 15.18 change order catch-up: ${description}`,
             entries: lines.map(l => ({
               account_id: l.accountCode,
               account_name: l.accountName,
@@ -651,11 +547,10 @@ export class RevenueRecognitionService {
             created_at: now,
             created_by: userId,
           }
-          await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(jeId).set(journalEntry)
-          entryId = jeId
+          const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
+          if (!jeErr) entryId = jeId
         }
 
-        // Update contract with revised values
         contract.contractPrice           = revisedContractPrice
         contract.totalEstimatedCost      = revisedEstimatedCost
         contract.percentageComplete      = newPctComplete
@@ -664,16 +559,10 @@ export class RevenueRecognitionService {
         contract.contractLiability       = Math.max(0, contract.amountsBilledToDate - contract.revenueRecognizedToDate)
 
       } else if (treatment === "prospective") {
-        // No catch-up; just update totals — remaining performance re-priced
         contract.contractPrice      = revisedContractPrice
         contract.totalEstimatedCost = revisedEstimatedCost
-
-      } else {
-        // new_contract — do not modify existing contract; caller should create a new one
-        // We still record the change order document for audit trail
       }
 
-      // Check if revised estimates create an onerous position
       if (revisedEstimatedCost > revisedContractPrice && !contract.lossProvisionRecognized) {
         contract.isOnerous    = true
         contract.expectedLoss = revisedEstimatedCost - revisedContractPrice
@@ -681,11 +570,10 @@ export class RevenueRecognitionService {
       }
 
       contract.updatedAt = now
-      await db.collection(this.COLLECTION).doc(contractId).set(contract, { merge: true })
+      await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
 
-      // Persist change order record
       const changeOrderId = `CHG-${contractId}-${Date.now()}`
-      await db.collection(COLLECTIONS.CHANGE_ORDERS).doc(changeOrderId).set({
+      await getServiceSupabase().from(TABLES.CHANGE_ORDERS).insert({
         id: changeOrderId,
         contractId,
         description,
@@ -715,30 +603,25 @@ export class RevenueRecognitionService {
     }
   }
 
-  /**
-   * Get all active contracts with summary
-   */
   static async getActiveContracts(): Promise<Contract[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("status", "in", ["active", "onerous"])
-        .get()
-      return snapshot.docs.map(d => d.data() as Contract)
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .in("status", ["active", "onerous"])
+      if (error) throw error
+      return (data || []) as Contract[]
     } catch {
       return []
     }
   }
 
-  /**
-   * Get contracts that may become onerous (costs > 90% of price but not yet flagged)
-   */
   static async getAtRiskContracts(): Promise<Contract[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("status", "==", "active")
-        .get()
-      return snapshot.docs
-        .map(d => d.data() as Contract)
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("status", "active")
+      if (error) throw error
+      return ((data || []) as Contract[])
         .filter(c => c.costsIncurredToDate > 0 && c.totalEstimatedCost > c.contractPrice * 0.9)
     } catch {
       return []

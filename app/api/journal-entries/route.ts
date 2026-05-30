@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
 import { authOptions } from "@/lib/auth/auth-options"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
@@ -20,19 +20,20 @@ export async function GET(request: NextRequest) {
         const endDate = searchParams.get("endDate")
         const type = searchParams.get("type")
 
-        let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            .orderBy("date", "desc")
-            .limit(limit) as FirebaseFirestore.Query
+        const { data, error } = await getServiceClient()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .order("date", { ascending: false })
+            .limit(limit)
 
-        const snapshot = await query.get()
+        if (error) throw error
 
-        const entries = snapshot.docs.map(doc => {
-            const data = doc.data()
+        const entries = (data || []).map((doc: Record<string, any>) => {
             return {
                 id: doc.id,
-                ...data,
-                date: data.date?.toDate?.() || data.date,
-                created_at: data.created_at?.toDate?.() || data.created_at,
+                ...doc,
+                date: doc.date || null,
+                created_at: doc.created_at || null,
             }
         })
 
@@ -40,11 +41,11 @@ export async function GET(request: NextRequest) {
         let filteredEntries = entries
         if (startDate) {
             const start = new Date(startDate)
-            filteredEntries = filteredEntries.filter(e => new Date(e.date) >= start)
+            filteredEntries = filteredEntries.filter((e: any) => new Date(e.date) >= start)
         }
         if (endDate) {
             const end = new Date(endDate)
-            filteredEntries = filteredEntries.filter(e => new Date(e.date) <= end)
+            filteredEntries = filteredEntries.filter((e: any) => new Date(e.date) <= end)
         }
         if (type) {
             filteredEntries = filteredEntries.filter((e: any) => e.type === type)

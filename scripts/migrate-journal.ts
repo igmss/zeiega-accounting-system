@@ -1,4 +1,5 @@
-import { db, COLLECTIONS } from "../lib/firebase"
+
+import { supabase, TABLES, getServiceSupabase } from "../lib/supabase"
 
 const MAPPING: Record<string, string> = {
   "CASH": "1101",
@@ -17,17 +18,22 @@ const MAPPING: Record<string, string> = {
 async function migrateJournalEntries() {
   console.log("Starting journal entry migration...")
   
-  const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
+  const { data, error } = await getServiceSupabase()
+    .from(TABLES.JOURNAL_ENTRIES)
+    .select("*")
+  
+  if (error || !data) {
+    console.error("Failed to fetch journal entries:", error)
+    return
+  }
+  
   let count = 0
   
-  const batch = db.batch()
-  
-  for (const doc of snapshot.docs) {
-    const data = doc.data()
+  for (const doc of data) {
     let changed = false
     
-    if (data.entries && Array.isArray(data.entries)) {
-      const newEntries = data.entries.map((entry: any) => {
+    if (doc.entries && Array.isArray(doc.entries)) {
+      const newEntries = doc.entries.map((entry: any) => {
         if (MAPPING[entry.account_id]) {
           changed = true
           return { ...entry, account_id: MAPPING[entry.account_id] }
@@ -37,25 +43,22 @@ async function migrateJournalEntries() {
       
       if (changed) {
         const accountIds = Array.from(new Set(newEntries.map((l: any) => l.account_id)))
-        batch.update(doc.ref, { 
-          entries: newEntries,
-          account_ids: accountIds,
-          migrated: true,
-          migrated_at: new Date()
-        })
+        await getServiceSupabase()
+          .from(TABLES.JOURNAL_ENTRIES)
+          .update({
+            entries: newEntries,
+            account_ids: accountIds,
+            migrated: true,
+            migrated_at: new Date().toISOString()
+          })
+          .eq("id", doc.id)
         count++
+        
+        if (count % 50 === 0) {
+          console.log(`Updated ${count} entries...`)
+        }
       }
     }
-    
-    // Commit every 500 docs (Firestore batch limit)
-    if (count > 0 && count % 400 === 0) {
-      await batch.commit()
-      console.log(`Committed ${count} entries...`)
-    }
-  }
-  
-  if (count % 400 !== 0) {
-    await batch.commit()
   }
   
   console.log(`Migration complete. Updated ${count} journal entries.`)

@@ -1,4 +1,4 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { isDebitNormalBalance } from "../accounting/account-types"
 
 export enum JournalEntryType {
@@ -44,7 +44,7 @@ export class JournalEntryService {
         notes?: string,
         userId: string = "system",
         customDate?: Date,
-        tx?: FirebaseFirestore.Transaction,
+        _tx?: unknown,
         metadata?: Record<string, unknown>
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         try {
@@ -79,97 +79,102 @@ export class JournalEntryService {
             const entryYear = entryDate.getFullYear()
             const entryMonth = entryDate.getMonth() + 1
             const periodId = `FY-${entryYear}-${String(entryMonth).padStart(2, "0")}`
-            const periodRef = db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId)
-            const periodDoc = tx ? await tx.get(periodRef) : await periodRef.get()
 
-            let isClosed = false
-            let periodName = "Unknown"
+            const client = getServiceSupabase()
+            const { data: period } = await client
+                .from(TABLES.FISCAL_PERIODS)
+                .select("status")
+                .eq("id", periodId)
+                .single()
 
-            if (periodDoc.exists) {
-                const period = periodDoc.data()!
-                periodName = periodDoc.id
-                if (period.status === "closed" || period.status === "locked") {
-                    isClosed = true
+            if (period && (period.status === "closed" || period.status === "locked")) {
+                if (entryType !== JournalEntryType.CLOSING_ENTRY) {
+                    return {
+                        success: false,
+                        error: `Cannot post to a closed or locked fiscal period: ${periodId}`
+                    }
                 }
             }
-
-            if (isClosed && entryType !== JournalEntryType.CLOSING_ENTRY) {
-                return {
-                    success: false,
-                    error: `Cannot post to a closed or locked fiscal period: ${periodName}`
-                }
-            }
-
-            const entryId = `JE-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`
 
             const accountIds = Array.from(new Set(lines.map(l => l.accountCode)))
+            const entryId = `JE-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`
 
-            const balanceSnapshots: Map<string, FirebaseFirestore.DocumentSnapshot> = new Map()
-            for (const accountCode of accountIds) {
-                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode)
-                const balDoc = tx ? await tx.get(balRef) : await balRef.get()
-                balanceSnapshots.set(accountCode, balDoc)
+            const linesJson = lines.map(line => ({
+                account_code: line.accountCode,
+                account_name: line.accountName,
+                debit: line.debit,
+                credit: line.credit,
+                description: line.description,
+            }))
+
+            const { data: entry, error: entryError } = await client
+                .from(TABLES.JOURNAL_ENTRIES)
+                .insert({
+                    id: entryId,
+                    date: entryDate.toISOString().split("T")[0],
+                    type: entryType,
+                    reference_id: referenceDoc,
+                    reference_type: "sales_order",
+                    description: notes || `Journal entry for ${referenceDoc}`,
+                    account_ids: accountIds,
+                    created_by: userId,
+                    is_posted: true,
+                })
+                .select("id")
+                .single()
+
+            if (entryError) {
+                console.error("Error inserting journal entry:", entryError)
+                return { success: false, error: entryError.message }
             }
 
-            const journalEntry: Record<string, unknown> = {
-                id: entryId,
-                date: entryDate,
-                type: entryType,
-                reference_doc: referenceDoc,
-                description: notes || `Journal entry for ${referenceDoc}`,
-                entries: lines.map(line => ({
-                    account_id: line.accountCode,
-                    account_name: line.accountName,
-                    debit: line.debit,
-                    credit: line.credit,
-                    description: line.description,
-                })),
-                account_ids: accountIds,
-                total_debits: totalDebits,
-                total_credits: totalCredits,
-                created_at: now,
-                created_by: userId,
-            }
+            const lineInserts = lines.map(line => ({
+                journal_entry_id: entryId,
+                account_code: line.accountCode,
+                account_name: line.accountName,
+                debit: line.debit,
+                credit: line.credit,
+                description: line.description,
+            }))
 
-            if (metadata) {
-                journalEntry.metadata = metadata
-            }
+            const { error: linesError } = await client
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .insert(lineInserts)
 
-            const jeRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId)
-            if (tx) {
-                tx.set(jeRef, journalEntry)
-            } else {
-                await jeRef.set(journalEntry)
+            if (linesError) {
+                console.error("Error inserting journal entry lines:", linesError)
+                return { success: false, error: linesError.message }
             }
 
             for (const line of lines) {
-                const balDoc = balanceSnapshots.get(line.accountCode)
-                const existing = balDoc?.exists ? balDoc.data()! : { totalDebits: 0, totalCredits: 0 }
-                const newTotalDebits = (existing.totalDebits || 0) + line.debit
-                const newTotalCredits = (existing.totalCredits || 0) + line.credit
+                const { data: existing } = await client
+                    .from(TABLES.ACCOUNT_BALANCES)
+                    .select("total_debits, total_credits")
+                    .eq("account_code", line.accountCode)
+                    .maybeSingle()
+
+                const newTotalDebits = (existing?.total_debits || 0) + line.debit
+                const newTotalCredits = (existing?.total_credits || 0) + line.credit
                 const isDebit = isDebitNormalBalance(line.accountCode)
                 const balance = isDebit
                     ? newTotalDebits - newTotalCredits
                     : newTotalCredits - newTotalDebits
 
-                const balanceData = {
-                    accountCode: line.accountCode,
-                    totalDebits: newTotalDebits,
-                    totalCredits: newTotalCredits,
-                    balance,
-                    lastEntryId: entryId,
-                    updatedAt: now,
-                }
+                const periodStart = new Date(entryDate.getFullYear(), entryDate.getMonth(), 1).toISOString().split("T")[0]
+                const periodEnd = new Date(entryDate.getFullYear(), entryDate.getMonth() + 1, 0).toISOString().split("T")[0]
 
-                const balRef = db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(line.accountCode)
-                if (tx) {
-                    tx.set(balRef, balanceData)
-                } else {
-                    await balRef.set(balanceData)
-                }
+                await client
+                    .from(TABLES.ACCOUNT_BALANCES)
+                    .upsert({
+                        account_code: line.accountCode,
+                        period_start: periodStart,
+                        period_end: periodEnd,
+                        total_debits: newTotalDebits,
+                        total_credits: newTotalCredits,
+                        closing_balance: balance,
+                    }, { onConflict: "account_code, period_end" })
             }
 
-            console.log(`✅ Journal entry ${entryId} created: ${entryType}`)
             return { success: true, entryId }
 
         } catch (error) {
@@ -183,43 +188,51 @@ export class JournalEntryService {
 
     static async voidJournalEntry(entryId: string, userId: string): Promise<{ success: boolean; voidEntryId?: string; error?: string }> {
         try {
-            const entryRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(entryId)
-            const entryDoc = await entryRef.get()
-            
-            if (!entryDoc.exists) {
+            const client = getServiceSupabase()
+            const { data: entry } = await client
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("*")
+                .eq("id", entryId)
+                .single()
+
+            if (!entry) {
                 return { success: false, error: "Journal entry not found" }
             }
-            
-            const entryData = entryDoc.data()
-            if (entryData?.voided) {
-                return { success: false, error: "Journal entry is already voided" }
+
+            const { data: existingLines } = await client
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .select("*")
+                .eq("journal_entry_id", entryId)
+
+            if (!existingLines?.length) {
+                return { success: false, error: "Journal entry has no lines" }
             }
-            
-            const reversingLines: JournalLine[] = entryData?.entries.map((line: any) => ({
-                accountCode: line.account_id,
-                accountName: line.account_name,
+
+            const reversingLines: JournalLine[] = existingLines.map((line: any) => ({
+                accountCode: line.account_code,
+                accountName: line.account_name || "",
                 debit: line.credit,
                 credit: line.debit,
-                description: `VOID: ${line.description}`,
+                description: `VOID: ${line.description || ""}`,
             }))
-            
+
             const result = await this.createJournalEntry(
-                entryData?.type as JournalEntryType,
+                entry.type as JournalEntryType,
                 reversingLines,
                 entryId,
                 `Voided original entry: ${entryId}`,
                 userId
             )
-            
+
             if (result.success) {
-                await entryRef.update({
-                    voided: true,
-                    voided_at: new Date(),
-                    voided_by: userId,
-                    reversing_entry_id: result.entryId
-                })
+                await client
+                    .from(TABLES.JOURNAL_ENTRIES)
+                    .update({
+                        is_posted: false,
+                    })
+                    .eq("id", entryId)
             }
-            
+
             return {
                 success: result.success,
                 voidEntryId: result.entryId,

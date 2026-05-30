@@ -1,17 +1,13 @@
-/**
- * Currency and Exchange Rate types
- */
-
 export type CurrencyCode = "EGP" | "USD" | "EUR" | "GBP" | "SAR" | "AED"
 
 export interface ExchangeRate {
   id: string
   fromCurrency: CurrencyCode
   toCurrency: CurrencyCode
-  rate: number           // 1 fromCurrency = rate toCurrency
-  date: Date
-  source: "manual" | "cbe" | "bank"  // Central Bank of Egypt, bank quote, manual
-  createdAt: Date
+  rate: number
+  date: string
+  source: "manual" | "cbe" | "bank"
+  createdAt: string
   createdBy: string
 }
 
@@ -19,8 +15,8 @@ export interface MultiCurrencyTransaction {
   originalAmount: number
   originalCurrency: CurrencyCode
   exchangeRate: number
-  functionalAmount: number  // Amount in EGP
-  rateDate: Date
+  functionalAmount: number
+  rateDate: string
 }
 
 export interface CurrencyBalance {
@@ -28,38 +24,18 @@ export interface CurrencyBalance {
   amount: number
   egpEquivalent: number
   lastRate: number
-  lastRateDate: Date
+  lastRateDate: string
 }
 
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
-const EXCHANGE_RATES_COLLECTION = "acc_exchange_rates"
-
-/**
- * Multi-Currency Service
- *
- * Manages foreign currency transactions, exchange rates, and translation
- * per IAS 21 (The Effects of Changes in Foreign Exchange Rates).
- *
- * Key rules:
- *  - Functional currency: EGP (Egyptian Pound)
- *  - Foreign currency transactions: translate at spot rate on transaction date
- *  - Monetary items (cash, AR, AP in foreign currency): retranslate at closing rate
- *  - Non-monetary items (inventory, fixed assets): remain at historical rate
- *  - Exchange differences: recognized in P&L (account 7004)
- */
 export class CurrencyService {
   static readonly FUNCTIONAL_CURRENCY: CurrencyCode = "EGP"
-  static readonly COLLECTION = EXCHANGE_RATES_COLLECTION
-
-  /** FX Gain/Loss account */
+  static readonly TABLE = TABLES.EXCHANGE_RATES
   static readonly FX_GAIN_LOSS_ACCOUNT = "7004"
 
-  /**
-   * Set an exchange rate
-   */
   static async setExchangeRate(
     fromCurrency: CurrencyCode,
     toCurrency: CurrencyCode,
@@ -72,9 +48,9 @@ export class CurrencyService {
       if (fromCurrency === toCurrency) return { success: false, error: "Currencies must differ" }
 
       const rateId = `FX-${fromCurrency}-${toCurrency}-${Date.now()}`
-      const now = new Date()
+      const now = new Date().toISOString()
 
-      await db.collection(this.COLLECTION).doc(rateId).set({
+      const { error } = await getServiceSupabase().from(this.TABLE).insert({
         id: rateId,
         fromCurrency,
         toCurrency,
@@ -84,6 +60,7 @@ export class CurrencyService {
         createdAt: now,
         createdBy: userId,
       })
+      if (error) throw error
 
       console.log(`✅ Exchange rate: 1 ${fromCurrency} = ${rate} ${toCurrency}`)
       return { success: true, rateId }
@@ -92,32 +69,26 @@ export class CurrencyService {
     }
   }
 
-  /**
-   * Get the latest exchange rate for a currency pair
-   */
   static async getLatestRate(
     fromCurrency: CurrencyCode,
     toCurrency: CurrencyCode
   ): Promise<ExchangeRate | null> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("fromCurrency", "==", fromCurrency)
-        .where("toCurrency", "==", toCurrency)
-        .orderBy("date", "desc")
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("fromCurrency", fromCurrency)
+        .eq("toCurrency", toCurrency)
+        .order("date", { ascending: false })
         .limit(1)
-        .get()
+        .single()
 
-      if (snapshot.empty) return null
-      return snapshot.docs[0].data() as ExchangeRate
+      if (error || !data) return null
+      return data as ExchangeRate
     } catch {
       return null
     }
   }
 
-  /**
-   * Translate a foreign currency amount to EGP at the given rate.
-   * Per IAS 21.21: foreign currency transactions are recorded at the spot rate.
-   */
   static translateToEGP(
     amount: number,
     fromCurrency: CurrencyCode,
@@ -128,17 +99,10 @@ export class CurrencyService {
       originalCurrency: fromCurrency,
       exchangeRate: rate,
       functionalAmount: Math.round(amount * rate * 100) / 100,
-      rateDate: new Date(),
+      rateDate: new Date().toISOString(),
     }
   }
 
-  /**
-   * Record a foreign currency purchase of raw materials.
-   *
-   * Journal Entry:
-   *   DR Raw Materials Inventory (1201)    EGP equivalent
-   *       CR Accounts Payable - Foreign (2103)    EGP equivalent
-   */
   static async recordForeignCurrencyPurchase(
     vendorId: string,
     originalAmount: number,
@@ -182,7 +146,7 @@ export class CurrencyService {
           originalAmount,
           originalCurrency,
           exchangeRate: rate,
-          rateDate: new Date(),
+          rateDate: new Date().toISOString(),
         }
       )
 
@@ -197,17 +161,6 @@ export class CurrencyService {
     }
   }
 
-  /**
-   * Record exchange gain/loss on settlement of foreign currency payable.
-   *
-   * When the rate changes between purchase date and payment date,
-   * the difference is an exchange gain or loss.
-   *
-   * Journal Entry (if rate increased — loss):
-   *   DR FX Loss (7004)        difference
-   *   DR Accounts Payable      original EGP amount
-   *       CR Cash/Bank              total EGP paid
-   */
   static async recordFXSettlement(
     originalEGPAmount: number,
     paymentEGPAmount: number,
@@ -268,12 +221,6 @@ export class CurrencyService {
     }
   }
 
-  /**
-   * Period-end revaluation of foreign currency monetary items (IAS 21.23).
-   *
-   * Monetary items (cash, receivables, payables in foreign currency)
-   * are retranslated at the closing rate. Differences go to P&L.
-   */
   static async revalueMonetaryItems(
     closingRates: Record<CurrencyCode, number>,
     userId: string = "system"
@@ -283,18 +230,9 @@ export class CurrencyService {
     entryIds?: string[]
     error?: string
   }> {
-    // This is a framework — actual implementation requires tracking
-    // foreign currency balances per account, which needs data model changes.
-    // For now, returns the structure for manual revaluation journal entries.
     try {
       const entryIds: string[] = []
       let totalImpact = 0
-
-      // Placeholder: in a full implementation, you would:
-      // 1. Query all journal entries with foreign currency metadata
-      // 2. Identify unsettled monetary items
-      // 3. Calculate the difference between book value and closing rate value
-      // 4. Post the aggregated FX gain/loss
 
       const entryId = `FX-REVAL-${Date.now()}`
       entryIds.push(entryId)
@@ -305,23 +243,20 @@ export class CurrencyService {
     }
   }
 
-  /**
-   * Get all exchange rates for a currency pair
-   */
   static async getRateHistory(
     fromCurrency: CurrencyCode,
     toCurrency: CurrencyCode,
     limit: number = 12
   ): Promise<ExchangeRate[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("fromCurrency", "==", fromCurrency)
-        .where("toCurrency", "==", toCurrency)
-        .orderBy("date", "desc")
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("fromCurrency", fromCurrency)
+        .eq("toCurrency", toCurrency)
+        .order("date", { ascending: false })
         .limit(limit)
-        .get()
-
-      return snapshot.docs.map(d => d.data() as ExchangeRate)
+      if (error) throw error
+      return (data || []) as ExchangeRate[]
     } catch {
       return []
     }

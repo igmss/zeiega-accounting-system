@@ -1,7 +1,4 @@
-import { db, COLLECTIONS } from "../firebase"
-
-// Add BOM collection to COLLECTIONS if not exists
-const BOM_COLLECTION = "acc_bom"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 
 export interface BOMItem {
     material_id: string
@@ -10,7 +7,7 @@ export interface BOMItem {
     unit: string
     unit_cost: number
     total_cost: number
-    waste_factor: number // 0-1 representing 0-100%
+    waste_factor: number
     notes?: string
 }
 
@@ -31,8 +28,8 @@ export interface BOM {
     total_cost: number
     notes?: string
     status: "draft" | "active" | "archived"
-    created_at: Date
-    updated_at: Date
+    created_at: string
+    updated_at: string
     created_by: string
 }
 
@@ -48,15 +45,10 @@ export interface MaterialRequirement {
     shortage: number
 }
 
-/**
- * Bill of Materials Management Service
- * Handles BOM creation, calculation, and material requirements planning
- */
+const BOM_TABLE = TABLES.BOM
+
 export class BOMService {
 
-    /**
-     * Create a new Bill of Materials
-     */
     static async createBOM(
         designId: string,
         name: string,
@@ -67,16 +59,13 @@ export class BOMService {
         notes?: string
     ): Promise<{ success: boolean; bomId?: string; error?: string }> {
         try {
-            // Get design info
-            const designDoc = await db.collection(COLLECTIONS.DESIGNS).doc(designId).get()
-            if (!designDoc.exists) {
+            const { data: designData, error: designErr } = await getServiceSupabase().from(TABLES.DESIGNS).select("*").eq("id", designId).single()
+            if (designErr || !designData) {
                 return { success: false, error: `Design ${designId} not found` }
             }
 
-            const designData = designDoc.data()
-            const designName = designData?.name || "Unknown Design"
+            const designName = (designData as any).name || "Unknown Design"
 
-            // Calculate costs
             const processedItems: BOMItem[] = items.map(item => {
                 const quantityWithWaste = item.quantity * (1 + item.waste_factor)
                 const totalCost = quantityWithWaste * item.unit_cost
@@ -91,7 +80,7 @@ export class BOMService {
             const totalOverheadCost = (totalMaterialCost + totalLaborCost) * (overheadPercentage / 100)
             const totalCost = totalMaterialCost + totalLaborCost + totalOverheadCost
 
-            const now = new Date()
+            const now = new Date().toISOString()
             const bomId = `BOM-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
             const bom: BOM = {
@@ -116,7 +105,8 @@ export class BOMService {
                 created_by: "system"
             }
 
-            await db.collection(BOM_COLLECTION).doc(bomId).set(bom)
+            const { error } = await (getServiceSupabase() as any).from(BOM_TABLE).insert(bom)
+            if (error) throw error
 
             console.log(`✅ Created BOM ${bomId} for design ${designName}`)
             return { success: true, bomId }
@@ -130,71 +120,61 @@ export class BOMService {
         }
     }
 
-    /**
-     * Get BOM by ID
-     */
     static async getBOM(bomId: string): Promise<BOM | null> {
         try {
-            const doc = await db.collection(BOM_COLLECTION).doc(bomId).get()
-            if (!doc.exists) return null
-            return doc.data() as BOM
+            const { data, error } = await getServiceSupabase().from(BOM_TABLE).select("*").eq("id", bomId).single()
+            if (error || !data) return null
+            return data as BOM
         } catch (error) {
             console.error("Error getting BOM:", error)
             return null
         }
     }
 
-    /**
-     * Get active BOM for a design
-     */
     static async getActiveBOMForDesign(designId: string): Promise<BOM | null> {
         try {
-            const snapshot = await db.collection(BOM_COLLECTION)
-                .where("design_id", "==", designId)
-                .where("status", "==", "active")
+            const { data, error } = await getServiceSupabase().from(BOM_TABLE)
+                .select("*")
+                .eq("design_id", designId)
+                .eq("status", "active")
                 .limit(1)
-                .get()
+                .single()
 
-            if (snapshot.empty) return null
-            return snapshot.docs[0].data() as BOM
+            if (error || !data) return null
+            return data as BOM
         } catch (error) {
             console.error("Error getting BOM for design:", error)
             return null
         }
     }
 
-    /**
-     * Get all BOMs with optional filtering
-     */
     static async getAllBOMs(options?: {
         designId?: string
         status?: "draft" | "active" | "archived"
         limit?: number
     }): Promise<BOM[]> {
         try {
-            let query = db.collection(BOM_COLLECTION) as any
+            let query = getServiceSupabase().from(BOM_TABLE).select("*")
 
             if (options?.designId) {
-                query = query.where("design_id", "==", options.designId)
+                query = query.eq("design_id", options.designId)
             }
             if (options?.status) {
-                query = query.where("status", "==", options.status)
+                query = query.eq("status", options.status)
             }
             if (options?.limit) {
                 query = query.limit(options.limit)
             }
 
-            const snapshot = await query.get()
-            return snapshot.docs.map((doc: any) => doc.data() as BOM)
+            const { data, error } = await query
+            if (error) throw error
+            return (data || []) as BOM[]
         } catch (error) {
             console.error("Error getting BOMs:", error)
             return []
         }
     }
 
-    /**
-     * Update BOM
-     */
     static async updateBOM(
         bomId: string,
         updates: Partial<Omit<BOM, "id" | "created_at" | "created_by">>
@@ -205,7 +185,6 @@ export class BOMService {
                 return { success: false, error: "BOM not found" }
             }
 
-            // Recalculate totals if items are updated
             if (updates.items) {
                 const processedItems: BOMItem[] = updates.items.map(item => {
                     const quantityWithWaste = item.quantity * (1 + item.waste_factor)
@@ -225,10 +204,11 @@ export class BOMService {
                 updates.total_cost = updates.total_material_cost + updates.total_labor_cost + updates.total_overhead_cost
             }
 
-            await db.collection(BOM_COLLECTION).doc(bomId).update({
+            const { error } = await (getServiceSupabase() as any).from(BOM_TABLE).update({
                 ...updates,
-                updated_at: new Date()
-            })
+                updated_at: new Date().toISOString()
+            }).eq("id", bomId)
+            if (error) throw error
 
             return { success: true }
         } catch (error) {
@@ -240,9 +220,6 @@ export class BOMService {
         }
     }
 
-    /**
-     * Activate a BOM (archives other active BOMs for same design)
-     */
     static async activateBOM(bomId: string): Promise<{ success: boolean; error?: string }> {
         try {
             const bom = await this.getBOM(bomId)
@@ -250,25 +227,21 @@ export class BOMService {
                 return { success: false, error: "BOM not found" }
             }
 
-            // Archive any existing active BOMs for this design
-            const existingActive = await db.collection(BOM_COLLECTION)
-                .where("design_id", "==", bom.design_id)
-                .where("status", "==", "active")
-                .get()
+            const now = new Date().toISOString()
+            const { data: existingActive } = await getServiceSupabase().from(BOM_TABLE)
+                .select("id")
+                .eq("design_id", bom.design_id)
+                .eq("status", "active")
 
-            const batch = db.batch()
-
-            for (const doc of existingActive.docs) {
-                batch.update(doc.ref, { status: "archived", updated_at: new Date() })
+            for (const row of ((existingActive || []) as any[])) {
+                await (getServiceSupabase() as any).from(BOM_TABLE).update({ status: "archived", updated_at: now }).eq("id", row.id)
             }
 
-            // Activate this BOM
-            batch.update(db.collection(BOM_COLLECTION).doc(bomId), {
+            const { error } = await (getServiceSupabase() as any).from(BOM_TABLE).update({
                 status: "active",
-                updated_at: new Date()
-            })
-
-            await batch.commit()
+                updated_at: now
+            }).eq("id", bomId)
+            if (error) throw error
 
             console.log(`✅ Activated BOM ${bomId}`)
             return { success: true }
@@ -278,9 +251,6 @@ export class BOMService {
         }
     }
 
-    /**
-     * Calculate material requirements for production
-     */
     static async calculateMaterialRequirements(
         bomId: string,
         quantity: number
@@ -295,9 +265,8 @@ export class BOMService {
             let totalCost = 0
 
             for (const item of bom.items) {
-                // Get current inventory level
-                const inventoryDoc = await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(item.material_id).get()
-                const availableQty = inventoryDoc.exists ? (inventoryDoc.data()?.quantity_on_hand || 0) : 0
+                const { data: invData } = await getServiceSupabase().from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", item.material_id).single()
+                const availableQty = invData ? ((invData as any).quantity_on_hand || 0) : 0
 
                 const quantityNeeded = item.quantity * quantity
                 const quantityWithWaste = quantityNeeded * (1 + item.waste_factor)
@@ -319,7 +288,6 @@ export class BOMService {
                 totalCost += itemCost
             }
 
-            // Add labor and overhead costs
             const laborCost = bom.labor_hours * quantity * bom.labor_rate
             const overheadCost = (totalCost + laborCost) * (bom.overhead_percentage / 100)
             totalCost = totalCost + laborCost + overheadCost
@@ -331,9 +299,6 @@ export class BOMService {
         }
     }
 
-    /**
-     * Check if materials are available for production
-     */
     static async checkMaterialAvailability(
         bomId: string,
         quantity: number
@@ -362,9 +327,6 @@ export class BOMService {
         }
     }
 
-    /**
-     * Delete a BOM (only if draft status)
-     */
     static async deleteBOM(bomId: string): Promise<{ success: boolean; error?: string }> {
         try {
             const bom = await this.getBOM(bomId)
@@ -376,7 +338,8 @@ export class BOMService {
                 return { success: false, error: "Can only delete draft BOMs" }
             }
 
-            await db.collection(BOM_COLLECTION).doc(bomId).delete()
+            const { error } = await getServiceSupabase().from(BOM_TABLE).delete().eq("id", bomId)
+            if (error) throw error
             return { success: true }
         } catch (error) {
             console.error("Error deleting BOM:", error)

@@ -1,9 +1,4 @@
-/**
- * Financial Statements Service
- * Generates Income Statement, Balance Sheet, and Cash Flow Statement
- */
-
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import {
     AccountType,
     AccountSubType,
@@ -13,9 +8,6 @@ import {
     isDebitNormalBalance
 } from "../accounting/account-types"
 
-/**
- * Financial Statement Line Item
- */
 interface StatementLineItem {
     code: string
     name: string
@@ -23,12 +15,9 @@ interface StatementLineItem {
     children?: StatementLineItem[]
 }
 
-/**
- * Income Statement Structure
- */
 export interface IncomeStatement {
-    periodStart: Date
-    periodEnd: Date
+    periodStart: string
+    periodEnd: string
     revenue: {
         items: StatementLineItem[]
         total: number
@@ -56,11 +45,8 @@ export interface IncomeStatement {
     netIncome: number
 }
 
-/**
- * Balance Sheet Structure
- */
 export interface BalanceSheet {
-    asOfDate: Date
+    asOfDate: string
     assets: {
         currentAssets: { items: StatementLineItem[]; total: number }
         fixedAssets: { items: StatementLineItem[]; total: number }
@@ -79,11 +65,8 @@ export interface BalanceSheet {
     balanceCheckFailed?: boolean
 }
 
-/**
- * Trial Balance Structure
- */
 export interface TrialBalance {
-    asOfDate: Date
+    asOfDate: string
     accounts: Array<{
         code: string
         name: string
@@ -96,46 +79,39 @@ export interface TrialBalance {
     isBalanced: boolean
 }
 
-/**
- * Financial Statements Service
- */
 export class FinancialStatementsService {
 
-    /**
-     * Calculate account balance from journal entries
-     */
     public static async getAccountBalance(
         accountCode: string,
         startDate?: Date,
         endDate?: Date
     ): Promise<number> {
         try {
-            // Use cached balance when no date filter is needed
             if (!startDate && !endDate) {
-                const balDoc = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode).get()
-                if (balDoc.exists) {
-                    const data = balDoc.data()!
-                    return data.balance || 0
+                const { data: balDoc } = await getServiceSupabase().from(TABLES.ACCOUNT_BALANCES).select("balance").eq("id", accountCode).single()
+                if (balDoc) {
+                    return balDoc.balance || 0
                 }
             }
 
-            let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("account_ids", "array-contains", accountCode) as FirebaseFirestore.Query
+            let query = getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+                .select("*")
+                .contains("account_ids", [accountCode])
 
             if (startDate) {
-                query = query.where("date", ">=", startDate)
+                query = query.gte("date", startDate.toISOString())
             }
             if (endDate) {
-                query = query.where("date", "<=", endDate)
+                query = query.lte("date", endDate.toISOString())
             }
 
-            const snapshot = await query.get()
+            const { data: rows, error } = await query
+            if (error) throw error
 
             let totalDebits = 0
             let totalCredits = 0
 
-            for (const doc of snapshot.docs) {
-                const entry = doc.data()
+            for (const entry of (rows || [])) {
                 if (entry.entries && Array.isArray(entry.entries)) {
                     for (const line of entry.entries) {
                         if (line.account_id === accountCode) {
@@ -146,7 +122,6 @@ export class FinancialStatementsService {
                 }
             }
 
-            // Return balance based on normal balance type
             const isDebit = isDebitNormalBalance(accountCode)
             return isDebit ? totalDebits - totalCredits : totalCredits - totalDebits
         } catch (error) {
@@ -156,9 +131,6 @@ export class FinancialStatementsService {
         }
     }
 
-    /**
-     * Get account balances by type for a date range
-     */
     private static async getAccountBalancesByType(
         type: AccountType,
         startDate?: Date,
@@ -168,7 +140,7 @@ export class FinancialStatementsService {
         const items: StatementLineItem[] = []
 
         for (const account of accounts) {
-            if (!account.parentCode) {  // Only root accounts
+            if (!account.parentCode) {
                 const balance = await this.getAccountBalance(account.code, startDate, endDate)
                 if (balance !== 0) {
                     items.push({
@@ -183,61 +155,43 @@ export class FinancialStatementsService {
         return items.sort((a, b) => a.code.localeCompare(b.code))
     }
 
-    /**
-     * Generate Income Statement
-     */
     static async generateIncomeStatement(
         startDate: Date,
         endDate: Date
     ): Promise<IncomeStatement> {
-        // Revenue accounts (4xxx)
         const revenueItems = await this.getAccountBalancesByType(AccountType.REVENUE, startDate, endDate)
-
-        // Get contra revenue items (discounts, returns)
         const contraRevenueItems = await this.getAccountBalancesByType(AccountType.CONTRA_REVENUE, startDate, endDate)
         const contraTotal = contraRevenueItems.reduce((sum, item) => sum + item.amount, 0)
-
         const revenueTotal = revenueItems.reduce((sum, item) => sum + item.amount, 0) - contraTotal
 
-        // COGS accounts (5xxx) - using dedicated COGS type
         const cogsItems = await this.getAccountBalancesByType(AccountType.COGS, startDate, endDate)
         const cogsTotal = cogsItems.reduce((sum, item) => sum + item.amount, 0)
-
-        // Gross Profit
         const grossProfit = revenueTotal - cogsTotal
 
-        // Operating Expenses (6xxx)
         const operatingItems = await this.getAccountBalancesByType(AccountType.EXPENSE, startDate, endDate)
         const operatingTotal = operatingItems.reduce((sum, item) => {
-            // If expense has credit normal balance (like Inventory Gain), it reduces total expenses
             const isDebit = isDebitNormalBalance(item.code)
             return sum + (isDebit ? item.amount : -item.amount)
         }, 0)
 
-        // Operating Income
         const operatingIncome = grossProfit - operatingTotal
 
-        // Other Income/Expenses (7xxx)
         const otherItems = await this.getAccountBalancesByType(AccountType.OTHER, startDate, endDate)
         const otherTotal = otherItems.reduce((sum, item) => {
-            // Treat as net expense (positive = loss, negative = gain)
             const isDebit = isDebitNormalBalance(item.code)
             return sum + (isDebit ? item.amount : -item.amount)
         }, 0)
 
-        // Net Income
         const netIncome = operatingIncome - otherTotal
 
         const onlineSalesAccountCodes = ["6108", "6109", "6110"]
         const onlineSalesItems = operatingItems.filter(item => onlineSalesAccountCodes.includes(item.code))
         const onlineSalesTotal = onlineSalesItems.reduce((sum, item) => sum + item.amount, 0)
-        
-        // Filter out online sales items from general operating items for display
         const generalOperatingItems = operatingItems.filter(item => !onlineSalesAccountCodes.includes(item.code))
 
         return {
-            periodStart: startDate,
-            periodEnd: endDate,
+            periodStart: startDate.toISOString(),
+            periodEnd: endDate.toISOString(),
             revenue: {
                 items: revenueItems,
                 total: revenueTotal,
@@ -266,14 +220,9 @@ export class FinancialStatementsService {
         }
     }
 
-    /**
-     * Generate Balance Sheet
-     */
     static async generateBalanceSheet(asOfDate: Date): Promise<BalanceSheet> {
-        // Assets - filter by code range since we don't have CURRENT_ASSET subtype anymore
         const assetItems = await this.getAccountBalancesByType(AccountType.ASSET, undefined, asOfDate)
 
-        // Classify assets based on SubType (Atomic Fix-009)
         const currentAssetItems: StatementLineItem[] = []
         const fixedAssetItems: StatementLineItem[] = []
         const unclassifiedCodes: string[] = []
@@ -294,7 +243,6 @@ export class FinancialStatementsService {
             } else if (fixedSubTypes.includes(account.subType)) {
                 fixedAssetItems.push(item)
             } else {
-                // Fallback for types like DEPRECIATION (should be handle specifically or as fixed)
                 if (account.subType === AccountSubType.DEPRECIATION) {
                     fixedAssetItems.push(item)
                 } else {
@@ -308,7 +256,6 @@ export class FinancialStatementsService {
             console.warn(`⚠️ Asset classification fallback applied for codes: ${unclassifiedCodes.join(", ")}`)
         }
 
-        // Add contra asset (depreciation) items - these reduce asset total
         const contraAssetItems = await this.getAccountBalancesByType(AccountType.CONTRA_ASSET, undefined, asOfDate)
         const contraAssetTotal = contraAssetItems.reduce((sum, item) => sum + item.amount, 0)
 
@@ -316,16 +263,13 @@ export class FinancialStatementsService {
         const fixedAssetsTotal = fixedAssetItems.reduce((sum, item) => sum + item.amount, 0) - contraAssetTotal
         const totalAssets = currentAssetsTotal + fixedAssetsTotal
 
-        // Liabilities
         const liabilityItems = await this.getAccountBalancesByType(AccountType.LIABILITY, undefined, asOfDate)
 
-        // Current liabilities: 2101-2140
         const currentLiabilityItems = liabilityItems.filter(item => {
             const code = parseInt(item.code)
             return code >= 2101 && code <= 2140
         })
 
-        // Long-term liabilities: 2201-2210
         const longTermLiabilityItems = liabilityItems.filter(item => {
             const code = parseInt(item.code)
             return code >= 2201 && code <= 2210
@@ -335,7 +279,6 @@ export class FinancialStatementsService {
         const longTermLiabilitiesTotal = longTermLiabilityItems.reduce((sum, item) => sum + item.amount, 0)
         const totalLiabilities = currentLiabilitiesTotal + longTermLiabilitiesTotal
 
-        // Equity
         const equityItems = await this.getAccountBalancesByType(AccountType.EQUITY, undefined, asOfDate)
         const equityTotal = equityItems.reduce((sum, item) => sum + item.amount, 0)
 
@@ -343,7 +286,7 @@ export class FinancialStatementsService {
         const balanceCheckFailed = Math.abs(totalAssets - totalLiabilitiesAndEquity) > 0.01
 
         return {
-            asOfDate,
+            asOfDate: asOfDate.toISOString(),
             assets: {
                 currentAssets: { items: currentAssetItems, total: currentAssetsTotal },
                 fixedAssets: { items: [...fixedAssetItems, ...contraAssetItems.map(i => ({ ...i, amount: -i.amount }))], total: fixedAssetsTotal },
@@ -360,9 +303,6 @@ export class FinancialStatementsService {
         }
     }
 
-    /**
-     * Generate Trial Balance
-     */
     static async generateTrialBalance(asOfDate: Date): Promise<TrialBalance> {
         const accounts: TrialBalance["accounts"] = []
         let totalDebits = 0
@@ -391,11 +331,10 @@ export class FinancialStatementsService {
             }
         }
 
-        // Sort by account code
         accounts.sort((a, b) => a.code.localeCompare(b.code))
 
         return {
-            asOfDate,
+            asOfDate: asOfDate.toISOString(),
             accounts,
             totalDebits,
             totalCredits,
@@ -403,9 +342,6 @@ export class FinancialStatementsService {
         }
     }
 
-    /**
-     * Get summary financial metrics
-     */
     static async getFinancialSummary(year: number): Promise<{
         revenue: number
         expenses: number
@@ -442,25 +378,15 @@ export class FinancialStatementsService {
         }
     }
 
-    /**
-     * Generate Cash Flow Statement (Indirect Method)
-     *
-     * Uses proper opening/closing balance comparison:
-     *   Change in WC = Balance(endDate) − Balance(day before startDate)
-     *
-     * This handles opening balances correctly, unlike the previous approach
-     * that only summed activity within the period.
-     */
     static async generateCashFlowStatement(startDate: Date, endDate: Date) {
-        // Helper: balance as of a specific date
         const balAsOf = async (code: string, asOf: Date) => {
-            const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("account_ids", "array-contains", code)
-                .where("date", "<=", asOf)
-                .get()
+            const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+                .select("*")
+                .contains("account_ids", [code])
+                .lte("date", asOf.toISOString())
             let d = 0, c = 0
-            for (const doc of snap.docs) {
-                for (const line of doc.data().entries || []) {
+            for (const doc of (snap || [])) {
+                for (const line of doc.entries || []) {
                     if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
                 }
             }
@@ -468,42 +394,30 @@ export class FinancialStatementsService {
             return isDebit ? d - c : c - d
         }
 
-        // Compute opening date (day before start date)
         const openingDate = new Date(startDate.getTime() - 86400000)
 
-        // Helper: Δ = balance(endDate) − balance(openingDate)
         const delta = async (code: string) => {
             return (await balAsOf(code, endDate)) - (await balAsOf(code, openingDate))
         }
 
-        // 1. Operating Activities
         const incomeStatement = await FinancialStatementsService.generateIncomeStatement(startDate, endDate)
         const netIncome = incomeStatement.netIncome
 
-        // Depreciation add-back: Δ in accumulated depreciation (contra-asset)
         const depDelta =
             await delta("1351") + await delta("1352") +
             await delta("1353") + await delta("1354") + await delta("1491")
 
-        // Working capital changes
         const arDelta = await delta(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE)
         const inventoryDelta = await delta(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS) +
                                await delta(ACCOUNT_CODES.INVENTORY_WIP) +
                                await delta(ACCOUNT_CODES.RAW_MATERIALS_FABRIC)
         const apDelta = await delta(ACCOUNT_CODES.ACCOUNTS_PAYABLE)
 
-        // Indirect method adjustments:
-        //   Depreciation add-back: + (non-cash expense)
-        //   AR increase: − (revenue > cash collected)
-        //   Inventory increase: − (cash spent on inventory)
-        //   AP increase: + (purchases > cash paid)
         const cashFromOperations = netIncome + depDelta - arDelta - inventoryDelta + apDelta
 
-        // 2. Investing Activities
         const equipmentDelta = await delta(ACCOUNT_CODES.PRODUCTION_EQUIPMENT)
         const cashFromInvesting = -equipmentDelta
 
-        // 3. Financing Activities
         const loansDelta = await delta(ACCOUNT_CODES.LONG_TERM_LOANS)
         const capitalDelta =
             await delta(ACCOUNT_CODES.CAPITAL_AHMED) +
@@ -516,13 +430,9 @@ export class FinancialStatementsService {
 
         const cashFromFinancing = loansDelta + capitalDelta - drawingsDelta
 
-        // 4. Net Cash Flow
-        // Verify against actual cash Δ
         const cashDelta = await delta(ACCOUNT_CODES.CASH_ON_HAND) + await delta(ACCOUNT_CODES.BANK_MAIN)
         const netCashFlow = cashFromOperations + cashFromInvesting + cashFromFinancing
 
-        // If there's a discrepancy, it may be due to non-cash items we didn't capture.
-        // The indirect method's computed net cash flow should ≈ actual cash Δ.
         const reconciliationGap = Math.round((netCashFlow - cashDelta) * 100) / 100
 
         return {

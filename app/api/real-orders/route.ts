@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { getServiceClient, TABLES } from "@/lib/supabase"
 import { requireAuth } from "@/lib/auth/auth-helpers"
 
 export const dynamic = 'force-dynamic'
@@ -8,23 +8,21 @@ export async function GET(request: NextRequest) {
   const auth = await requireAuth()
   if (!auth.authenticated) return auth.response
   try {
-    console.log("Fetching real orders from Firestore...")
+    console.log("Fetching real orders from Supabase...")
 
-    // Fetch orders from your actual Firestore collection
-    const ordersSnapshot = await db.collection(COLLECTIONS.ORDERS).get()
-    const orders: any[] = ordersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: orders, error: ordersError } = await getServiceClient()
+      .from(TABLES.ORDERS)
+      .select("*")
+
+    if (ordersError) throw ordersError
 
     console.log(`Found ${orders.length} orders`)
 
-    // Map orders to sales orders format for accounting system
-    const salesOrders = orders.map(order => ({
+    const salesOrders = orders.map((order: any) => ({
       id: order.id,
       customer_name: order.shippingAddress?.fullName || "Unknown Customer",
-      customer_email: order.userId, // Using userId as identifier
-      order_date: order.createdAt?.toDate?.() || new Date(),
+      customer_email: order.userId,
+      order_date: order.createdAt ? new Date(order.createdAt).toISOString() : new Date().toISOString(),
       status: mapOrderStatus(order.status),
       items: order.items?.map((item: any) => ({
         product_id: item.productId,
@@ -34,22 +32,21 @@ export async function GET(request: NextRequest) {
         total_price: item.adjustedPrice || item.basePrice
       })) || [],
       subtotal: order.total || 0,
-      tax_amount: 0, // You might want to calculate this
-      shipping_cost: 0, // You might want to add this field
+      tax_amount: 0,
+      shipping_cost: 0,
       total_amount: order.total || 0,
       payment_method: order.paymentMethod || "unknown",
       shipping_address: order.shippingAddress || {},
       notes: `Original order status: ${order.status}`,
-      created_at: order.createdAt?.toDate?.() || new Date(),
-      updated_at: order.updatedAt?.toDate?.() || new Date()
+      created_at: order.createdAt ? new Date(order.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: order.updatedAt ? new Date(order.updatedAt).toISOString() : new Date().toISOString()
     }))
 
-    // Also fetch returns/refunds
-    const returnsSnapshot = await db.collection(COLLECTIONS.RETURNS).get()
-    const returns: any[] = returnsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: returns, error: returnsError } = await getServiceClient()
+      .from(TABLES.RETURNS)
+      .select("*")
+
+    if (returnsError) throw returnsError
 
     console.log(`Found ${returns.length} returns`)
 

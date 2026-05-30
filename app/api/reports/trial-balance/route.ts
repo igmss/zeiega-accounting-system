@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             ...trialBalance,
-            asOfDate: trialBalance.asOfDate.toISOString().split("T")[0]
+            asOfDate: typeof trialBalance.asOfDate === 'string' ? trialBalance.asOfDate.split("T")[0] : new Date(trialBalance.asOfDate).toISOString().split("T")[0]
         })
     } catch (error) {
         console.error("Trial Balance report error:", error)

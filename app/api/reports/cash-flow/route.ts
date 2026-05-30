@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
 import { requirePermission } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
@@ -23,7 +22,6 @@ export async function GET(request: NextRequest) {
         const statement = await FinancialStatementsService.generateCashFlowStatement(start, end)
 
         // 2. Fetch live cash balances for beginning and ending
-        // Beginning balance is the balance before the start date
         const beforeStart = new Date(start.getTime() - 1)
         
         const cashAccountCodes = ["1101", "1102", "1103", "1104", "1105", "1106", "1107"]
@@ -48,8 +46,8 @@ export async function GET(request: NextRequest) {
                 net_cash: statement.operating.total
             },
             investing: {
-                equipment_purchase: -statement.investing.equipmentAdjustment, // Original expects positive for purchase
-                asset_sales: 0, // Service currently combines into adjustment
+                equipment_purchase: -statement.investing.equipmentAdjustment,
+                asset_sales: 0,
                 net_cash: statement.investing.total
             },
             financing: {

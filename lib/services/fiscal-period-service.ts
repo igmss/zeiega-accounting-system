@@ -1,75 +1,54 @@
-/**
- * Fiscal Period Management Service
- * Handles fiscal years, monthly periods, and period locking
- */
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 
-import { db, COLLECTIONS } from "../firebase"
-
-/**
- * Fiscal Period Status
- */
 export enum PeriodStatus {
     OPEN = "open",
     CLOSED = "closed",
     LOCKED = "locked",
 }
 
-/**
- * Fiscal Period Interface
- */
 export interface FiscalPeriod {
     id: string
     year: number
     month: number
-    startDate: Date
-    endDate: Date
+    startDate: string
+    endDate: string
     status: PeriodStatus
-    closedAt?: Date
+    closedAt?: string
     closedBy?: string
-    createdAt: Date
+    createdAt: string
 }
 
-/**
- * Fiscal Year Interface
- */
 export interface FiscalYear {
     id: string
     year: number
-    startDate: Date
-    endDate: Date
+    startDate: string
+    endDate: string
     isCurrent: boolean
     isClosed: boolean
-    periods: string[]  // Period IDs
-    createdAt: Date
+    periods: string[]
+    createdAt: string
 }
 
-/**
- * Fiscal Period Service
- */
 export class FiscalPeriodService {
 
-    /**
-     * Initialize fiscal year and monthly periods
-     */
     static async initializeFiscalYear(year: number): Promise<{ success: boolean; error?: string }> {
         try {
             const yearId = `FY-${year}`
-            const startDate = new Date(year, 0, 1)  // January 1
-            const endDate = new Date(year, 11, 31)  // December 31
+            const startDate = new Date(year, 0, 1).toISOString()
+            const endDate = new Date(year, 11, 31).toISOString()
 
-            // Check if year already exists
-            const existing = await db.collection(COLLECTIONS.FISCAL_YEARS).doc(yearId).get()
-            if (existing.exists) {
+            const { data: existing } = await getServiceSupabase().from(TABLES.FISCAL_YEARS).select("id").eq("id", yearId).single()
+            if (existing) {
                 return { success: false, error: `Fiscal year ${year} already exists` }
             }
 
             const periodIds: string[] = []
+            const now = new Date().toISOString()
 
-            // Create 12 monthly periods
             for (let month = 0; month < 12; month++) {
                 const periodId = `${yearId}-${String(month + 1).padStart(2, "0")}`
-                const periodStart = new Date(year, month, 1)
-                const periodEnd = new Date(year, month + 1, 0)  // Last day of month
+                const periodStart = new Date(year, month, 1).toISOString()
+                const periodEnd = new Date(year, month + 1, 0).toISOString()
 
                 const period: FiscalPeriod = {
                     id: periodId,
@@ -78,14 +57,14 @@ export class FiscalPeriodService {
                     startDate: periodStart,
                     endDate: periodEnd,
                     status: PeriodStatus.OPEN,
-                    createdAt: new Date(),
+                    createdAt: now,
                 }
 
-                await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).set(period)
+                const { error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).insert(period)
+                if (error) throw error
                 periodIds.push(periodId)
             }
 
-            // Create fiscal year record
             const fiscalYear: FiscalYear = {
                 id: yearId,
                 year,
@@ -94,16 +73,16 @@ export class FiscalPeriodService {
                 isCurrent: true,
                 isClosed: false,
                 periods: periodIds,
-                createdAt: new Date(),
+                createdAt: now,
             }
 
-            await db.collection(COLLECTIONS.FISCAL_YEARS).doc(yearId).set(fiscalYear)
+            const { error: fyErr } = await getServiceSupabase().from(TABLES.FISCAL_YEARS).insert(fiscalYear)
+            if (fyErr) throw fyErr
 
-            // Mark previous year as not current
             const prevYearId = `FY-${year - 1}`
-            const prevYear = await db.collection(COLLECTIONS.FISCAL_YEARS).doc(prevYearId).get()
-            if (prevYear.exists) {
-                await db.collection(COLLECTIONS.FISCAL_YEARS).doc(prevYearId).update({ isCurrent: false })
+            const { data: prevYear } = await getServiceSupabase().from(TABLES.FISCAL_YEARS).select("id").eq("id", prevYearId).single()
+            if (prevYear) {
+                await getServiceSupabase().from(TABLES.FISCAL_YEARS).update({ isCurrent: false }).eq("id", prevYearId)
             }
 
             console.log(`✅ Initialized fiscal year ${year} with 12 periods`)
@@ -116,9 +95,6 @@ export class FiscalPeriodService {
         }
     }
 
-    /**
-     * Get current fiscal period
-     */
     static async getCurrentPeriod(): Promise<FiscalPeriod | null> {
         try {
             const now = new Date()
@@ -126,69 +102,60 @@ export class FiscalPeriodService {
             const month = now.getMonth() + 1
             const periodId = `FY-${year}-${String(month).padStart(2, "0")}`
 
-            const doc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-            if (!doc.exists) {
-                // Auto-initialize current year if not exists
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+            if (error || !data) {
                 await this.initializeFiscalYear(year)
-                const newDoc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-                return newDoc.exists ? this.docToPeriod(newDoc) : null
+                const { data: newData } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+                return newData ? this.rowToPeriod(newData) : null
             }
 
-            return this.docToPeriod(doc)
+            return this.rowToPeriod(data)
         } catch (error) {
             console.error("Error getting current period:", error)
             return null
         }
     }
 
-    /**
-     * Get period for a specific date
-     */
     static async getPeriodForDate(date: Date): Promise<FiscalPeriod | null> {
         try {
             const year = date.getFullYear()
             const month = date.getMonth() + 1
             const periodId = `FY-${year}-${String(month).padStart(2, "0")}`
 
-            const doc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-            return doc.exists ? this.docToPeriod(doc) : null
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+            return (!error && data) ? this.rowToPeriod(data) : null
         } catch (error) {
             console.error("Error getting period for date:", error)
             return null
         }
     }
 
-    /**
-     * Check if a period is open for posting
-     */
     static async isPeriodOpen(date: Date): Promise<boolean> {
         const period = await this.getPeriodForDate(date)
         return period?.status === PeriodStatus.OPEN
     }
 
-    /**
-     * Close a fiscal period
-     */
     static async closePeriod(
         periodId: string,
         closedBy: string
     ): Promise<{ success: boolean; error?: string }> {
         try {
-            const doc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-            if (!doc.exists) {
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+            if (error || !data) {
                 return { success: false, error: "Period not found" }
             }
 
-            const period = this.docToPeriod(doc)
+            const period = this.rowToPeriod(data)
             if (period.status !== PeriodStatus.OPEN) {
                 return { success: false, error: "Period is already closed or locked" }
             }
 
-            await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).update({
+            const { error: updErr } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).update({
                 status: PeriodStatus.CLOSED,
-                closedAt: new Date(),
+                closedAt: new Date().toISOString(),
                 closedBy,
-            })
+            }).eq("id", periodId)
+            if (updErr) throw updErr
 
             console.log(`✅ Closed fiscal period ${periodId}`)
             return { success: true }
@@ -200,28 +167,26 @@ export class FiscalPeriodService {
         }
     }
 
-    /**
-     * Reopen a closed period (admin only)
-     */
     static async reopenPeriod(
         periodId: string
     ): Promise<{ success: boolean; error?: string }> {
         try {
-            const doc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-            if (!doc.exists) {
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+            if (error || !data) {
                 return { success: false, error: "Period not found" }
             }
 
-            const period = this.docToPeriod(doc)
+            const period = this.rowToPeriod(data)
             if (period.status === PeriodStatus.LOCKED) {
                 return { success: false, error: "Locked periods cannot be reopened" }
             }
 
-            await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).update({
+            const { error: updErr } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).update({
                 status: PeriodStatus.OPEN,
                 closedAt: null,
                 closedBy: null,
-            })
+            }).eq("id", periodId)
+            if (updErr) throw updErr
 
             console.log(`✅ Reopened fiscal period ${periodId}`)
             return { success: true }
@@ -233,26 +198,24 @@ export class FiscalPeriodService {
         }
     }
 
-    /**
-     * Lock a period (permanent, cannot be undone)
-     */
     static async lockPeriod(
         periodId: string
     ): Promise<{ success: boolean; error?: string }> {
         try {
-            const doc = await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).get()
-            if (!doc.exists) {
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).select("*").eq("id", periodId).single()
+            if (error || !data) {
                 return { success: false, error: "Period not found" }
             }
 
-            const period = this.docToPeriod(doc)
+            const period = this.rowToPeriod(data)
             if (period.status !== PeriodStatus.CLOSED) {
                 return { success: false, error: "Period must be closed before locking" }
             }
 
-            await db.collection(COLLECTIONS.FISCAL_PERIODS).doc(periodId).update({
+            const { error: updErr } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).update({
                 status: PeriodStatus.LOCKED,
-            })
+            }).eq("id", periodId)
+            if (updErr) throw updErr
 
             console.log(`🔒 Locked fiscal period ${periodId}`)
             return { success: true }
@@ -264,26 +227,21 @@ export class FiscalPeriodService {
         }
     }
 
-    /**
-     * Get all periods for a fiscal year
-     */
     static async getPeriodsForYear(year: number): Promise<FiscalPeriod[]> {
         try {
-            const snapshot = await db.collection(COLLECTIONS.FISCAL_PERIODS)
-                .where("year", "==", year)
-                .orderBy("month", "asc")
-                .get()
+            const { data, error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS)
+                .select("*")
+                .eq("year", year)
+                .order("month", { ascending: true })
+            if (error) throw error
 
-            return snapshot.docs.map(doc => this.docToPeriod(doc))
+            return (data || []).map((row: any) => this.rowToPeriod(row))
         } catch (error) {
             console.error("Error getting periods:", error)
             return []
         }
     }
 
-    /**
-     * Validate that a date can be used for posting
-     */
     static async validatePostingDate(date: Date): Promise<{ valid: boolean; error?: string }> {
         const period = await this.getPeriodForDate(date)
 
@@ -302,21 +260,17 @@ export class FiscalPeriodService {
         return { valid: true }
     }
 
-    /**
-     * Convert Firestore doc to FiscalPeriod
-     */
-    private static docToPeriod(doc: FirebaseFirestore.DocumentSnapshot): FiscalPeriod {
-        const data = doc.data()!
+    private static rowToPeriod(data: any): FiscalPeriod {
         return {
-            id: doc.id,
+            id: data.id,
             year: data.year,
             month: data.month,
-            startDate: data.startDate?.toDate?.() || new Date(data.startDate),
-            endDate: data.endDate?.toDate?.() || new Date(data.endDate),
+            startDate: data.startDate || new Date().toISOString(),
+            endDate: data.endDate || new Date().toISOString(),
             status: data.status as PeriodStatus,
-            closedAt: data.closedAt?.toDate?.(),
+            closedAt: data.closedAt || undefined,
             closedBy: data.closedBy,
-            createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
+            createdAt: data.createdAt || new Date().toISOString(),
         }
     }
 }

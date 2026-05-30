@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
-import { CHART_OF_ACCOUNTS, AccountType } from "@/lib/accounting/account-types"
+import { getServiceClient, TABLES } from "@/lib/supabase"
+import { CHART_OF_ACCOUNTS } from "@/lib/accounting/account-types"
 import { FiscalPeriodService } from "@/lib/services/fiscal-period-service"
 import { requireAdmin } from "@/lib/auth"
 
@@ -11,77 +11,52 @@ export async function POST() {
 
     console.log("Initializing chart of accounts with enhanced structure...")
 
-    // Get expected account count from our new structure
     const expectedAccountCount = Object.keys(CHART_OF_ACCOUNTS).length
 
-    // Check if accounts already exist
-    const existingAccountsSnapshot = await db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).get()
+    const { data: rawAccounts, error: fetchError } = await getServiceClient()
+      .from(TABLES.CHART_OF_ACCOUNTS)
+      .select("code")
 
-    // Only skip if we already have the full new structure (check for new account codes)
-    if (!existingAccountsSnapshot.empty && existingAccountsSnapshot.size >= expectedAccountCount) {
-      // Verify it's the new structure:
-      // 1. Must have new account "1454" (Cryptocurrency Holdings)
-      // 2. Must NOT have old account "1122" (Employee Advances - Duplicate)
-      const hasNewAccount = existingAccountsSnapshot.docs.some(doc => doc.id === "1454")
-      const hasOldAccount = existingAccountsSnapshot.docs.some(doc => doc.id === "1122")
+    if (fetchError) throw fetchError
+
+    const existingAccounts: { code: string }[] = (rawAccounts || []) as any
+
+    if (existingAccounts && existingAccounts.length > 0 && existingAccounts.length >= expectedAccountCount) {
+      const hasNewAccount = existingAccounts.some(account => account.code === "1454")
+      const hasOldAccount = existingAccounts.some(account => account.code === "1122")
 
       if (hasNewAccount && !hasOldAccount) {
         console.log("Chart of accounts already exists with new structure")
         return NextResponse.json({
           success: true,
           message: "Chart of accounts already exists with new structure",
-          accountCount: existingAccountsSnapshot.size
+          accountCount: existingAccounts.length
         })
       }
     }
 
-    // Clear ALL existing accounts to replace with new structure
-    if (!existingAccountsSnapshot.empty) {
-      console.log(`Clearing ${existingAccountsSnapshot.size} old accounts...`)
-      const deleteBatch = db.batch()
-      existingAccountsSnapshot.docs.forEach(doc => {
-        deleteBatch.delete(doc.ref)
-      })
-      await deleteBatch.commit()
-      console.log("Old accounts cleared")
-    }
+    const accounts = Object.values(CHART_OF_ACCOUNTS).map((account) => ({
+      code: account.code,
+      name: account.name,
+      name_ar: account.nameAr || null,
+      type: account.type,
+      sub_type: account.subType,
+      normal_balance: account.normalBalance,
+      parent_code: account.parentCode || null,
+      is_active: account.isActive,
+      is_system_account: account.isSystemAccount,
+      is_cash_flow_tracked: account.isCashFlowTracked,
+      description: account.description || null,
+    }))
 
-    // Initialize new chart of accounts from account-types
-    const accounts = Object.values(CHART_OF_ACCOUNTS)
-    console.log(`Creating ${accounts.length} accounts...`)
+    console.log(`Upserting ${accounts.length} accounts...`)
 
-    // Firestore batch limit is 500, so we split into batches
-    const batchSize = 400
-    for (let i = 0; i < accounts.length; i += batchSize) {
-      const batch = db.batch()
-      const batchAccounts = accounts.slice(i, i + batchSize)
+    const { error: upsertError } = await getServiceClient()
+      .from(TABLES.CHART_OF_ACCOUNTS)
+      .upsert(accounts as any, { onConflict: "code" })
 
-      batchAccounts.forEach((account) => {
-        const ref = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(account.code)
-        batch.set(ref, {
-          id: account.code,
-          code: account.code,
-          name: account.name,
-          name_ar: account.nameAr || null,
-          type: account.type,
-          sub_type: account.subType,
-          normal_balance: account.normalBalance,
-          parent_code: account.parentCode || null,
-          is_active: account.isActive,
-          is_system_account: account.isSystemAccount,
-          is_cash_flow_tracked: account.isCashFlowTracked,
-          description: account.description || null,
-          balance: 0,
-          created_at: new Date(),
-          last_updated: new Date(),
-        })
-      })
+    if (upsertError) throw upsertError
 
-      await batch.commit()
-      console.log(`Created batch ${Math.floor(i / batchSize) + 1}`)
-    }
-
-    // Initialize current fiscal year
     const currentYear = new Date().getFullYear()
     const fiscalResult = await FiscalPeriodService.initializeFiscalYear(currentYear)
     if (fiscalResult.success) {
@@ -112,4 +87,3 @@ export async function POST() {
     )
   }
 }
-

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 
-// API endpoint for recording loans with automatic balance synchronization
 export async function POST(request: Request) {
   const auth = await requirePermission("accounting:create")
   if (!auth.authorized) return auth.response
@@ -9,7 +8,6 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { amount, description, lenderName, loanType, receivedVia } = body
     
-    // Validate input
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: "Valid loan amount is required" }, { status: 400 })
     }
@@ -19,11 +17,10 @@ export async function POST(request: Request) {
     const now = new Date()
     const loanDescription = description || `Loan received from ${lenderName || 'Lender'}`
     
-    // BUG-1: Replace placeholders with numeric codes
-    let cashAccount = "1103" // Default Bank
+    let cashAccount = "1103"
     if (receivedVia === "cash") cashAccount = "1101"
 
-    const liabilityAccount = loanType === "long-term" ? "2201" : "2210" // 2201: Long-term, 2210: Short-term Notes
+    const liabilityAccount = loanType === "long-term" ? "2201" : "2210"
     
     const entries = [
       {
@@ -71,21 +68,21 @@ export async function POST(request: Request) {
   }
 }
 
-// GET endpoint to fetch loans
 export async function GET() {
   const auth = await requireAuth()
   if (!auth.authenticated) return auth.response
   try {
-    const { db, COLLECTIONS } = await import("@/lib/firebase")
+    const { getServiceClient, TABLES } = await import("@/lib/supabase")
     
-    // BUG-1: Update detection logic for numeric codes
-    const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get()
+    const { data, error } = await getServiceClient()
+      .from(TABLES.JOURNAL_ENTRIES)
+      .select("*")
+    
+    if (error) throw error
     
     const loans: any[] = []
-    journalSnapshot.docs.forEach(doc => {
-      const entry = doc.data()
+    for (const entry of (data || [])) {
       if (entry.entries) {
-        // Loan = Debit 1101/1103 (Cash/Bank) AND Credit 2201/2210 (Loans Payable)
         const hasCashDebit = entry.entries.some((subEntry: any) => 
           (subEntry.account_id === "1101" || subEntry.account_id === "1103") && subEntry.debit > 0
         )
@@ -102,16 +99,16 @@ export async function GET() {
           )
           
           loans.push({
-            id: doc.id,
+            id: entry.id,
             amount: cashEntry?.debit || 0,
             description: entry.description || cashEntry?.description || "",
             liabilityAccount: liabilityEntry?.account_id || "",
             loanType: liabilityEntry?.account_id === "2201" ? "long-term" : "short-term",
-            date: entry.date?.toDate ? entry.date.toDate() : (entry.date || new Date())
+            date: entry.date ? new Date(entry.date) : new Date()
           })
         }
       }
-    })
+    }
     
     return NextResponse.json({ success: true, loans, count: loans.length })
   } catch (error) {

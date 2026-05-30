@@ -1,11 +1,8 @@
-import { db, COLLECTIONS } from "../firebase"
-import { ACCOUNT_CODES, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
+import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
 import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
-/**
- * Overhead allocation configuration
- */
 export interface OverheadConfig {
   id: string
   fiscalYear: number
@@ -15,31 +12,24 @@ export interface OverheadConfig {
   estimatedActivityLevel: number
   pohr: number
   isActive: boolean
-  createdAt: Date
-  updatedAt: Date
+  createdAt: string
+  updatedAt: string
   createdBy: string
-  // Support for departmental rates
   department?: string
 }
 
-/**
- * Overhead application record per work order
- */
 export interface OverheadApplication {
   workOrderId: string
   actualActivity: number
   pohr: number
   appliedOH: number
-  date: Date
+  date: string
   configId: string
 }
 
-/**
- * Over/Under-Applied Overhead disposition
- */
 export interface OHDisposition {
-  periodStart: Date
-  periodEnd: Date
+  periodStart: string
+  periodEnd: string
   totalActualOH: number
   totalAppliedOH: number
   variance: number
@@ -52,24 +42,9 @@ export interface OHDisposition {
   journalEntryId?: string
 }
 
-/**
- * Overhead Service — POHR calculation, application, and disposition
- *
- * Cost flow:
- *   1. Configure POHR per fiscal year
- *   2. Apply OH to WIP at POHR × actual activity
- *      DR WIP-OH (1712) / CR Manufacturing OH - Applied (5009)
- *   3. Actual indirect costs accumulate in Manufacturing OH - Control (5010)
- *   4. At period-end, close applied into control, isolate variance in 5011
- *   5. Dispose: immaterial → COGS; material → prorate across WIP/FG/COGS
- */
 export class OverheadService {
-  private static readonly COLLECTION = "acc_overhead_config"
+  private static readonly TABLE = TABLES.OVERHEAD_CONFIG
 
-  /**
-   * Calculate POHR
-   * POHR = Estimated Total OH ÷ Estimated Activity Level
-   */
   static calculatePOHR(estimatedTotalOH: number, estimatedActivityLevel: number): number {
     if (estimatedActivityLevel <= 0) {
       throw new Error("Estimated activity level must be positive")
@@ -77,9 +52,6 @@ export class OverheadService {
     return Math.round((estimatedTotalOH / estimatedActivityLevel) * 100) / 100
   }
 
-  /**
-   * Create a new overhead allocation configuration
-   */
   static async createOverheadConfig(
     fiscalYear: number,
     allocationBase: OverheadConfig["allocationBase"],
@@ -93,21 +65,19 @@ export class OverheadService {
         return { success: false, error: "Estimated OH and activity level must be positive" }
       }
 
-      // Deactivate any existing active config for same year and base
-      const existing = await db.collection(this.COLLECTION)
-        .where("fiscalYear", "==", fiscalYear)
-        .where("allocationBase", "==", allocationBase)
-        .where("isActive", "==", true)
-        .get()
+      const now = new Date().toISOString()
+      const { data: existing } = await getServiceSupabase().from(this.TABLE)
+        .select("id")
+        .eq("fiscalYear", fiscalYear)
+        .eq("allocationBase", allocationBase)
+        .eq("isActive", true)
 
-      const batch = db.batch()
-      for (const doc of existing.docs) {
-        batch.update(doc.ref, { isActive: false, updatedAt: new Date() })
+      for (const row of (existing || [])) {
+        await getServiceSupabase().from(this.TABLE).update({ isActive: false, updatedAt: now }).eq("id", row.id)
       }
 
       const pohr = this.calculatePOHR(estimatedTotalOH, estimatedActivityLevel)
       const configId = `OH-${fiscalYear}-${allocationBase}-${Date.now()}`
-      const now = new Date()
 
       const config: OverheadConfig = {
         id: configId,
@@ -124,8 +94,8 @@ export class OverheadService {
         createdBy,
       }
 
-      batch.set(db.collection(this.COLLECTION).doc(configId), config)
-      await batch.commit()
+      const { error } = await getServiceSupabase().from(this.TABLE).insert(config)
+      if (error) throw error
 
       console.log(`✅ POHR configured: ${formatCurrency(pohr)} per ${allocationBase} (FY${fiscalYear})`)
       return { success: true, configId, pohr }
@@ -137,34 +107,27 @@ export class OverheadService {
     }
   }
 
-  /**
-   * Get active POHR for a fiscal year and allocation base
-   */
   static async getActivePOHR(
     fiscalYear: number,
     allocationBase: OverheadConfig["allocationBase"] = "DLH"
   ): Promise<OverheadConfig | null> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("fiscalYear", "==", fiscalYear)
-        .where("allocationBase", "==", allocationBase)
-        .where("isActive", "==", true)
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("fiscalYear", fiscalYear)
+        .eq("allocationBase", allocationBase)
+        .eq("isActive", true)
         .limit(1)
-        .get()
+        .single()
 
-      if (snapshot.empty) return null
-      return snapshot.docs[0].data() as OverheadConfig
+      if (error || !data) return null
+      return data as OverheadConfig
     } catch (error) {
       console.error("Error getting active POHR:", error)
       return null
     }
   }
 
-  /**
-   * Apply overhead to a work order
-   * DR: WIP - Overhead Applied (1712)
-   * CR: Manufacturing OH - Applied (5009)
-   */
   static async applyOverheadToWorkOrder(
     workOrderId: string,
     actualActivity: number,
@@ -177,10 +140,8 @@ export class OverheadService {
         return { success: false, error: "Actual activity must be positive" }
       }
 
-      // Determine fiscal year if not provided
       const year = fiscalYear || new Date().getFullYear()
 
-      // Get active POHR if not provided
       let rate = pohr
       if (!rate) {
         const config = await this.getActivePOHR(year)
@@ -194,10 +155,8 @@ export class OverheadService {
       }
 
       const appliedOH = Math.round(actualActivity * rate * 100) / 100
-
-      // Create journal entry
       const entryId = `OH-${workOrderId}-${Date.now()}`
-      const now = new Date()
+      const now = new Date().toISOString()
 
       const result = await JournalEntryService.createJournalEntry(
         JournalEntryType.OVERHEAD_APPLIED,
@@ -226,17 +185,14 @@ export class OverheadService {
         return { success: false, error: result.error }
       }
 
-      // Update work order overhead cost
-      const woRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId)
-      const woDoc = await woRef.get()
-      if (woDoc.exists) {
-        const woData = woDoc.data()
-        const currentOH = woData?.overhead_cost || 0
-        await woRef.update({
+      const { data: woData } = await getServiceSupabase().from(TABLES.WORK_ORDERS).select("*").eq("id", workOrderId).single()
+      if (woData) {
+        const currentOH = woData.overhead_cost || 0
+        await getServiceSupabase().from(TABLES.WORK_ORDERS).update({
           overhead_cost: currentOH + appliedOH,
-          total_cost: (woData?.total_cost || 0) + appliedOH,
+          total_cost: (woData.total_cost || 0) + appliedOH,
           updated_at: now,
-        })
+        }).eq("id", workOrderId)
       }
 
       console.log(`✅ Applied ${formatCurrency(appliedOH)} OH to WO ${workOrderId}`)
@@ -249,32 +205,29 @@ export class OverheadService {
     }
   }
 
-  /**
-   * Calculate total actual overhead incurred during a period
-   * Sums all actual OH accounts: 5005 (Factory Rent), 5006 (Utilities),
-   * 5007 (Maintenance), 5008 (Depreciation-Factory)
-   */
   static async getActualOverhead(
     startDate: Date,
     endDate: Date
   ): Promise<number> {
     const ohAccounts = [
-      ACCOUNT_CODES.FACTORY_RENT,        // 5005
-      ACCOUNT_CODES.FACTORY_UTILITIES,   // 5006
-      ACCOUNT_CODES.MACHINE_MAINTENANCE, // 5007
-      ACCOUNT_CODES.DEPRECIATION_FACTORY,// 5008
+      ACCOUNT_CODES.FACTORY_RENT,
+      ACCOUNT_CODES.FACTORY_UTILITIES,
+      ACCOUNT_CODES.MACHINE_MAINTENANCE,
+      ACCOUNT_CODES.DEPRECIATION_FACTORY,
     ]
 
+    const start = startDate.toISOString()
+    const end = endDate.toISOString()
     let total = 0
-    for (const code of ohAccounts) {
-      const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-        .where("account_ids", "array-contains", code)
-        .where("date", ">=", startDate)
-        .where("date", "<=", endDate)
-        .get()
 
-      for (const doc of snapshot.docs) {
-        const entry = doc.data()
+    for (const code of ohAccounts) {
+      const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+        .select("*")
+        .contains("account_ids", [code])
+        .gte("date", start)
+        .lte("date", end)
+
+      for (const entry of (data || [])) {
         for (const line of entry.entries || []) {
           if (line.account_id === code) {
             total += (line.debit || 0) - (line.credit || 0)
@@ -285,23 +238,21 @@ export class OverheadService {
     return total
   }
 
-  /**
-   * Calculate total overhead applied during a period
-   * Sums credits to 5009 (Manufacturing OH - Applied)
-   */
   static async getAppliedOverhead(
     startDate: Date,
     endDate: Date
   ): Promise<number> {
-    const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-      .where("account_ids", "array-contains", ACCOUNT_CODES.OH_APPLIED)
-      .where("date", ">=", startDate)
-      .where("date", "<=", endDate)
-      .get()
+    const start = startDate.toISOString()
+    const end = endDate.toISOString()
+
+    const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+      .select("*")
+      .contains("account_ids", [ACCOUNT_CODES.OH_APPLIED])
+      .gte("date", start)
+      .lte("date", end)
 
     let total = 0
-    for (const doc of snapshot.docs) {
-      const entry = doc.data()
+    for (const entry of (data || [])) {
       for (const line of entry.entries || []) {
         if (line.account_id === ACCOUNT_CODES.OH_APPLIED) {
           total += (line.credit || 0) - (line.debit || 0)
@@ -311,14 +262,6 @@ export class OverheadService {
     return total
   }
 
-  /**
-   * Close over/under-applied overhead at period-end (2-step process).
-   *
-   * Step 1: Close Applied into Control    DR 5009 OH Applied / CR 5010 OH Control
-   *   → 5010 now holds the net variance only
-   * Step 2: Transfer variance to disposal  DR/CR 5010 ↔ 5011 OH Variance
-   * Step 3: Dispose variance to COGS or prorate
-   */
   static async closeOverheadToVariance(
     startDate: Date,
     endDate: Date,
@@ -327,17 +270,15 @@ export class OverheadService {
     try {
       const actualOH = await this.getActualOverhead(startDate, endDate)
       const appliedOH = await this.getAppliedOverhead(startDate, endDate)
-      const variance = appliedOH - actualOH // + = over-applied, - = under-applied
+      const variance = appliedOH - actualOH
 
       if (Math.abs(variance) < 0.01) {
         return { success: true, underApplied: 0, overApplied: 0, disposedAmount: 0 }
       }
 
       const absV = Math.abs(variance)
-
-      // Step 1: Close Applied (5009) into Control (5010)
-      // DR 5009 OH Applied (eliminate credit) / CR 5010 OH Control (reduce debit)
       const refDoc = `OH-CLOSE-${startDate.toISOString().split("T")[0]}`
+      const endStr = endDate.toISOString()
       
       await JournalEntryService.createJournalEntry(
         JournalEntryType.GENERAL,
@@ -363,7 +304,6 @@ export class OverheadService {
         endDate
       )
 
-      // Step 2: Transfer variance to Over/Under-Applied OH (5011)
       const isOver = variance > 0
       
       await JournalEntryService.createJournalEntry(
@@ -404,24 +344,25 @@ export class OverheadService {
       }
     }
   }
+
   static async disposeOverheadVariance(
     startDate: Date,
     endDate: Date,
-    materialityThreshold: number = 0.1, // 10% of actual OH
+    materialityThreshold: number = 0.1,
     userId: string = "system"
   ): Promise<{ success: boolean; disposition?: OHDisposition; error?: string }> {
     try {
       const actualOH = await this.getActualOverhead(startDate, endDate)
       const appliedOH = await this.getAppliedOverhead(startDate, endDate)
-      const variance = appliedOH - actualOH // Positive = over-applied, negative = under-applied
+      const variance = appliedOH - actualOH
 
       const isMaterial = actualOH > 0
         ? Math.abs(variance) / actualOH > materialityThreshold
         : Math.abs(variance) > 1000
 
       const disposition: OHDisposition = {
-        periodStart: startDate,
-        periodEnd: endDate,
+        periodStart: startDate.toISOString(),
+        periodEnd: endDate.toISOString(),
         totalActualOH: actualOH,
         totalAppliedOH: appliedOH,
         variance,
@@ -429,13 +370,13 @@ export class OverheadService {
       }
 
       if (Math.abs(variance) < 0.01) {
-        return { success: true, disposition } // No variance to dispose
+        return { success: true, disposition }
       }
 
       if (!isMaterial) {
-        // Close entirely to COGS (5301)
         const isOverApplied = variance > 0
         const absVariance = Math.abs(variance)
+        const endStr = endDate.toISOString()
 
         const cogsResult = await JournalEntryService.createJournalEntry(
           JournalEntryType.GENERAL,
@@ -464,20 +405,19 @@ export class OverheadService {
           disposition.journalEntryId = cogsResult.entryId
         }
       } else {
-        // Prorate across WIP, FG, COGS
-        // Get balances
+        const endStr = endDate.toISOString()
         const getBal = async (code: string) => {
-          const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            .where("account_ids", "array-contains", code)
-            .where("date", "<=", endDate)
-            .get()
+          const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .contains("account_ids", [code])
+            .lte("date", endStr)
           let d = 0, c = 0
-          for (const doc of snap.docs) {
-            for (const line of doc.data().entries || []) {
+          for (const doc of (snap || [])) {
+            for (const line of doc.entries || []) {
               if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
             }
           }
-          return Math.abs(isDebitNormalBalance(code) ? d - c : c - d)
+          return Math.abs(ACCOUNT_CODES.INVENTORY_WIP === code ? d - c : c - d)
         }
 
         const wipBal = await getBal(ACCOUNT_CODES.INVENTORY_WIP)
@@ -501,10 +441,9 @@ export class OverheadService {
 
         const isOver = variance > 0
         const absV = Math.abs(variance)
-        const isDr = !isOver // Under-applied = debit these accounts (increase)
+        const isDr = !isOver
 
         const entries: any[] = [
-          // Clear Manufacturing OH account
           {
             account_id: ACCOUNT_CODES.OH_APPLIED,
             account_name: getAccountName(ACCOUNT_CODES.OH_APPLIED),
@@ -512,7 +451,6 @@ export class OverheadService {
             credit: isOver ? 0 : absV,
             description: `Clear applied OH balance`,
           },
-          // WIP proration
           {
             account_id: ACCOUNT_CODES.INVENTORY_WIP,
             account_name: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
@@ -520,7 +458,6 @@ export class OverheadService {
             credit: !isDr ? Math.abs(disposition.allocations!.wip) : 0,
             description: `OH proration to WIP (${((wipBal / totalBal) * 100).toFixed(1)}%)`,
           },
-          // FG proration
           {
             account_id: ACCOUNT_CODES.INVENTORY_FINISHED_GOODS,
             account_name: getAccountName(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS),
@@ -528,7 +465,6 @@ export class OverheadService {
             credit: !isDr ? Math.abs(disposition.allocations!.finishedGoods) : 0,
             description: `OH proration to FG (${((fgBal / totalBal) * 100).toFixed(1)}%)`,
           },
-          // COGS proration
           {
             account_id: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
             account_name: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
@@ -567,9 +503,6 @@ export class OverheadService {
     }
   }
 
-  /**
-   * Get overhead absorption report for a period
-   */
   static async getAbsorptionReport(
     startDate: Date,
     endDate: Date

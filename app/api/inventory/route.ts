@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 
@@ -7,13 +7,13 @@ export async function GET() {
   const auth = await requireAuth()
   if (!auth.authenticated) return auth.response
   try {
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems = inventorySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-    
-    return NextResponse.json(inventoryItems)
+    const { data: inventoryItems, error } = await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .select("*")
+
+    if (error) throw error
+
+    return NextResponse.json(inventoryItems || [])
   } catch (error) {
     console.error("Error fetching inventory items:", error)
     return NextResponse.json(
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
   try {
     const itemData = await request.json()
     const { paymentSource, ...itemDataWithoutSource } = itemData
-    
+
     // Add timestamps
-    const now = new Date()
+    const now = new Date().toISOString()
     const item = {
       ...itemDataWithoutSource,
       createdAt: now,
@@ -55,13 +55,22 @@ export async function POST(request: Request) {
     }
 
     const creditAccount = paymentSourceMap[paymentSource]
-    
+
     // Calculate total cost
     const totalCost = (item.quantity_on_hand || 0) * (item.cost_per_unit || 0)
-    
+
     // Add inventory item
-    const docRef = await db.collection(COLLECTIONS.INVENTORY_ITEMS).add(item)
-    
+    const { data: created, error: insertError } = await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .insert(item)
+      .select()
+
+    if (insertError || !created || created.length === 0) {
+      throw insertError || new Error("Failed to create inventory item")
+    }
+
+    const newItem = created[0]
+
     // Create journal entry for inventory purchase
     if (totalCost > 0) {
       const inventoryAccount = item.type === "finished" ? "1220" : "1201"
@@ -85,7 +94,7 @@ export async function POST(request: Request) {
             description: `${creditAccount.name} for inventory: ${item.name}`,
           },
         ],
-        docRef.id,
+        newItem.id,
         `Inventory: ${item.name} - ${item.quantity_on_hand} ${item.unit}`,
         auth.user?.id
       )
@@ -94,9 +103,9 @@ export async function POST(request: Request) {
         console.log(`Created journal entry for inventory purchase sync: EGP ${totalCost} via ${creditAccount.name}`)
       }
     }
-    
-    
-    return NextResponse.json({ id: docRef.id, ...item })
+
+
+    return NextResponse.json(newItem)
   } catch (error) {
     console.error("Error creating inventory item:", error)
     return NextResponse.json(
@@ -111,16 +120,19 @@ export async function PUT(request: Request) {
   if (!auth.authorized) return auth.response
   try {
     const { id, ...itemData } = await request.json()
-    
+
     const item = {
       ...itemData,
-      updatedAt: new Date(),
-      lastUpdated: new Date(),
+      updatedAt: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
     }
-    
-    await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(id).update(item)
-    
-    
+
+    await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .update(item)
+      .eq("id", id)
+
+
     return NextResponse.json({ id, ...item })
   } catch (error) {
     console.error("Error updating inventory item:", error)
@@ -137,17 +149,20 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
-    
+
     if (!id) {
       return NextResponse.json(
         { error: "Item ID is required" },
         { status: 400 }
       )
     }
-    
-    await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(id).delete()
-    
-    
+
+    await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .delete()
+      .eq("id", id)
+
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error deleting inventory item:", error)

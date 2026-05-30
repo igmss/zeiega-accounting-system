@@ -1,16 +1,4 @@
-/**
- * Budget Service — Budget vs Actual Variance Reporting
- *
- * Stores budgeted amounts per account per fiscal period.
- * Compares to actual balances derived from journal entries.
- *
- * Usage:
- *   1. At the start of a fiscal year, call setBudgetLine() for each account/period.
- *   2. During the year, call getBudgetVsActual() for management reporting.
- *   3. getBudgetSummary() provides a high-level dashboard view.
- */
-
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { CHART_OF_ACCOUNTS, ACCOUNT_CODES } from "../accounting/account-types"
 import { FinancialStatementsService } from "./financial-statements-service"
 import type { BudgetLine } from "../types"
@@ -21,9 +9,9 @@ export interface BudgetVsActualLine {
   period: number
   budgeted: number
   actual: number
-  variance: number          // actual − budgeted (positive = over budget for expenses)
-  variancePct: number       // variance / budgeted × 100
-  isFavorable: boolean      // true when variance benefits the P&L
+  variance: number
+  variancePct: number
+  isFavorable: boolean
 }
 
 export interface BudgetSummary {
@@ -38,16 +26,8 @@ export interface BudgetSummary {
 }
 
 export class BudgetService {
-  private static readonly COLLECTION = COLLECTIONS.BUDGET_LINES
+  private static readonly TABLE = TABLES.BUDGET_LINES
 
-  /**
-   * Set (upsert) a budget line for a specific account and period.
-   *
-   * @param fiscalYear     e.g. 2025
-   * @param period         1–12 for monthly; 0 for annual total
-   * @param accountCode    e.g. "4003" (Custom MTO Revenue)
-   * @param budgetedAmount EGP amount expected for the period
-   */
   static async setBudgetLine(
     fiscalYear: number,
     period: number,
@@ -66,6 +46,7 @@ export class BudgetService {
     try {
       const lineId = `BUD-${fiscalYear}-${period}-${accountCode}`
       const account = CHART_OF_ACCOUNTS[accountCode]
+      const now = new Date().toISOString()
 
       const line: BudgetLine = {
         id: lineId,
@@ -75,12 +56,13 @@ export class BudgetService {
         accountName: account.name,
         budgetedAmount,
         notes,
-        created_at: new Date(),
+        created_at: now,
         created_by: userId,
-        updated_at: new Date(),
+        updated_at: now,
       }
 
-      await db.collection(this.COLLECTION).doc(lineId).set(line, { merge: true })
+      const { error } = await (getServiceSupabase() as any).from(this.TABLE).upsert(line, { onConflict: "id" })
+      if (error) throw error
       return { success: true, lineId }
     } catch (error) {
       return {
@@ -90,9 +72,6 @@ export class BudgetService {
     }
   }
 
-  /**
-   * Bulk-set budget lines from an array. Convenient for year-initialisation.
-   */
   static async setBudgetLines(
     lines: Array<{ fiscalYear: number; period: number; accountCode: string; budgetedAmount: number; notes?: string }>,
     userId: string = "system"
@@ -108,17 +87,10 @@ export class BudgetService {
     return { succeeded, failed }
   }
 
-  /**
-   * Get budget vs actual for a fiscal year and optional period.
-   * Fetches budgeted amounts from Firestore and actual balances from journal entries.
-   *
-   * @param period  0 = full year; 1–12 = specific month
-   */
   static async getBudgetVsActual(
     fiscalYear: number,
     period: number = 0
   ): Promise<BudgetVsActualLine[]> {
-    // Date range for actual calculation
     let startDate: Date
     let endDate: Date
 
@@ -130,23 +102,22 @@ export class BudgetService {
       endDate   = new Date(fiscalYear, period, 0, 23, 59, 59)
     }
 
-    // Fetch all budget lines for this year/period
-    let query = db.collection(this.COLLECTION)
-      .where("fiscalYear", "==", fiscalYear) as FirebaseFirestore.Query
+    let query = (getServiceSupabase() as any).from(this.TABLE)
+      .select("*")
+      .eq("fiscalYear", fiscalYear)
     if (period > 0) {
-      query = query.where("period", "==", period)
+      query = query.eq("period", period)
     }
 
-    const snapshot = await query.get()
-    const budgetLines = snapshot.docs.map(d => d.data() as BudgetLine)
+    const { data: budgetLines, error } = await query
+    if (error) throw error
 
     const results: BudgetVsActualLine[] = []
 
-    for (const bl of budgetLines) {
+    for (const bl of (budgetLines || [])) {
       const actual = await FinancialStatementsService.getAccountBalance(bl.accountCode, startDate, endDate)
       const variance = actual - bl.budgetedAmount
 
-      // Favorable = revenue over budget OR expense under budget
       const account = CHART_OF_ACCOUNTS[bl.accountCode]
       const isRevenueType = account?.type === "revenue"
       const isFavorable   = isRevenueType ? variance > 0 : variance < 0
@@ -168,9 +139,6 @@ export class BudgetService {
     return results.sort((a, b) => a.accountCode.localeCompare(b.accountCode))
   }
 
-  /**
-   * High-level budget summary comparing Revenue, COGS, Gross Profit, OPEX, Net Income.
-   */
   static async getBudgetSummary(
     fiscalYear: number,
     period: number = 0
@@ -210,25 +178,19 @@ export class BudgetService {
     }
   }
 
-  /**
-   * Get all budget lines for a fiscal year (for editing in the UI).
-   */
   static async getBudgetLines(fiscalYear: number): Promise<BudgetLine[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("fiscalYear", "==", fiscalYear)
-        .get()
-      return snapshot.docs
-        .map(d => d.data() as BudgetLine)
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("fiscalYear", fiscalYear)
+      if (error) throw error
+      return ((data || []) as BudgetLine[])
         .sort((a, b) => a.period - b.period || a.accountCode.localeCompare(b.accountCode))
     } catch {
       return []
     }
   }
 
-  /**
-   * Delete a budget line (e.g., if account was incorrectly budgeted).
-   */
   static async deleteBudgetLine(
     fiscalYear: number,
     period: number,
@@ -236,7 +198,8 @@ export class BudgetService {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const lineId = `BUD-${fiscalYear}-${period}-${accountCode}`
-      await db.collection(this.COLLECTION).doc(lineId).delete()
+      const { error } = await getServiceSupabase().from(this.TABLE).delete().eq("id", lineId)
+      if (error) throw error
       return { success: true }
     } catch (error) {
       return {

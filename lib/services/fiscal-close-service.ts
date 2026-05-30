@@ -1,24 +1,9 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNT_CODES, getAccountName, AccountType, getAccountsByType } from "../accounting/account-types"
 import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
-/**
- * Fiscal Year-End Close Service
- *
- * Performs the year-end accounting close:
- *   1. Close all revenue accounts (4xxx) to Current Year P/L (3200)
- *   2. Close all COGS accounts (5xxx) to Current Year P/L (3200)
- *   3. Close all expense accounts (6xxx) to Current Year P/L (3200)
- *   4. Close other income/expense (7xxx) to Current Year P/L (3200)
- *   5. Close Current Year P/L (3200) to Retained Earnings (3100)
- *   6. Close drawings accounts (3021-3023) to partner capital (3011-3013)
- *   7. Mark fiscal period as closed
- */
 export class FiscalCloseService {
 
-  /**
-   * Execute full year-end close for a fiscal year
-   */
   static async executeYearEndClose(
     fiscalYear: number,
     userId: string = "system"
@@ -29,31 +14,29 @@ export class FiscalCloseService {
     error?: string
   }> {
     try {
-      const startDate = new Date(fiscalYear, 0, 1)
+      const startDate = new Date(fiscalYear, 0, 1).toISOString()
       const endDate = new Date(fiscalYear, 11, 31, 23, 59, 59)
-      const now = new Date()
+      const now = new Date().toISOString()
       const entryIds: string[] = []
 
-      // Step 1: Get balances for all temporary accounts
       const revenueAccounts = getAccountsByType(AccountType.REVENUE)
       const contraRevenueAccounts = getAccountsByType(AccountType.CONTRA_REVENUE)
       const cogsAccounts = getAccountsByType(AccountType.COGS)
       const expenseAccounts = getAccountsByType(AccountType.EXPENSE)
       const otherAccounts = getAccountsByType(AccountType.OTHER)
 
-      // Helper to get balance for period
       const getBal = async (code: string) => {
-        const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-          .where("account_ids", "array-contains", code)
-          .where("date", "<=", endDate)
-          .get()
+        const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+          .select("*")
+          .contains("account_ids", [code])
+          .lte("date", endDate.toISOString())
         let d = 0, c = 0
-        for (const doc of snap.docs) {
-          for (const line of doc.data().entries || []) {
+        for (const doc of (snap || [])) {
+          for (const line of doc.entries || []) {
             if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
           }
         }
-        return c - d  // Positive = credit balance (revenue/contra normally credit)
+        return c - d
       }
 
       const recordCloseEntry = async (
@@ -80,7 +63,6 @@ export class FiscalCloseService {
         }
       }
 
-      // Step 2: Close Revenue to P&L
       let totalRevenue = 0
       const closeRevenueLines: any[] = []
       for (const acct of revenueAccounts) {
@@ -110,7 +92,6 @@ export class FiscalCloseService {
         }
       }
 
-      // Net revenue → CR P&L
       if (totalRevenue > 0) {
         closeRevenueLines.push({
           account_id: ACCOUNT_CODES.CURRENT_YEAR_PL,
@@ -137,7 +118,6 @@ export class FiscalCloseService {
         )
       }
 
-      // Step 3: Close COGS to P&L
       let totalCOGS = 0
       const closeCOGSLines: any[] = []
       for (const acct of cogsAccounts) {
@@ -150,10 +130,9 @@ export class FiscalCloseService {
             credit: bal > 0 ? bal : 0,
             description: `Close ${acct.name} to P&L`,
           })
-          totalCOGS += bal  // COGS normally debit, so bal = -netDebit
+          totalCOGS += bal
         }
       }
-      // totalCOGS is negative (expense), so DR P&L
       if (Math.abs(totalCOGS) > 0.01) {
         closeCOGSLines.push({
           account_id: ACCOUNT_CODES.CURRENT_YEAR_PL,
@@ -172,7 +151,6 @@ export class FiscalCloseService {
         )
       }
 
-      // Step 4: Close Expenses to P&L
       let totalExpenses = 0
       const closeExpLines: any[] = []
       for (const acct of expenseAccounts) {
@@ -206,7 +184,6 @@ export class FiscalCloseService {
         )
       }
 
-      // Step 5: Close Other Income/Expense to P&L
       let totalOther = 0
       const closeOtherLines: any[] = []
       for (const acct of otherAccounts) {
@@ -240,10 +217,8 @@ export class FiscalCloseService {
         )
       }
 
-      // Calculate net income (revenue - COGS - expenses + other)
       const netIncome = totalRevenue + totalCOGS + totalExpenses + totalOther
 
-      // Step 6: Close Current Year P&L to Retained Earnings
       const absNI = Math.abs(netIncome)
       await recordCloseEntry(
         `CLOSE-PL-${fiscalYear}`,
@@ -265,7 +240,7 @@ export class FiscalCloseService {
           },
         ]
       )
-      // Step 7: Close drawings to partner capital
+
       const partnerMappings = [
         { drawings: ACCOUNT_CODES.DRAWINGS_AHMED, capital: ACCOUNT_CODES.CAPITAL_AHMED },
         { drawings: ACCOUNT_CODES.DRAWINGS_IBRAHIM, capital: ACCOUNT_CODES.CAPITAL_IBRAHIM },
@@ -305,15 +280,16 @@ export class FiscalCloseService {
         }
       }
 
-      // Step 8: Mark fiscal year as closed
-      await db.collection(COLLECTIONS.FISCAL_YEARS).doc(`FY${fiscalYear}`).set({
+      const { error: markErr } = await getServiceSupabase().from(TABLES.FISCAL_YEARS).upsert({
+        id: `FY${fiscalYear}`,
         year: fiscalYear,
         isCurrent: false,
         closedAt: now,
         closedBy: userId,
         netIncome,
         closingEntryIds: entryIds,
-      }, { merge: true })
+      }, { onConflict: "id" })
+      if (markErr) console.error("Error marking fiscal year:", markErr)
 
       console.log(`✅ Fiscal year ${fiscalYear} closed. Net Income: EGP ${netIncome}`)
       

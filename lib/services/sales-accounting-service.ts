@@ -1,4 +1,4 @@
-import { db, COLLECTIONS, FieldValue } from "../firebase"
+import { TABLES, getServiceSupabase } from "../supabase"
 import type { Customer, SalesOrder, WorkOrder, WebsiteOrder } from "../types"
 import { ACCOUNTS, EnhancedAccountingService } from "./enhanced-accounting-service"
 import { JournalEntryType, JournalEntryService, JournalLine } from "./journal-entry-service"
@@ -28,35 +28,49 @@ export class SalesAccountingService {
     static async syncWebsiteOrders() {
         const processed: string[] = []
         const errors: string[] = []
+        const client = getServiceSupabase()
 
         try {
-            const ordersSnapshot = await db.collection(COLLECTIONS.ORDERS).where("processed", "!=", true).limit(50).get()
+            const { data: orders, error: fetchError } = await client
+                .from(TABLES.ORDERS)
+                .select("*")
+                .or("processed.is.null,processed.neq.true")
+                .limit(50)
 
-            for (const orderDoc of ordersSnapshot.docs) {
-                const order = orderDoc.data() as any
+            if (fetchError) {
+                throw fetchError
+            }
+
+            for (const order of (orders || [])) {
                 try {
-                    await this.createSalesOrder(order)
+                    await this.createSalesOrder(order as any)
 
-                    await orderDoc.ref.update({
-                        processed: true,
-                        processed_at: new Date(),
-                        processing_error: null,
-                    })
+                    await client
+                        .from(TABLES.ORDERS)
+                        .update({
+                            processed: true,
+                            processed_at: new Date().toISOString(),
+                            processing_error: null,
+                        })
+                        .eq("id", order.id)
 
                     processed.push(order.id)
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-                    console.error(`❌ Error sync process for order ${orderDoc.id}:`, errorMessage)
-                    errors.push(`Order ${orderDoc.id}: ${errorMessage}`)
+                    console.error(`❌ Error sync process for order ${order.id}:`, errorMessage)
+                    errors.push(`Order ${order.id}: ${errorMessage}`)
 
                     try {
-                        await orderDoc.ref.update({
-                            processed: false,
-                            processing_error: errorMessage,
-                            last_processed_at: new Date(),
-                        })
+                        await client
+                            .from(TABLES.ORDERS)
+                            .update({
+                                processed: false,
+                                processing_error: errorMessage,
+                                last_processed_at: new Date().toISOString(),
+                            })
+                            .eq("id", order.id)
                     } catch {
-                        console.error(`❌ Could not update error state for order ${orderDoc.id}`)
+                        console.error(`❌ Could not update error state for order ${order.id}`)
                     }
                 }
             }
@@ -71,29 +85,41 @@ export class SalesAccountingService {
     static async syncWebsiteReturns() {
         const processed: string[] = []
         const errors: string[] = []
+        const client = getServiceSupabase()
 
         try {
-            const returnsSnapshot = await db.collection(COLLECTIONS.RETURNS).where("processed", "!=", true).limit(50).get()
+            const { data: returns, error: fetchError } = await client
+                .from(TABLES.RETURNS)
+                .select("*")
+                .or("processed.is.null,processed.neq.true")
+                .limit(50)
 
-            for (const returnDoc of returnsSnapshot.docs) {
+            if (fetchError) {
+                throw fetchError
+            }
+
+            for (const returnRow of (returns || [])) {
                 try {
-                    const returnData = returnDoc.data() as any
+                    const returnData = returnRow as any
                     const result = await this.processReturn(returnData)
 
                     if (!result?.success) {
-                        errors.push(`Return ${returnDoc.id}: ${result?.error || "Unknown error"}`)
+                        errors.push(`Return ${returnRow.id}: ${result?.error || "Unknown error"}`)
                         continue
                     }
 
-                    await returnDoc.ref.update({
-                        processed: true,
-                        processed_at: new Date(),
-                    })
+                    await client
+                        .from(TABLES.RETURNS)
+                        .update({
+                            processed: true,
+                            processed_at: new Date().toISOString(),
+                        })
+                        .eq("id", returnRow.id)
 
                     processed.push(returnData.id)
                 } catch (error) {
-                    console.error(`Error processing return ${returnDoc.id}:`, error)
-                    errors.push(`Return ${returnDoc.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
+                    console.error(`Error processing return ${returnRow.id}:`, error)
+                    errors.push(`Return ${returnRow.id}: ${error instanceof Error ? error.message : "Unknown error"}`)
                 }
             }
         } catch (error) {
@@ -110,12 +136,13 @@ export class SalesAccountingService {
         const creditMemoId = `CM-${Date.now()}`
         const returnId = returnData?.id ?? returnData?.returnId ?? "unknown"
         const returnAmount = Number(returnData.refundAmount ?? returnData.amount ?? 0)
+        const client = getServiceSupabase()
 
         if (!Number.isFinite(returnAmount) || returnAmount < 0) {
             return { success: false, error: `Invalid return amount for return ${returnId}` }
         }
 
-        return db.runTransaction(async (tx) => {
+        try {
             const orderId = returnData?.orderId
             const invoiceIdFromReturn = returnData?.invoiceId
 
@@ -123,34 +150,44 @@ export class SalesAccountingService {
             let invoiceDocId: string | null = null
 
             if (invoiceIdFromReturn && typeof invoiceIdFromReturn === "string") {
-                const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(invoiceIdFromReturn))
-                if (doc.exists) {
-                    invoiceData = doc.data() as Record<string, unknown>
-                    invoiceDocId = doc.id
+                const { data: doc } = await client
+                    .from(TABLES.INVOICES)
+                    .select("*")
+                    .eq("id", invoiceIdFromReturn)
+                    .maybeSingle()
+                if (doc) {
+                    invoiceData = doc as Record<string, unknown>
+                    invoiceDocId = doc.id as string
                 }
             }
-            
+
             if (!invoiceData && orderId && typeof orderId === "string") {
-                const snapshot = await tx.get(
-                    db.collection(COLLECTIONS.INVOICES).where("sales_order_id", "==", orderId).limit(1)
-                )
-                if (!snapshot.empty) {
-                    const first = snapshot.docs[0]
-                    invoiceData = first.data() as Record<string, unknown>
-                    invoiceDocId = first.id
+                const { data: snapshot } = await client
+                    .from(TABLES.INVOICES)
+                    .select("*")
+                    .eq("sales_order_id", orderId)
+                    .limit(1)
+                if (snapshot && snapshot.length > 0) {
+                    const first = snapshot[0]
+                    invoiceData = first as Record<string, unknown>
+                    invoiceDocId = first.id as string
                 }
                 if (!invoiceData) {
                     const derivedId = `INV-${orderId.slice(-8)}`
-                    const doc = await tx.get(db.collection(COLLECTIONS.INVOICES).doc(derivedId))
-                    if (doc.exists) {
-                        invoiceData = doc.data() as Record<string, unknown>
-                        invoiceDocId = doc.id
+                    const { data: doc } = await client
+                        .from(TABLES.INVOICES)
+                        .select("*")
+                        .eq("id", derivedId)
+                        .maybeSingle()
+                    if (doc) {
+                        invoiceData = doc as Record<string, unknown>
+                        invoiceDocId = doc.id as string
                     }
                 }
             }
 
             if (!invoiceData || !invoiceDocId) {
-                throw new Error(`Original invoice not found for return ${returnId}`)
+                return { success: false, error: `Original invoice not found for return ${returnId}` }
             }
 
             const rawStatus = invoiceData.status
@@ -160,13 +197,14 @@ export class SalesAccountingService {
             let creditAccountName = getAccountName(ACCOUNTS.ACCOUNTS_RECEIVABLE)
 
             if (invoiceStatus === "paid") {
-                const paymentsSnapshot = await tx.get(
-                    db.collection(COLLECTIONS.PAYMENTS)
-                        .where("invoice_id", "==", invoiceDocId)
-                        .limit(1)
-                )
-                const paymentDoc = paymentsSnapshot.docs[0]
-                const paymentData = paymentDoc?.data?.() as any
+                const { data: paymentDocs } = await client
+                    .from(TABLES.PAYMENTS)
+                    .select("*")
+                    .eq("invoice_id", invoiceDocId)
+                    .limit(1)
+
+                const paymentDoc = paymentDocs?.[0]
+                const paymentData = paymentDoc as any
 
                 const paymentMethod =
                     returnData?.paymentMethod ??
@@ -176,7 +214,7 @@ export class SalesAccountingService {
                     paymentData?.paymentMethod
 
                 if (!paymentMethod || typeof paymentMethod !== "string") {
-                    throw new Error(`Unable to determine original payment method for paid invoice ${invoiceDocId}`)
+                    return { success: false, error: `Unable to determine original payment method for paid invoice ${invoiceDocId}` }
                 }
 
                 const isCash = paymentMethod.toLowerCase() === "cash"
@@ -186,7 +224,7 @@ export class SalesAccountingService {
 
             const items = Array.isArray(returnData?.items) ? returnData.items : []
             if (items.length === 0) {
-                throw new Error(`Return ${returnId} has no items to restore inventory value`)
+                return { success: false, error: `Return ${returnId} has no items to restore inventory value` }
             }
 
             let inventoryRestorationValue = 0
@@ -198,20 +236,25 @@ export class SalesAccountingService {
                 const quantity = Number(quantityRaw ?? 0)
 
                 if (!sku || !Number.isFinite(quantity) || quantity <= 0) {
-                    throw new Error(`Invalid return item (sku=${String(sku)}, qty=${String(quantityRaw)})`)
+                    return { success: false, error: `Invalid return item (sku=${String(sku)}, qty=${String(quantityRaw)})` }
                 }
 
-                const invDoc = await tx.get(db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(sku))
-                if (!invDoc.exists) {
-                    throw new Error(`Inventory item not found: ${sku}`)
+                const { data: invDoc } = await client
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .select("*")
+                    .eq("id", sku)
+                    .maybeSingle()
+
+                if (!invDoc) {
+                    return { success: false, error: `Inventory item not found: ${sku}` }
                 }
 
-                const invData = invDoc.data() as any
+                const invData = invDoc as any
                 const unitCostRaw = invData?.unit_cost ?? invData?.cost_per_unit ?? invData?.unitCost ?? 0
                 const unitCost = Number(unitCostRaw ?? 0)
 
                 if (!Number.isFinite(unitCost) || unitCost < 0) {
-                    throw new Error(`Invalid unit cost for inventory restoration (sku=${sku})`)
+                    return { success: false, error: `Invalid unit cost for inventory restoration (sku=${sku})` }
                 }
 
                 inventoryRestorationValue += unitCost * quantity
@@ -219,7 +262,7 @@ export class SalesAccountingService {
             }
 
             if (inventoryRestorationValue < 0) {
-                throw new Error(`Unable to compute inventory restoration value for return ${returnId}`)
+                return { success: false, error: `Unable to compute inventory restoration value for return ${returnId}` }
             }
 
             const salesReturnLines: JournalLine[] = [
@@ -244,13 +287,11 @@ export class SalesAccountingService {
                 salesReturnLines,
                 creditMemoId,
                 `Credit memo / return ${returnId}`,
-                "system",
-                undefined,
-                tx
+                "system"
             )
 
             if (!memoResult.success) {
-                throw new Error(memoResult.error || "Failed to create credit memo")
+                return { success: false, error: memoResult.error || "Failed to create credit memo" }
             }
 
             const inventoryLines: JournalLine[] = [
@@ -275,37 +316,48 @@ export class SalesAccountingService {
                 inventoryLines,
                 creditMemoId,
                 `Inventory restoration journal for return ${returnId}`,
-                "system",
-                undefined,
-                tx
+                "system"
             )
 
             if (!inventoryResult.success) {
-                throw new Error(inventoryResult.error || "Failed to create inventory restoration journal entry")
+                return { success: false, error: inventoryResult.error || "Failed to create inventory restoration journal entry" }
             }
 
             for (const item of restorationLinesByItem) {
-                const invRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(item.sku)
-                tx.update(invRef, {
-                    quantity_on_hand: FieldValue.increment(item.quantity),
-                    updated_at: new Date(),
-                })
+                const { data: current } = await client
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .select("quantity_on_hand")
+                    .eq("id", item.sku)
+                    .maybeSingle()
+                const newQty = (current?.quantity_on_hand ?? 0) + item.quantity
+                await client
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .update({ quantity_on_hand: newQty, updated_at: new Date().toISOString() })
+                    .eq("id", item.sku)
             }
 
             return { success: true, creditMemoId }
-        }).catch(error => ({
-            success: false,
-            creditMemoId,
-            error: error instanceof Error ? error.message : "Transaction failed during return processing"
-        }))
+        } catch (error) {
+            return {
+                success: false,
+                creditMemoId,
+                error: error instanceof Error ? error.message : "Transaction failed during return processing"
+            }
+        }
     }
 
     static async createSalesOrder(websiteOrder: WebsiteOrder) {
         const now = Date.now()
         const salesOrderId = websiteOrder.id
+        const client = getServiceSupabase()
 
-        const existingSO = await db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId).get()
-        if (existingSO.exists) {
+        const { data: existingSO } = await client
+            .from(TABLES.SALES_ORDERS)
+            .select("id")
+            .eq("id", salesOrderId)
+            .maybeSingle()
+
+        if (existingSO) {
             console.log(`ℹ️ Sales order ${salesOrderId} already exists, skipping`)
             return
         }
@@ -313,9 +365,13 @@ export class SalesAccountingService {
         let customerEmail = websiteOrder.customer_email
         if (!customerEmail && websiteOrder.userId) {
             console.log(`🔍 Looking up email for user ${websiteOrder.userId}...`)
-            const userDoc = await db.collection(COLLECTIONS.USERS).doc(websiteOrder.userId).get()
-            if (userDoc.exists) {
-                customerEmail = userDoc.data()?.email
+            const { data: user } = await client
+                .from(TABLES.WEBSITE_USERS)
+                .select("email")
+                .eq("id", websiteOrder.userId)
+                .maybeSingle()
+            if (user) {
+                customerEmail = user.email
             }
         }
 
@@ -331,7 +387,7 @@ export class SalesAccountingService {
                 unit_price: item.price || 0,
             })),
             status: "pending",
-            created_at: new Date(),
+            created_at: new Date().toISOString() as any,
         }
 
         const workOrderId = `WO-${now}-${Math.random().toString(36).substr(2, 4)}`
@@ -345,30 +401,37 @@ export class SalesAccountingService {
             total_cost: 0,
             estimated_cost: 0,
             status: "pending",
-            created_at: new Date(),
+            created_at: new Date().toISOString() as any,
         }
 
-        const batch = db.batch()
-        batch.set(db.collection(COLLECTIONS.SALES_ORDERS).doc(salesOrderId), salesOrder)
-        batch.set(db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId), workOrder)
-        
-        await batch.commit()
-        console.log(`✅ Atomic: Created sales order ${salesOrderId} and work order ${workOrderId}`)
+        await client.from(TABLES.SALES_ORDERS).upsert({ id: salesOrderId, ...(salesOrder as any) }, { onConflict: "id" })
+        await client.from(TABLES.WORK_ORDERS).upsert({ id: workOrderId, ...(workOrder as any) }, { onConflict: "id" })
+
+        console.log(`✅ Created sales order ${salesOrderId} and work order ${workOrderId}`)
     }
 
     static async findOrCreateCustomer(email: string): Promise<string> {
-        const customerSnapshot = await db.collection(COLLECTIONS.CUSTOMERS).where("email", "==", email).limit(1).get()
+        const client = getServiceSupabase()
 
-        if (!customerSnapshot.empty) {
-            return customerSnapshot.docs[0].id
+        const { data: customers } = await client
+            .from(TABLES.CUSTOMERS)
+            .select("id")
+            .eq("email", email)
+            .limit(1)
+
+        if (customers && customers.length > 0) {
+            return customers[0].id as string
         }
 
-        const usersRef = db.collection(COLLECTIONS.USERS)
-        const userSnapshot = await usersRef.where("email", "==", email).limit(1).get()
+        const { data: users } = await client
+            .from(TABLES.WEBSITE_USERS)
+            .select("name, email")
+            .eq("email", email)
+            .limit(1)
 
         let name = email.split("@")[0]
-        if (!userSnapshot.empty) {
-            const userData = userSnapshot.docs[0].data()
+        if (users && users.length > 0) {
+            const userData = users[0] as any
             name = userData.name || userData.displayName || name
         }
 
@@ -379,10 +442,10 @@ export class SalesAccountingService {
             email,
             phone: "",
             address: "",
-            created_at: new Date(),
+            created_at: new Date().toISOString() as any,
         }
 
-        await db.collection(COLLECTIONS.CUSTOMERS).doc(customerId).set(customer)
+        await client.from(TABLES.CUSTOMERS).insert({ id: customerId, ...(customer as any) })
         return customerId
     }
 
@@ -399,21 +462,18 @@ export class SalesAccountingService {
         wipTransferEntryId?: string
         error?: string
     }> {
-        return db.runTransaction(async (tx) => {
+        try {
             let wipTransferEntryId: string | undefined
             if (workOrderId && costOfGoodsSold > 0) {
-                // Here we call EnhancedAccountingService for Manufacturing logic to prevent circular deps
-                // Alternatively, we can import ManufacturingAccountingService
-                // I will use EnhancedAccountingService for now as a facade
-                const wipTransfer = await EnhancedAccountingService.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold, tx)
+                const wipTransfer = await EnhancedAccountingService.recordWIPToFinishedGoods(workOrderId, costOfGoodsSold)
                 if (!wipTransfer.success) {
-                    throw new Error(`WIP→FG transfer failed: ${wipTransfer.error}`)
+                    return { success: false, error: `WIP→FG transfer failed: ${wipTransfer.error}` }
                 }
                 wipTransferEntryId = wipTransfer.entryId
             }
 
             const totalReceivable = salesAmount + vatAmount
-            
+
             const revenueLines: JournalLine[] = [
                 {
                     accountCode: ACCOUNTS.ACCOUNTS_RECEIVABLE,
@@ -430,7 +490,7 @@ export class SalesAccountingService {
                     description: `Sale net revenue`,
                 },
             ]
-            
+
             if (vatAmount > 0) {
                 revenueLines.push({
                     accountCode: ACCOUNTS.VAT_PAYABLE,
@@ -446,13 +506,11 @@ export class SalesAccountingService {
                 revenueLines,
                 invoiceId,
                 undefined,
-                "system",
-                undefined,
-                tx
+                "system"
             )
 
             if (!revenueResult.success) {
-                throw new Error(revenueResult.error || "Revenue JE creation failed")
+                return { success: false, error: revenueResult.error || "Revenue JE creation failed" }
             }
 
             const cogsLines: JournalLine[] = [
@@ -477,13 +535,11 @@ export class SalesAccountingService {
                 cogsLines,
                 invoiceId,
                 undefined,
-                "system",
-                undefined,
-                tx
+                "system"
             )
 
             if (!cogsResult.success) {
-                throw new Error(cogsResult.error || "COGS JE creation failed")
+                return { success: false, error: cogsResult.error || "COGS JE creation failed" }
             }
 
             return {
@@ -492,44 +548,48 @@ export class SalesAccountingService {
                 cogsEntryId: cogsResult.entryId,
                 wipTransferEntryId,
             }
-        }).catch(error => ({
-            success: false,
-            error: error instanceof Error ? error.message : "Transaction failed during sale recording"
-        }))
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : "Transaction failed during sale recording"
+            }
+        }
     }
 
     static async processOverdueInvoices(): Promise<{ processed: number; errors: number }> {
         try {
             const now = new Date()
-            const snapshot = await db.collection(COLLECTIONS.INVOICES)
-                .where("status", "in", ["unpaid", "partial"])
-                .get()
+            const client = getServiceSupabase()
 
-            const batch = db.batch()
+            const { data: invoices, error } = await client
+                .from(TABLES.INVOICES)
+                .select("*")
+                .in("status", ["unpaid", "partial"])
+
+            if (error) {
+                throw error
+            }
+
             let count = 0
-            
-            snapshot.forEach(doc => {
-                const invoice = doc.data()
+
+            for (const invoice of (invoices || [])) {
                 let dueDate: Date | null = null
-                if (invoice.due_date?.toDate) {
-                    dueDate = invoice.due_date.toDate()
-                } else if (invoice.due_date) {
+                if (invoice.due_date) {
                     dueDate = new Date(invoice.due_date)
                 }
-                
+
                 if (dueDate && dueDate < now) {
-                    batch.update(doc.ref, { 
-                        status: "overdue",
-                        updated_at: now
-                    })
+                    await client
+                        .from(TABLES.INVOICES)
+                        .update({
+                            status: "overdue",
+                            updated_at: now.toISOString(),
+                        })
+                        .eq("id", invoice.id)
                     count++
                 }
-            })
-
-            if (count > 0) {
-                await batch.commit()
             }
-            
+
             console.log(`✅ Processed ${count} overdue invoices`)
             return { processed: count, errors: 0 }
         } catch (error) {

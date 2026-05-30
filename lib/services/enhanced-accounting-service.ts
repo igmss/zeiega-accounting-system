@@ -1,4 +1,4 @@
-import { db, COLLECTIONS, FieldValue } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import type { Customer, SalesOrder, WorkOrder, Invoice, Payment, JournalEntry, WebsiteOrder } from "../types"
 import { ACCOUNT_CODES, CHART_OF_ACCOUNTS, getAccountName, isDebitNormalBalance } from "../accounting/account-types"
 import { formatCurrency } from "@/lib/utils"
@@ -136,24 +136,22 @@ export class EnhancedAccountingService {
      */
     static async initializeSystem() {
         const accounts = [
-            { id: ACCOUNT_CODES.CASH_ON_HAND, name: "Cash", type: "asset" as const },
-            { id: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, name: "Accounts Receivable", type: "asset" as const },
-            { id: ACCOUNT_CODES.RAW_MATERIALS_FABRIC, name: "Raw Materials Inventory", type: "asset" as const },
-            { id: ACCOUNT_CODES.INVENTORY_WIP, name: "Work in Progress", type: "asset" as const },
-            { id: ACCOUNT_CODES.INVENTORY_FINISHED_GOODS, name: "Finished Goods Inventory", type: "asset" as const },
-            { id: ACCOUNT_CODES.SALES_RETAIL, name: "Sales Revenue", type: "revenue" as const },
-            { id: ACCOUNT_CODES.COST_OF_GOODS_SOLD, name: "Cost of Goods Sold", type: "expense" as const },
-            { id: ACCOUNT_CODES.SALES_RETURNS, name: "Returns and Allowances", type: "contra_revenue" as const },
-            { id: ACCOUNT_CODES.VAT_PAYABLE, name: "VAT Payable", type: "liability" as const },
+            { code: ACCOUNT_CODES.CASH_ON_HAND, name: "Cash", type: "asset" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, name: "Accounts Receivable", type: "asset" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.RAW_MATERIALS_FABRIC, name: "Raw Materials Inventory", type: "asset" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.INVENTORY_WIP, name: "Work in Progress", type: "asset" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.INVENTORY_FINISHED_GOODS, name: "Finished Goods Inventory", type: "asset" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.SALES_RETAIL, name: "Sales Revenue", type: "revenue" as const, normal_balance: "credit" as const },
+            { code: ACCOUNT_CODES.COST_OF_GOODS_SOLD, name: "Cost of Goods Sold", type: "expense" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.SALES_RETURNS, name: "Returns and Allowances", type: "contra_revenue" as const, normal_balance: "debit" as const },
+            { code: ACCOUNT_CODES.VAT_PAYABLE, name: "VAT Payable", type: "liability" as const, normal_balance: "credit" as const },
         ]
 
-        const batch = db.batch()
-        accounts.forEach((account) => {
-            const ref = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(account.id)
-            batch.set(ref, account)
-        })
+        const { error } = await getServiceSupabase()
+            .from(TABLES.CHART_OF_ACCOUNTS)
+            .upsert(accounts, { onConflict: "code" })
 
-        await batch.commit()
+        if (error) console.error("Error initializing chart of accounts:", error)
     }
 
     /**
@@ -411,42 +409,47 @@ export class EnhancedAccountingService {
         endDate?: Date
     ): Promise<{ balance: number; error?: string }> {
         try {
-            // CHANGED: Use cached balance for "all time" queries (most common case)
+            const client = getServiceSupabase()
+
             if (!startDate && !endDate) {
-                const balDoc = await db.collection(COLLECTIONS.ACCOUNT_BALANCES).doc(accountCode).get()
-                if (balDoc.exists) {
-                    const data = balDoc.data()!
-                    return { balance: data.balance || 0 }
+                const { data } = await client
+                    .from(TABLES.ACCOUNT_BALANCES)
+                    .select("closing_balance")
+                    .eq("account_code", accountCode)
+                    .order("period_end", { ascending: false })
+                    .limit(1)
+                    .single()
+
+                if (data) {
+                    return { balance: data.closing_balance || 0 }
                 }
-                // Fallback to full scan if cache not yet populated (post-migration)
             }
 
-            // Full scan for date-filtered or cache-miss queries
-            let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("account_ids", "array-contains", accountCode) as FirebaseFirestore.Query
+            let query = client
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .select(TABLES.JOURNAL_ENTRIES === null ? "debit, credit" : "debit, credit, journal_entries!inner(date)")
+                .eq("account_code", accountCode)
 
             if (startDate) {
-                query = query.where("date", ">=", startDate)
+                query = query.gte("journal_entries.date", startDate.toISOString().split("T")[0])
             }
             if (endDate) {
-                query = query.where("date", "<=", endDate)
+                query = query.lte("journal_entries.date", endDate.toISOString().split("T")[0])
             }
 
-            const entriesSnapshot = await query.get()
+            const { data: lines, error } = await query
+
+            if (error) {
+                console.error("Error querying journal entry lines:", error)
+                return { balance: 0, error: error.message }
+            }
 
             let totalDebits = 0
             let totalCredits = 0
 
-            for (const doc of entriesSnapshot.docs) {
-                const entry = doc.data()
-                if (entry.entries && Array.isArray(entry.entries)) {
-                    for (const line of entry.entries) {
-                        if (line.account_id === accountCode) {
-                            totalDebits += line.debit || 0
-                            totalCredits += line.credit || 0
-                        }
-                    }
-                }
+            for (const line of (lines || [])) {
+                totalDebits += line.debit || 0
+                totalCredits += line.credit || 0
             }
 
             const isDebit = isDebitNormalBalance(accountCode)
@@ -515,16 +518,16 @@ export class EnhancedAccountingService {
      */
     static async getKPIData() {
         try {
-            const [totalRevenue, totalCogs, workOrdersSnapshot] = await Promise.all([
+            const client = getServiceSupabase()
+            const [totalRevenue, totalCogs, { data: workOrders }] = await Promise.all([
                 FinancialStatementsService.getAccountBalance(ACCOUNTS.SALES_REVENUE),
                 FinancialStatementsService.getAccountBalance(ACCOUNTS.COGS),
-                db.collection(COLLECTIONS.WORK_ORDERS).where("status", "==", "in_progress").get(),
+                client.from(TABLES.WORK_ORDERS).select("*").eq("status", "in_progress"),
             ])
 
-            const wipValue = workOrdersSnapshot.docs.reduce((sum, doc) => {
-                const workOrder = doc.data() as WorkOrder
-                const materialCost = workOrder.raw_materials_used?.reduce((matSum, mat) => matSum + (mat.qty * (mat.cost || 0)), 0) || 0
-                const laborCost = workOrder.labor_cost || 0
+            const wipValue = (workOrders || []).reduce((sum: any, wo: any) => {
+                const materialCost = (wo.raw_materials_used as any[])?.reduce((matSum, mat) => matSum + (mat.qty * (mat.cost || 0)), 0) || 0
+                const laborCost = wo.labor_cost || 0
                 return sum + materialCost + laborCost
             }, 0)
 
@@ -536,12 +539,7 @@ export class EnhancedAccountingService {
             }
         } catch (error) {
             console.error("Error getting KPI data:", error)
-            return {
-                revenue: 0,
-                cogs: 0,
-                profit: 0,
-                wipValue: 0,
-            }
+            return { revenue: 0, cogs: 0, profit: 0, wipValue: 0 }
         }
     }
 
@@ -549,13 +547,15 @@ export class EnhancedAccountingService {
         try {
             const now = new Date()
             const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+            const client = getServiceSupabase()
 
-            // Optimized (BUG-Fix): Fetch ALL aggregated journal entries for both Revenue and COGS in one pass
-            const entriesSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("date", ">=", sixMonthsAgo)
-                .get()
+            const { data: entries } = await client
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select(`id, date, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, debit, credit)`)
+                .gte("date", sixMonthsAgo.toISOString().split("T")[0])
+                .lte("date", now.toISOString().split("T")[0])
 
-            const allEntries = entriesSnapshot.docs.map(doc => doc.data())
+            const allEntries = entries || []
             const monthlyData = []
 
             for (let i = 5; i >= 0; i--) {
@@ -565,20 +565,20 @@ export class EnhancedAccountingService {
                 let monthRevenue = 0
                 let monthCogs = 0
 
-                allEntries.forEach((entry: any) => {
-                    const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date)
+                for (const entry of allEntries) {
+                    const entryDate = new Date(entry.date)
                     if (entryDate.getMonth() === date.getMonth() && entryDate.getFullYear() === date.getFullYear()) {
-                        // Aggregate credits (Revenue) and debits (COGS) for unified source accounting
-                        entry.entries?.forEach((e: any) => {
-                            if (e.account_id === ACCOUNTS.SALES_REVENUE) {
-                                monthRevenue += (e.credit || 0) - (e.debit || 0)
+                        const lines = (entry as any).journal_entry_lines || []
+                        for (const line of lines) {
+                            if (line.account_code === ACCOUNTS.SALES_REVENUE) {
+                                monthRevenue += (line.credit || 0) - (line.debit || 0)
                             }
-                            if (e.account_id === ACCOUNTS.COGS) {
-                                monthCogs += (e.debit || 0) - (e.credit || 0)
+                            if (line.account_code === ACCOUNTS.COGS) {
+                                monthCogs += (line.debit || 0) - (line.credit || 0)
                             }
-                        })
+                        }
                     }
-                })
+                }
 
                 monthlyData.push({
                     month: monthName,
@@ -596,30 +596,31 @@ export class EnhancedAccountingService {
 
     static async getTopCustomers() {
         try {
-            const invoicesSnapshot = await db.collection(COLLECTIONS.INVOICES).where("status", "==", "paid").get()
+            const client = getServiceSupabase()
+            const { data: invoices } = await client
+                .from(TABLES.INVOICES)
+                .select("customer_id, amount")
+                .eq("status", "paid")
+
             const customerTotals = new Map<string, number>()
-
-            invoicesSnapshot.docs.forEach(doc => {
-                const invoice = doc.data() as any
-                const current = customerTotals.get(invoice.customer_id) || 0
-                customerTotals.set(invoice.customer_id, current + (invoice.amount || 0))
+            ;(invoices || []).forEach((inv: any) => {
+                const current = customerTotals.get(inv.customer_id) || 0
+                customerTotals.set(inv.customer_id, current + (inv.amount || 0))
             })
 
-            // Optimization (BUG-3.9): Batch customer reads using Promise.all
             const customerIds = Array.from(customerTotals.keys())
-            const customerDocs = await Promise.all(
-                customerIds.map(id => db.collection(COLLECTIONS.CUSTOMERS).doc(id).get())
-            )
+            const { data: customers } = customerIds.length > 0
+                ? await client.from(TABLES.CUSTOMERS).select("id, name").in("id", customerIds)
+                : { data: [] }
 
-            const topCustomers = customerDocs.map((doc, index) => {
-                const customer = doc.data() as Customer
-                const total = customerTotals.get(customerIds[index]) || 0
-                return { name: customer?.name || customerIds[index], total }
-            })
+            const customerMap = new Map((customers || []).map((c: any) => [c.id, c.name]))
 
-            return topCustomers
-                .sort((a, b) => b.total - a.total)
-                .slice(0, 5)
+            const topCustomers = customerIds.map((id) => ({
+                name: customerMap.get(id) || id,
+                total: customerTotals.get(id) || 0,
+            }))
+
+            return topCustomers.sort((a, b) => b.total - a.total).slice(0, 5)
         } catch (error) {
             console.error("Error getting top customers:", error)
             return []
@@ -628,42 +629,36 @@ export class EnhancedAccountingService {
 
     static async getRecentOrders() {
         try {
-            const salesOrdersSnapshot = await db.collection(COLLECTIONS.SALES_ORDERS)
-                .orderBy("created_at", "desc")
+            const client = getServiceSupabase()
+            const { data: salesOrders } = await client
+                .from(TABLES.SALES_ORDERS)
+                .select("*")
+                .order("created_at", { ascending: false })
                 .limit(10)
-                .get()
 
-            const orders = salesOrdersSnapshot.docs.map(doc => {
-                const order = doc.data() as any
-                const total = order.items?.reduce(
-                    (sum: number, item: any) => sum + ((item.qty || 1) * (item.unit_price || 0)), 0
-                ) || 0
-                return { doc, order, total }
+            const orders = (salesOrders || []).map((order: any) => {
+                const items = order.items as any[] || []
+                const total = items.reduce((sum: number, item: any) => sum + ((item.qty || 1) * (item.unit_price || 0)), 0)
+                return { order, total }
             })
 
-            // CHANGED: Batch-read all customers in a single round-trip using getAll
-            const customerIds = [...new Set(orders.map(o => o.order.customer_id).filter(Boolean))]
-            const customerDocs = customerIds.length > 0
-                ? await db.getAll(...customerIds.map(id => db.collection(COLLECTIONS.CUSTOMERS).doc(id)))
-                : []
+            const customerIds = [...new Set(orders.map((o: any) => o.order.customer_id).filter(Boolean))]
+            const { data: customerDocs } = customerIds.length > 0
+                ? await client.from(TABLES.CUSTOMERS).select("id, name").in("id", customerIds as string[])
+                : { data: [] }
 
             const customerMap = new Map<string, string>()
-            for (const cDoc of customerDocs) {
-                if (cDoc.exists) {
-                    const c = cDoc.data() as Customer
-                    customerMap.set(cDoc.id, c?.name || cDoc.id)
-                }
+            for (const c of (customerDocs || [])) {
+                customerMap.set(c.id, c.name || c.id)
             }
 
-            const recentOrders = orders.map(({ order }) => ({
+            return orders.map(({ order }: { order: any }) => ({
                 id: order.id,
                 customerName: customerMap.get(order.customer_id) || order.customer_id,
-                total: orders.find(o => o.order.id === order.id)?.total || 0,
+                total: orders.find((o: any) => o.order.id === order.id)?.total || 0,
                 status: order.status,
                 createdAt: order.created_at,
             }))
-
-            return recentOrders
         } catch (error) {
             console.error("Error getting recent orders:", error)
             return []
@@ -672,20 +667,22 @@ export class EnhancedAccountingService {
 
     static async getInventoryAlerts() {
         try {
-            const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-            const alerts: any[] = []
+            const client = getServiceSupabase()
+            const { data: items } = await client
+                .from(TABLES.INVENTORY_ITEMS)
+                .select("*")
 
-            inventorySnapshot.docs.forEach(doc => {
-                const item = doc.data() as any
-                if (item.qty_on_hand <= (item.reorder_point || 10)) {
+            const alerts: any[] = []
+            for (const item of (items || [])) {
+                if (item.quantity_on_hand <= (item.reorder_level || 10)) {
                     alerts.push({
                         sku: item.sku,
                         name: item.name,
-                        currentStock: item.qty_on_hand,
-                        reorderPoint: item.reorder_point || 10,
+                        currentStock: item.quantity_on_hand,
+                        reorderPoint: item.reorder_level || 10,
                     })
                 }
-            })
+            }
 
             return alerts
         } catch (error) {
@@ -696,41 +693,27 @@ export class EnhancedAccountingService {
 
     static async getWorkOrderStatus() {
         try {
-            const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS).get()
-            const statusCounts = {
-                pending: 0,
-                in_progress: 0,
-                completed: 0,
-                invoiced: 0,
+            const client = getServiceSupabase()
+            const { data: workOrders } = await client
+                .from(TABLES.WORK_ORDERS)
+                .select("*")
+
+            const statusCounts: Record<string, number> = {
+                pending: 0, in_progress: 0, completed: 0, invoiced: 0,
             }
             const active: any[] = []
 
-            workOrdersSnapshot.docs.forEach(doc => {
-                const workOrder = doc.data() as WorkOrder
-                statusCounts[workOrder.status as keyof typeof statusCounts]++
-                
-                if (workOrder.status !== "completed") {
-                    active.push({
-                        id: workOrder.id,
-                        salesOrderId: workOrder.sales_order_id,
-                        status: workOrder.status,
-                    })
+            for (const wo of (workOrders || [])) {
+                statusCounts[wo.status] = (statusCounts[wo.status] || 0) + 1
+                if (wo.status !== "completed") {
+                    active.push({ id: wo.id, salesOrderId: wo.sales_order_id, status: wo.status })
                 }
-            })
-
-            return {
-                ...statusCounts,
-                active: active.slice(0, 10),
             }
+
+            return { ...statusCounts, active: active.slice(0, 10) }
         } catch (error) {
             console.error("Error getting work order status:", error)
-            return {
-                pending: 0,
-                in_progress: 0,
-                completed: 0,
-                invoiced: 0,
-                active: [],
-            }
+            return { pending: 0, in_progress: 0, completed: 0, invoiced: 0, active: [] }
         }
     }
     /**
@@ -745,21 +728,30 @@ export class EnhancedAccountingService {
         userId: string = "system"
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         try {
-            // 1. Fetch asset acquisition entry
-            const assetDoc = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(assetEntryId).get()
-            if (!assetDoc.exists) {
+            const client = getServiceSupabase()
+            const { data: assetEntry } = await client
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("*")
+                .eq("id", assetEntryId)
+                .single()
+
+            if (!assetEntry) {
                 return { success: false, error: "Asset acquisition entry not found" }
             }
 
-            const assetData = assetDoc.data() as any
-            const metadata = assetData.metadata || {}
-            
+            const { data: lines } = await client
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .select("*")
+                .eq("journal_entry_id", assetEntryId)
+
+            const metadata = (assetEntry as any).metadata || {}
             if (!metadata.useful_life_years) {
                 return { success: false, error: "Asset is non-depreciable or missing useful life" }
             }
 
-            // 2. Calculate monthly depreciation
-            const cost = assetData.total_debits || 0
+            const totalDebits = (lines || []).reduce((sum: any, l: any) => sum + l.debit, 0)
+
+            const cost = totalDebits
             const salvageValue = metadata.salvage_value || 0
             const usefulLifeMonths = metadata.useful_life_years * 12
             const monthlyAmount = Math.round(((cost - salvageValue) / usefulLifeMonths) * 100) / 100
@@ -768,69 +760,63 @@ export class EnhancedAccountingService {
                 return { success: false, error: "Calculated depreciation amount is zero or negative" }
             }
 
-            // 3. Identify accounts
-            const assetAccount = assetData.account_ids?.find((id: string) => id.startsWith('13') || id.startsWith('14'))
+            const assetAccount = assetEntry.account_ids?.find((id: string) => id.startsWith("13") || id.startsWith("14"))
             if (!assetAccount) {
                 return { success: false, error: "Could not identify asset account for depreciation" }
             }
 
-            // Map accumulated depreciation account
-            let accumDepAccount = "1352" // Default Equipment
+            let accumDepAccount = "1352"
             if (assetAccount === "1301" || assetAccount === "1302") accumDepAccount = "1351"
             else if (assetAccount === "1304" || assetAccount === "1305" || assetAccount === "1306") accumDepAccount = "1353"
             else if (assetAccount === "1307") accumDepAccount = "1354"
-            else if (assetAccount.startsWith("14")) accumDepAccount = "1491" // Intangibles
+            else if (assetAccount.startsWith("14")) accumDepAccount = "1491"
 
-            // Map expense account (Factory vs Office)
-            const expenseAccount = (assetAccount === "1301" || assetAccount === "1302" || assetAccount === "1303") 
-                ? "5008" // Factory Depreciation (COGS)
-                : "6007" // Office Depreciation (Expense)
+            const expenseAccount = (assetAccount === "1301" || assetAccount === "1302" || assetAccount === "1303")
+                ? "5008"
+                : "6007"
 
-            // 4. Check for existing depreciation for this month/asset
             const referenceId = `DEP-${assetEntryId}-${year}-${month + 1}`
-            const existingEntry = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-                .where("reference_doc", "==", referenceId)
+            const { data: existing } = await client
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("id")
+                .eq("reference_id", referenceId)
                 .limit(1)
-                .get()
 
-            if (!existingEntry.empty) {
+            if (existing && existing.length > 0) {
                 return { success: false, error: "Depreciation already recorded for this month" }
             }
 
-            // 5. Create journal entry
-            const lines: JournalLine[] = [
+            const jeLines: JournalLine[] = [
                 {
                     accountCode: expenseAccount,
                     accountName: getAccountName(expenseAccount),
                     debit: monthlyAmount,
                     credit: 0,
-                    description: `Monthly depreciation: ${assetData.description} (${month+1}/${year})`
+                    description: `Monthly depreciation: ${assetEntry.description} (${month + 1}/${year})`
                 },
                 {
                     accountCode: accumDepAccount,
                     accountName: getAccountName(accumDepAccount),
                     debit: 0,
                     credit: monthlyAmount,
-                    description: `Accumulated depreciation: ${assetData.description}`
+                    description: `Accumulated depreciation: ${assetEntry.description}`
                 }
             ]
 
             return await this.createJournalEntry(
                 JournalEntryType.DEPRECIATION,
-                lines,
+                jeLines,
                 referenceId,
-                `Depreciation for ${assetData.description} - Period ${month+1}/${year}`,
+                `Depreciation for ${assetEntry.description} - Period ${month + 1}/${year}`,
                 userId
             )
-
         } catch (error) {
             console.error("Error recording depreciation:", error)
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : "Failed to record depreciation"
-            }
+            return { success: false, error: error instanceof Error ? error.message : "Failed to record depreciation" }
         }
     }
+
+
 
     // ─── Manufacturing gap-fill methods ────────────────────────────────────────
 

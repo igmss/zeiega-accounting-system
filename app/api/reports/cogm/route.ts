@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 import { requirePermission } from "@/lib/auth"
 
@@ -18,16 +18,15 @@ export async function GET(request: NextRequest) {
         start.setHours(0, 0, 0, 0)
         const end = new Date(toDate)
         end.setHours(23, 59, 59, 999)
-        end.setHours(23, 59, 59, 999) // End of day
 
-        // Query journal entries to calculate manufacturing costs for the period
-        const journalEntriesRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            .where("date", ">=", start)
-            .where("date", "<=", end)
-        
-        const journalSnapshot = await journalEntriesRef.get()
+        const { data: journalEntries, error } = await getServiceClient()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .gte("date", start.toISOString())
+            .lte("date", end.toISOString())
 
-        // Initialize cost components
+        if (error) throw error
+
         let rawMaterialsPurchases = 0
         let directLabor = 0
         let factoryRent = 0
@@ -39,8 +38,7 @@ export async function GET(request: NextRequest) {
         let wipLabor = 0
         let wipOverhead = 0
 
-        journalSnapshot.docs.forEach((doc) => {
-            const entry = doc.data()
+        journalEntries.forEach((entry: any) => {
             const lines = entry.entries || entry.lines || []
 
             lines.forEach((line: any) => {
@@ -48,46 +46,44 @@ export async function GET(request: NextRequest) {
                 const debit = line.debit || 0
                 const credit = line.credit || 0
 
-                // Manufacturing cost accounts
                 switch (accountCode) {
-                    case "5001": // Raw Materials Used
+                    case "5001":
                         rawMaterialsPurchases += debit - credit
                         break
-                    case "5002": // Direct Labor
+                    case "5002":
                         directLabor += debit - credit
                         break
-                    case "5003": // Production Overtime
+                    case "5003":
                         directLabor += debit - credit
                         break
-                    case "5004": // Manufacturing Overhead
+                    case "5004":
                         indirectLabor += debit - credit
                         break
-                    case "5005": // Factory Rent
+                    case "5005":
                         factoryRent += debit - credit
                         break
-                    case "5006": // Factory Utilities
+                    case "5006":
                         factoryUtilities += debit - credit
                         break
-                    case "5007": // Machine Maintenance
+                    case "5007":
                         maintenance += debit - credit
                         break
-                    case "5008": // Depreciation - Factory Equipment
+                    case "5008":
                         depreciation += debit - credit
                         break
-                    case "5101": // Direct Materials - WIP
+                    case "5101":
                         wipMaterials += debit - credit
                         break
-                    case "5102": // Direct Labor - WIP
+                    case "5102":
                         wipLabor += debit - credit
                         break
-                    case "5103": // Manufacturing Overhead - WIP
+                    case "5103":
                         wipOverhead += debit - credit
                         break
                 }
             })
         })
 
-        // Get live inventory balances from journal entries (BUG-Integrity Fix)
         const rmAccounts = ["1201", "1202", "1203"]
         const wipAccounts = ["1210", "1710", "1711", "1712"]
 
@@ -105,7 +101,6 @@ export async function GET(request: NextRequest) {
         const endingRawMaterials = endRM.reduce((sum: number, val: number) => sum + val, 0)
         const endingWIP = endWIP.reduce((sum: number, val: number) => sum + val, 0)
 
-        // Calculate totals
         const totalMaterialsAvailable = beginningRawMaterials + rawMaterialsPurchases
         const materialsUsed = totalMaterialsAvailable - endingRawMaterials
         const totalOverhead = factoryRent + factoryUtilities + depreciation + maintenance + indirectLabor

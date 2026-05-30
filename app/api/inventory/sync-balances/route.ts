@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { ACCOUNT_CODES } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
@@ -12,22 +12,24 @@ export async function POST() {
     console.log("Starting inventory balance sync...")
 
     // Fetch all inventory items
-    const inventorySnapshot = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get()
-    const inventoryItems: any[] = inventorySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: inventoryItems, error } = await getServiceClient()
+      .from(TABLES.INVENTORY_ITEMS)
+      .select("*")
+
+    if (error) throw error
+
+    const items: any[] = inventoryItems || []
 
     // Calculate totals by type with proper account codes
-    const rawMaterialsValue = inventoryItems
+    const rawMaterialsValue = items
       .filter(item => item.type === 'raw')
       .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
-    const wipValue = inventoryItems
+    const wipValue = items
       .filter(item => item.type === 'wip')
       .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 
-    const finishedGoodsValue = inventoryItems
+    const finishedGoodsValue = items
       .filter(item => item.type === 'finished')
       .reduce((sum, item) => sum + ((item.quantity_on_hand || 0) * (item.cost_per_unit || 0)), 0)
 

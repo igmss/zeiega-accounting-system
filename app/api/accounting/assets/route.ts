@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { getAccountName } from "@/lib/accounting/account-types"
 import { requirePermission, requireAuth } from "@/lib/auth"
 import { EnhancedAccountingService, JournalEntryType, ACCOUNTS } from "@/lib/services/enhanced-accounting-service"
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
                 description: assetDescription,
                 assetAccount: assetAccount,
                 paymentAccount: paymentAccountCode,
-                date: now
+                date: now.toISOString()
             }
         })
 
@@ -101,15 +101,17 @@ export async function GET() {
         if (!auth.authenticated) return auth.response
 
         // Fetch journal entries relevant to assets
-        const journalSnapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            .orderBy('date', 'desc')
-            .get()
+        const { data: journalData, error: journalError } = await getServiceClient()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("*")
+            .order('date', { ascending: false })
+
+        if (journalError) throw journalError
 
         const assetsMap: Record<string, any> = {}
         const depreciationMap: Record<string, number> = {}
 
-        journalSnapshot.docs.forEach(doc => {
-            const entry = doc.data()
+        ;(journalData || []).forEach((entry: Record<string, any>) => {
             const entries = entry.entries || entry.lines || []
 
             // Identify asset purchase
@@ -124,17 +126,17 @@ export async function GET() {
                     return (code.startsWith('1') || code.startsWith('2') || code.startsWith('3')) && (line.credit > 0)
                 })
 
-                assetsMap[doc.id] = {
-                    id: doc.id,
+                assetsMap[entry.id] = {
+                    id: entry.id,
                     amount: assetLine.debit || 0,
                     description: entry.description || entry.memo || assetLine.description || '',
                     assetAccount: assetLine.account_id || assetLine.accountCode || '',
                     paymentAccount: paymentLine?.account_id || paymentLine?.accountCode || '',
-                    date: entry.date?.toDate ? entry.date.toDate() : (entry.date || new Date()),
+                    date: entry.date || null,
                     useful_life_years: entry.metadata?.useful_life_years,
                     salvage_value: entry.metadata?.salvage_value,
                     depreciation_method: entry.metadata?.depreciation_method,
-                    created_at: entry.created_at?.toDate ? entry.created_at.toDate() : (entry.created_at || new Date()),
+                    created_at: entry.created_at || null,
                     accumulatedDepreciation: 0
                 }
             }
@@ -152,7 +154,7 @@ export async function GET() {
         })
 
         // Merge depreciation into assets
-        const assetsList = Object.values(assetsMap).map(asset => ({
+        const assetsList = Object.values(assetsMap).map((asset: any) => ({
             ...asset,
             accumulatedDepreciation: depreciationMap[asset.id] || 0,
             bookValue: asset.amount - (depreciationMap[asset.id] || 0)

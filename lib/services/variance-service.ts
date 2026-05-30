@@ -1,82 +1,48 @@
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
-/**
- * Standard cost configuration per design
- */
 export interface StandardCost {
   designId: string
   designName: string
-
-  // Direct materials
-  standardDMQuantity: number  // per unit
-  standardDMPrice: number     // per unit of material
-  standardDMCost: number      // per finished unit
-
-  // Direct labor
-  standardDLHours: number     // per unit
-  standardDLRate: number      // per hour
-  standardDLCost: number      // per finished unit
-
-  // Variable overhead (based on DLH)
-  standardVOHRate: number     // per DLH
-  standardVOHCost: number     // per finished unit
-
-  // Fixed overhead
-  budgetedFOH: number         // annual
-  budgetedActivity: number    // DLH
-  standardFOHRate: number     // per DLH
-
-  updatedAt: Date
+  standardDMQuantity: number
+  standardDMPrice: number
+  standardDMCost: number
+  standardDLHours: number
+  standardDLRate: number
+  standardDLCost: number
+  standardVOHRate: number
+  standardVOHCost: number
+  budgetedFOH: number
+  budgetedActivity: number
+  standardFOHRate: number
+  updatedAt: string
   updatedBy: string
 }
 
-/**
- * Variance analysis result for a single job/work order
- */
 export interface JobVariance {
   workOrderId: string
   designId?: string
   quantity: number
-
-  // Material variances
   materialPriceVariance: number
   materialUsageVariance: number
   totalMaterialVariance: number
-
-  // Labor variances
   laborRateVariance: number
   laborEfficiencyVariance: number
   totalLaborVariance: number
-
-  // Overhead variances (4-way)
   vohSpendingVariance: number
   vohEfficiencyVariance: number
   fohBudgetVariance: number
   fohVolumeVariance: number
   totalVOHVariance: number
   totalFOHVariance: number
-
-  // Summary
   totalVariance: number
   isFavorable: boolean
 }
 
-/**
- * Variance Analysis Service
- *
- * Compares actual job costs against standard costs and computes:
- *   - Material Price & Usage variances
- *   - Labor Rate & Efficiency variances
- *   - 4-way Overhead variances (VOH Spending, VOH Efficiency, FOH Budget, FOH Volume)
- */
 export class VarianceService {
-  private static readonly STANDARD_COST_COLLECTION = "acc_standard_costs"
+  private static readonly STANDARD_COST_TABLE = TABLES.STANDARD_COSTS
 
-  /**
-   * Set standard costs for a design
-   */
   static async setStandardCost(
     designId: string,
     designName: string,
@@ -84,14 +50,19 @@ export class VarianceService {
     userId: string = "system"
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const now = new Date().toISOString()
       const standardCost: StandardCost = {
         designId,
         designName,
         ...standard,
-        updatedAt: new Date(),
+        updatedAt: now,
         updatedBy: userId,
       }
-      await db.collection(this.STANDARD_COST_COLLECTION).doc(designId).set(standardCost)
+      const { error } = await getServiceSupabase().from(this.STANDARD_COST_TABLE).upsert(
+        { id: designId, ...standardCost },
+        { onConflict: "id" }
+      )
+      if (error) throw error
       console.log(`✅ Standard costs set for design ${designName} (${designId})`)
       return { success: true }
     } catch (error) {
@@ -102,39 +73,30 @@ export class VarianceService {
     }
   }
 
-  /**
-   * Get standard costs for a design
-   */
   static async getStandardCost(designId: string): Promise<StandardCost | null> {
     try {
-      const doc = await db.collection(this.STANDARD_COST_COLLECTION).doc(designId).get()
-      return doc.exists ? (doc.data() as StandardCost) : null
+      const { data, error } = await getServiceSupabase().from(this.STANDARD_COST_TABLE).select("*").eq("id", designId).single()
+      return (!error && data) ? (data as StandardCost) : null
     } catch {
       return null
     }
   }
 
-  /**
-   * Calculate all variances for a completed work order
-   */
   static async calculateJobVariance(
     workOrderId: string,
     standard: StandardCost
   ): Promise<{ success: boolean; variance?: JobVariance; error?: string }> {
     try {
-      const woDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-      if (!woDoc.exists) {
+      const { data: wo, error } = await getServiceSupabase().from(TABLES.WORK_ORDERS).select("*").eq("id", workOrderId).single()
+      if (error || !wo) {
         return { success: false, error: "Work order not found" }
       }
 
-      const wo = woDoc.data()
-      const quantity = 1 // Default; can be derived from items.length if needed
-      const sq = standard  // shorthand
+      const quantity = 1
+      const sq = standard
 
-      // ─── MATERIAL VARIANCES ───
-      // Get actual materials issued
-      const materialsIssued = wo?.materials_issued || []
-      const rawMaterials = wo?.raw_materials_used || []
+      const materialsIssued = wo.materials_issued || []
+      const rawMaterials = wo.raw_materials_used || []
       const allMaterials = materialsIssued.length > 0 ? materialsIssued : rawMaterials
 
       let totalAQ = 0
@@ -151,55 +113,37 @@ export class VarianceService {
       const totalAQTimesSP = totalAQ * sq.standardDMPrice
       const totalSQTimesSP = totalSQ * sq.standardDMPrice
 
-      // Price Variance = AQ Purchased × (AP − SP) = (AP × AQ) − (SP × AQ)
       const materialPriceVariance = totalAPxAQ - totalAQTimesSP
-
-      // Usage Variance = SP × (AQ Used − SQ Allowed)
       const materialUsageVariance = totalAQTimesSP - totalSQTimesSP
 
-      // ─── LABOR VARIANCES ───
-      const actualHours = wo?.labor_hours || 0
-      const actualLaborCost = wo?.labor_cost || 0
+      const actualHours = wo.labor_hours || 0
+      const actualLaborCost = wo.labor_cost || 0
       const actualRate = actualHours > 0 ? actualLaborCost / actualHours : 0
       const standardHours = sq.standardDLHours * quantity
 
-      // Rate Variance = AH × (AR − SR)
       const laborRateVariance = actualHours * (actualRate - sq.standardDLRate)
-
-      // Efficiency Variance = SR × (AH − SH Allowed)
       const laborEfficiencyVariance = sq.standardDLRate * (actualHours - standardHours)
 
-      // ─── OVERHEAD VARIANCES (4-Way) ───
-      const actualVOH = wo?.overhead_cost || 0  // Simplified: all OH treated as VOH for now
-      const actualFOH = 0  // Fixed OH not separately tracked per job
+      const actualVOH = wo.overhead_cost || 0
+      const actualFOH = 0
       const budgetedFOHPerJob = sq.standardFOHRate * standardHours
 
-      // VOH Spending = Actual VOH − (SR_VOH × AH)
       const vohSpendingVariance = actualVOH - (sq.standardVOHRate * actualHours)
-
-      // VOH Efficiency = SR_VOH × (AH − SH Allowed)
       const vohEfficiencyVariance = sq.standardVOHRate * (actualHours - standardHours)
-
-      // FOH Budget = Actual FOH − Budgeted FOH
       const fohBudgetVariance = actualFOH - sq.budgetedFOH
-
-      // FOH Volume = Budgeted FOH − (SR_FOH × SH Allowed)
       const fohVolumeVariance = sq.budgetedFOH - (sq.standardFOHRate * standardHours)
 
-      // Totals
       const totalMaterialVariance = materialPriceVariance + materialUsageVariance
       const totalLaborVariance = laborRateVariance + laborEfficiencyVariance
       const totalVOHVariance = vohSpendingVariance + vohEfficiencyVariance
       const totalFOHVariance = fohBudgetVariance + fohVolumeVariance
       const totalVariance = totalMaterialVariance + totalLaborVariance + totalVOHVariance + totalFOHVariance
 
-      // Positive variance = unfavorable (actual > standard)
-      // Negative variance = favorable (actual < standard)
       const isFavorable = totalVariance < 0
 
       const variance: JobVariance = {
         workOrderId,
-        designId: wo?.design_id,
+        designId: wo.design_id,
         quantity,
         materialPriceVariance: Math.round(materialPriceVariance * 100) / 100,
         materialUsageVariance: Math.round(materialUsageVariance * 100) / 100,
@@ -226,9 +170,6 @@ export class VarianceService {
     }
   }
 
-  /**
-   * Journalize material variances at time of purchase or usage
-   */
   static async recordMaterialVariance(
     workOrderId: string,
     standardPrice: number,
@@ -246,7 +187,6 @@ export class VarianceService {
 
       const entries: any[] = []
 
-      // Record raw materials at standard
       entries.push({
         account_id: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
         account_name: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
@@ -255,7 +195,6 @@ export class VarianceService {
         description: `Materials at standard: ${actualQuantity} × EGP ${standardPrice}`,
       })
 
-      // Price variance
       if (Math.abs(priceVar) > 0.01) {
         entries.push({
           account_id: ACCOUNT_CODES.MATERIAL_PRICE_VARIANCE,
@@ -266,7 +205,6 @@ export class VarianceService {
         })
       }
 
-      // Credit AP for actual amount
       entries.push({
         account_id: ACCOUNT_CODES.ACCOUNTS_PAYABLE,
         account_name: getAccountName(ACCOUNT_CODES.ACCOUNTS_PAYABLE),
@@ -275,7 +213,6 @@ export class VarianceService {
         description: `Materials purchased at actual: ${actualQuantity} × EGP ${actualPrice}`,
       })
 
-      // WIP at standard
       entries.push({
         account_id: ACCOUNT_CODES.WIP_MATERIALS,
         account_name: getAccountName(ACCOUNT_CODES.WIP_MATERIALS),
@@ -284,7 +221,6 @@ export class VarianceService {
         description: `Materials to WIP at standard: ${standardQuantity} × EGP ${standardPrice}`,
       })
 
-      // Usage variance
       if (Math.abs(usageVar) > 0.01) {
         entries.push({
           account_id: ACCOUNT_CODES.MATERIAL_USAGE_VARIANCE,
@@ -295,7 +231,6 @@ export class VarianceService {
         })
       }
 
-      // Credit raw materials at actual quantity used
       entries.push({
         account_id: ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
         account_name: getAccountName(ACCOUNT_CODES.RAW_MATERIALS_FABRIC),
@@ -331,9 +266,6 @@ export class VarianceService {
     }
   }
 
-  /**
-   * Close variance accounts to COGS at period-end (standard practice when immaterial)
-   */
   static async closeVarianceAccounts(
     userId: string = "system"
   ): Promise<{ success: boolean; entryId?: string; totalClosed?: number; error?: string }> {
@@ -351,13 +283,13 @@ export class VarianceService {
       let totalToClose = 0
 
       for (const code of varianceAccounts) {
-        const snapshot = await db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-          .where("account_ids", "array-contains", code)
-          .get()
+        const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+          .select("*")
+          .contains("account_ids", [code])
 
         let netBalance = 0
-        for (const doc of snapshot.docs) {
-          for (const line of doc.data().entries || []) {
+        for (const doc of (snap || [])) {
+          for (const line of doc.entries || []) {
             if (line.account_id === code) {
               netBalance += (line.debit || 0) - (line.credit || 0)
             }
@@ -367,7 +299,7 @@ export class VarianceService {
         if (Math.abs(netBalance) > 0.01) {
           entries.push({
             account_id: code,
-              account_name: getAccountName(code),
+            account_name: getAccountName(code),
             debit: netBalance < 0 ? Math.abs(netBalance) : 0,
             credit: netBalance > 0 ? netBalance : 0,
             description: `Close variance account to COGS`,
@@ -380,7 +312,6 @@ export class VarianceService {
         return { success: true, totalClosed: 0 }
       }
 
-      // Offset to COGS
       entries.push({
         account_id: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
         account_name: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),

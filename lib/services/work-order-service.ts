@@ -1,4 +1,4 @@
-import { db, COLLECTIONS } from "../firebase";
+import { supabase, TABLES, getServiceSupabase } from "../supabase";
 import { DesignService } from "./design-service";
 import { OrderItemDesignService } from "./order-item-design-service";
 import type { WorkOrder } from "../types";
@@ -63,13 +63,21 @@ export class WorkOrderService {
       };
 
       // Save work order to database
-      const workOrderRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder);
+      const { data: inserted, error: insertError } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .insert(workOrder)
+        .select()
+        .single();
 
-      console.log(`✅ Created work order ${workOrderRef.id} with estimated cost ${formatCurrency(estimatedTotalCost)}`);
+      if (insertError) throw insertError;
+
+      const workOrderRefId = inserted?.id || workOrder.id;
+
+      console.log(`✅ Created work order ${workOrderRefId} with estimated cost ${formatCurrency(estimatedTotalCost)}`);
 
       return {
         success: true,
-        workOrderId: workOrderRef.id,
+        workOrderId: workOrderRefId,
         estimatedCost: estimatedTotalCost
       };
 
@@ -92,20 +100,27 @@ export class WorkOrderService {
     laborRate: number = 50 // Default labor rate per hour in EGP
   ): Promise<void> {
     try {
-      const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get();
-      const workOrderData = workOrderDoc.data();
-      const overheadCost = workOrderData?.overhead_cost || 0;
+      const { data: workOrderDoc } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .eq("id", workOrderId)
+        .single();
+
+      const overheadCost = workOrderDoc?.overhead_cost || 0;
 
       const laborCost = laborHours * laborRate;
       // BUG-11 Fix: Include overhead_cost in totalCost calculation
       const totalCost = materialCosts + laborCost + overheadCost;
 
-      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-        labor_hours: laborHours,
-        labor_cost: laborCost,
-        total_cost: totalCost,
-        updated_at: new Date()
-      });
+      await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .update({
+          labor_hours: laborHours,
+          labor_cost: laborCost,
+          total_cost: totalCost,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", workOrderId);
 
       console.log(`Updated work order ${workOrderId} costs: Materials ${formatCurrency(materialCosts)}, Labor ${formatCurrency(laborCost)}, Total ${formatCurrency(totalCost)}`);
     } catch (error) {
@@ -124,19 +139,23 @@ export class WorkOrderService {
   }> {
     try {
       // Get work order
-      const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get();
-      if (!workOrderDoc.exists) {
+      const { data: workOrderDoc } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .eq("id", workOrderId)
+        .single();
+
+      if (!workOrderDoc) {
         return { workOrder: null, design: null, materialRequirements: [] };
       }
 
       const workOrder = {
-        id: workOrderDoc.id,
-        ...workOrderDoc.data(),
-        created_at: (workOrderDoc.data()?.created_at as any)?.toDate ? (workOrderDoc.data() as any).created_at.toDate() : (workOrderDoc.data()?.created_at || new Date()),
-        updated_at: (workOrderDoc.data()?.updated_at as any)?.toDate ? (workOrderDoc.data() as any).updated_at.toDate() : (workOrderDoc.data()?.updated_at || new Date()),
-        completed_at: (workOrderDoc.data()?.completed_at as any)?.toDate ? (workOrderDoc.data() as any).completed_at.toDate() : (workOrderDoc.data()?.completed_at || null),
-        start_time: (workOrderDoc.data()?.start_time as any)?.toDate ? (workOrderDoc.data() as any).start_time.toDate() : (workOrderDoc.data()?.start_time || null),
-        estimated_completion: (workOrderDoc.data()?.estimated_completion as any)?.toDate ? (workOrderDoc.data() as any).estimated_completion.toDate() : (workOrderDoc.data()?.estimated_completion || null)
+        ...workOrderDoc,
+        created_at: workOrderDoc.created_at || new Date().toISOString(),
+        updated_at: workOrderDoc.updated_at || new Date().toISOString(),
+        completed_at: workOrderDoc.completed_at || null,
+        start_time: workOrderDoc.start_time || null,
+        estimated_completion: workOrderDoc.estimated_completion || null
       } as WorkOrder;
 
       // Fetch sales order details from multiple possible sources
@@ -146,9 +165,14 @@ export class WorkOrderService {
           let customerData = null;
 
           // Try to get from acc_sales_orders first (accounting system)
-          const accSalesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrder.sales_order_id).get();
-          if (accSalesOrderDoc.exists) {
-            salesOrderData = accSalesOrderDoc.data();
+          const { data: accSalesOrderDoc } = await getServiceSupabase()
+            .from(TABLES.SALES_ORDERS)
+            .select("*")
+            .eq("id", workOrder.sales_order_id)
+            .single();
+
+          if (accSalesOrderDoc) {
+            salesOrderData = accSalesOrderDoc;
 
             // Use customer data directly from sales order if available
             if (salesOrderData?.customer_name) {
@@ -160,18 +184,28 @@ export class WorkOrderService {
               };
             } else if (salesOrderData?.customer_id) {
               // Fallback: try to fetch from customers collection
-              const customerDoc = await db.collection(COLLECTIONS.CUSTOMERS).doc(salesOrderData.customer_id).get();
-              if (customerDoc.exists) {
-                customerData = customerDoc.data();
+              const { data: customerDoc } = await getServiceSupabase()
+                .from(TABLES.CUSTOMERS)
+                .select("*")
+                .eq("id", salesOrderData.customer_id)
+                .single();
+
+              if (customerDoc) {
+                customerData = customerDoc;
               }
             }
           }
 
           // If not found in accounting system, try original orders collection
           if (!salesOrderData) {
-            const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(workOrder.sales_order_id).get();
-            if (orderDoc.exists) {
-              salesOrderData = orderDoc.data();
+            const { data: orderDoc } = await getServiceSupabase()
+              .from(TABLES.ORDERS)
+              .select("*")
+              .eq("id", workOrder.sales_order_id)
+              .single();
+
+            if (orderDoc) {
+              salesOrderData = orderDoc;
               // Extract customer data from order
               customerData = {
                 name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
@@ -184,9 +218,14 @@ export class WorkOrderService {
 
           // If still not found, try manual_orders collection
           if (!salesOrderData) {
-            const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrder.sales_order_id).get();
-            if (manualOrderDoc.exists) {
-              salesOrderData = manualOrderDoc.data();
+            const { data: manualOrderDoc } = await getServiceSupabase()
+              .from(TABLES.MANUAL_ORDERS)
+              .select("*")
+              .eq("id", workOrder.sales_order_id)
+              .single();
+
+            if (manualOrderDoc) {
+              salesOrderData = manualOrderDoc;
               // Extract customer data from manual order
               customerData = {
                 name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
@@ -264,14 +303,19 @@ export class WorkOrderService {
 
             console.log(`Recalculated costs for work order ${workOrderId}: Total ${formatCurrency(costCalculation.totalEstimatedCost)}`);
 
-            // Persist the recalculated costs to Firestore if they are not yet saved
-            await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-              item_costs: costCalculation.itemCosts,
-              estimated_cost: costCalculation.totalEstimatedCost,
-              labor_cost: workOrder.labor_cost,
-              overhead_cost: workOrder.overhead_cost,
-              updated_at: new Date()
-            }).catch(err => console.error(`Failed to persist auto-calculated costs for WO ${workOrderId}:`, err));
+            // Persist the recalculated costs to database if they are not yet saved
+            await getServiceSupabase()
+              .from(TABLES.WORK_ORDERS)
+              .update({
+                item_costs: costCalculation.itemCosts,
+                estimated_cost: costCalculation.totalEstimatedCost,
+                labor_cost: workOrder.labor_cost,
+                overhead_cost: workOrder.overhead_cost,
+                updated_at: new Date().toISOString()
+              })
+              .eq("id", workOrderId)
+              .then(() => {})
+              .catch((err: any) => console.error(`Failed to persist auto-calculated costs for WO ${workOrderId}:`, err));
           }
         } catch (error) {
           console.warn(`Failed to recalculate costs for work order ${workOrderId}:`, error);
@@ -309,19 +353,21 @@ export class WorkOrderService {
    */
   static async getAllWorkOrdersWithDesigns(): Promise<WorkOrder[]> {
     try {
-      const snapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-        .orderBy("created_at", "desc")
-        .get();
+      const { data: snapshot } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .order("created_at", { ascending: false });
 
-      const workOrders = await Promise.all(snapshot.docs.map(async (doc) => {
+      if (!snapshot) return [];
+
+      const workOrders = await Promise.all(snapshot.map(async (doc: any) => {
         const workOrderData = {
-          id: doc.id,
-          ...doc.data(),
-          created_at: (doc.data().created_at as any)?.toDate ? (doc.data().created_at as any).toDate() : (doc.data().created_at || new Date()),
-          updated_at: (doc.data().updated_at as any)?.toDate ? (doc.data().updated_at as any).toDate() : (doc.data().updated_at || new Date()),
-          completed_at: (doc.data().completed_at as any)?.toDate ? (doc.data().completed_at as any).toDate() : (doc.data().completed_at || null),
-          start_time: (doc.data().start_time as any)?.toDate ? (doc.data().start_time as any).toDate() : (doc.data().start_time || null),
-          estimated_completion: (doc.data().estimated_completion as any)?.toDate ? (doc.data().estimated_completion as any).toDate() : (doc.data().estimated_completion || null)
+          ...doc,
+          created_at: doc.created_at || new Date().toISOString(),
+          updated_at: doc.updated_at || new Date().toISOString(),
+          completed_at: doc.completed_at || null,
+          start_time: doc.start_time || null,
+          estimated_completion: doc.estimated_completion || null
         } as WorkOrder;
 
         // Fetch sales order details from multiple possible sources
@@ -331,9 +377,14 @@ export class WorkOrderService {
             let customerData = null;
 
             // Try to get from acc_sales_orders first (accounting system)
-            const accSalesOrderDoc = await db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrderData.sales_order_id).get();
-            if (accSalesOrderDoc.exists) {
-              salesOrderData = accSalesOrderDoc.data();
+            const { data: accSalesOrderDoc } = await getServiceSupabase()
+              .from(TABLES.SALES_ORDERS)
+              .select("*")
+              .eq("id", workOrderData.sales_order_id)
+              .single();
+
+            if (accSalesOrderDoc) {
+              salesOrderData = accSalesOrderDoc;
 
               // Use customer data directly from sales order if available
               if (salesOrderData?.customer_name) {
@@ -345,18 +396,28 @@ export class WorkOrderService {
                 };
               } else if (salesOrderData?.customer_id) {
                 // Fallback: try to fetch from customers collection
-                const customerDoc = await db.collection(COLLECTIONS.CUSTOMERS).doc(salesOrderData.customer_id).get();
-                if (customerDoc.exists) {
-                  customerData = customerDoc.data();
+                const { data: customerDoc } = await getServiceSupabase()
+                  .from(TABLES.CUSTOMERS)
+                  .select("*")
+                  .eq("id", salesOrderData.customer_id)
+                  .single();
+
+                if (customerDoc) {
+                  customerData = customerDoc;
                 }
               }
             }
 
             // If not found in accounting system, try original orders collection
             if (!salesOrderData) {
-              const orderDoc = await db.collection(COLLECTIONS.ORDERS).doc(workOrderData.sales_order_id).get();
-              if (orderDoc.exists) {
-                salesOrderData = orderDoc.data();
+              const { data: orderDoc } = await getServiceSupabase()
+                .from(TABLES.ORDERS)
+                .select("*")
+                .eq("id", workOrderData.sales_order_id)
+                .single();
+
+              if (orderDoc) {
+                salesOrderData = orderDoc;
                 // Extract customer data from order
                 customerData = {
                   name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
@@ -369,9 +430,14 @@ export class WorkOrderService {
 
             // If still not found, try manual_orders collection
             if (!salesOrderData) {
-              const manualOrderDoc = await db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrderData.sales_order_id).get();
-              if (manualOrderDoc.exists) {
-                salesOrderData = manualOrderDoc.data();
+              const { data: manualOrderDoc } = await getServiceSupabase()
+                .from(TABLES.MANUAL_ORDERS)
+                .select("*")
+                .eq("id", workOrderData.sales_order_id)
+                .single();
+
+              if (manualOrderDoc) {
+                salesOrderData = manualOrderDoc;
                 // Extract customer data from manual order
                 customerData = {
                   name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
@@ -425,10 +491,14 @@ export class WorkOrderService {
                     labor_hours: laborHours,
                     overhead_cost: overheadCost,
                     item_costs: costCalculation.itemCosts,
-                    updated_at: new Date()
+                    updated_at: new Date().toISOString()
                   };
 
-                  await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderData.id).update(updateFields);
+                  await getServiceSupabase()
+                    .from(TABLES.WORK_ORDERS)
+                    .update(updateFields)
+                    .eq("id", workOrderData.id);
+
                   Object.assign(workOrderData, updateFields);
                 }
               } catch (err) {
@@ -481,12 +551,12 @@ export class WorkOrderService {
       }
 
       // BUG-12 Fix: Profitability uses realized revenue from PAID invoices, not the sales order value
-      const invoicesSnapshot = await db.collection(COLLECTIONS.INVOICES)
-        .where("sales_order_id", "==", workOrder.sales_order_id)
-        .get();
+      const { data: invoicesSnapshot } = await getServiceSupabase()
+        .from(TABLES.INVOICES)
+        .select("*")
+        .eq("sales_order_id", workOrder.sales_order_id);
 
-      const revenue = invoicesSnapshot.docs.reduce((sum, doc) => {
-        const inv = doc.data();
+      const revenue = (invoicesSnapshot || []).reduce((sum: any, inv: any) => {
         // Sum any amounts actually paid across all invoices (paid, partial, overdue)
         return sum + (inv.paid_amount || 0);
       }, 0);
@@ -515,23 +585,26 @@ export class WorkOrderService {
       if (updates.notes !== undefined) whitelistedUpdates.notes = updates.notes
       if (updates.assigned_worker !== undefined) whitelistedUpdates.assigned_worker = updates.assigned_worker
       if (updates.estimated_completion !== undefined) {
-        whitelistedUpdates.estimated_completion = updates.estimated_completion ? new Date(updates.estimated_completion) : null
+        whitelistedUpdates.estimated_completion = updates.estimated_completion ? new Date(updates.estimated_completion).toISOString() : null
       }
       if (updates.started_at !== undefined) {
-        whitelistedUpdates.started_at = updates.started_at ? new Date(updates.started_at) : null
+        whitelistedUpdates.started_at = updates.started_at ? new Date(updates.started_at).toISOString() : null
       }
       if (updates.completed_at !== undefined) {
-        whitelistedUpdates.completed_at = updates.completed_at ? new Date(updates.completed_at) : null
+        whitelistedUpdates.completed_at = updates.completed_at ? new Date(updates.completed_at).toISOString() : null
       }
 
       if (Object.keys(whitelistedUpdates).length === 0) {
         return { success: false, error: "No valid fields to update" }
       }
 
-      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-        ...whitelistedUpdates,
-        updated_at: new Date(),
-      })
+      await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .update({
+          ...whitelistedUpdates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", workOrderId)
 
       return { success: true }
     } catch (error) {
@@ -542,7 +615,7 @@ export class WorkOrderService {
 
   static async createBasicWorkOrder(workOrderData: Record<string, any>): Promise<{ success: boolean; workOrderId?: string; error?: string }> {
     try {
-      const now = new Date()
+      const now = new Date().toISOString()
       const workOrder = {
         ...workOrderData,
         createdAt: now,
@@ -556,8 +629,15 @@ export class WorkOrderService {
         notes: workOrderData.notes || `Basic work order created without automatic cost calculation - manual cost entry required`
       }
 
-      const docRef = await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder)
-      return { success: true, workOrderId: docRef.id }
+      const { data: inserted, error } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .insert(workOrder)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return { success: true, workOrderId: (inserted as any)?.id || (workOrder as any).id }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Failed to create work order" }
     }

@@ -12,9 +12,8 @@
  *   3. Call `checkNRV()` periodically (e.g. month-end) to identify write-down candidates.
  */
 
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import type { InventoryLayer } from "../types"
-import { FieldValue } from "../firebase"
 import { formatCurrency } from "@/lib/utils"
 
 export interface FIFOIssueResult {
@@ -26,8 +25,6 @@ export interface FIFOIssueResult {
 }
 
 export class InventoryLayerService {
-  private static readonly COLLECTION = COLLECTIONS.INVENTORY_LAYERS
-
   /**
    * Record a new FIFO cost layer when materials are received.
    * Called after purchase order receipt / GRN.
@@ -54,7 +51,10 @@ export class InventoryLayerService {
         created_at: new Date(),
       }
 
-      await db.collection(this.COLLECTION).doc(layerId).set(layer)
+      await getServiceSupabase()
+        .from(TABLES.INVENTORY_LAYERS)
+        .upsert(layer, { onConflict: "id" })
+
       console.log(`✅ FIFO layer created: ${sku} × ${quantityReceived} @ ${formatCurrency(unitCost)}`)
       return { success: true, layerId }
     } catch (error) {
@@ -82,13 +82,16 @@ export class InventoryLayerService {
 
     try {
       // Fetch all layers with remaining stock, ordered by receipt date (FIFO)
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("sku", "==", sku)
-        .where("quantityRemaining", ">", 0)
-        .orderBy("receiptDate", "asc")
-        .get()
+      const { data: snapshot, error } = await getServiceSupabase()
+        .from(TABLES.INVENTORY_LAYERS)
+        .select("*")
+        .eq("sku", sku)
+        .gt("quantityRemaining", 0)
+        .order("receiptDate", { ascending: true })
 
-      if (snapshot.empty) {
+      if (error) throw error
+
+      if (!snapshot || snapshot.length === 0) {
         return {
           success: false,
           weightedUnitCost: 0,
@@ -101,18 +104,20 @@ export class InventoryLayerService {
       let remaining   = quantityNeeded
       let totalCost   = 0
       const layersConsumed: FIFOIssueResult["layersConsumed"] = []
-      const batch     = db.batch()
 
-      for (const doc of snapshot.docs) {
+      for (const layer of snapshot) {
         if (remaining <= 0) break
 
-        const layer = doc.data() as InventoryLayer
         const take  = Math.min(remaining, layer.quantityRemaining)
 
         totalCost += take * layer.unitCost
-        layersConsumed.push({ layerId: doc.id, quantityUsed: take, unitCost: layer.unitCost })
+        layersConsumed.push({ layerId: layer.id, quantityUsed: take, unitCost: layer.unitCost })
 
-        batch.update(doc.ref, { quantityRemaining: layer.quantityRemaining - take })
+        await getServiceSupabase()
+          .from(TABLES.INVENTORY_LAYERS)
+          .update({ quantityRemaining: layer.quantityRemaining - take })
+          .eq("id", layer.id)
+
         remaining -= take
       }
 
@@ -125,8 +130,6 @@ export class InventoryLayerService {
           error: `Insufficient FIFO layers for ${sku}: short by ${remaining} units`,
         }
       }
-
-      await batch.commit()
 
       const weightedUnitCost = Math.round((totalCost / quantityNeeded) * 10000) / 10000
 
@@ -152,12 +155,14 @@ export class InventoryLayerService {
    */
   static async getCurrentLayers(sku: string): Promise<InventoryLayer[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("sku", "==", sku)
-        .where("quantityRemaining", ">", 0)
-        .orderBy("receiptDate", "asc")
-        .get()
-      return snapshot.docs.map(d => d.data() as InventoryLayer)
+      const { data: snapshot } = await getServiceSupabase()
+        .from(TABLES.INVENTORY_LAYERS)
+        .select("*")
+        .eq("sku", sku)
+        .gt("quantityRemaining", 0)
+        .order("receiptDate", { ascending: true })
+
+      return (snapshot || []) as InventoryLayer[]
     } catch {
       return []
     }

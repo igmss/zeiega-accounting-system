@@ -1,4 +1,4 @@
-import { db, COLLECTIONS, FieldValue } from "../firebase";
+import { supabase, TABLES, getServiceSupabase } from "../supabase";
 import { DesignService } from "./design-service";
 import { EnhancedAccountingService } from "./enhanced-accounting-service";
 import type { MaterialRequirement } from "../types/designs";
@@ -38,53 +38,10 @@ export class WorkOrderMaterialService {
 
       // Issue materials from inventory
       const issuedMaterials: MaterialRequirement[] = [];
-      const batch = db.batch();
       let totalCost = 0;
 
-      for (const requirement of requirements) {
-        // Update inventory quantity
-        const inventoryRef = db.collection(COLLECTIONS.INVENTORY_ITEMS)
-          .doc(requirement.inventoryItemId);
-        
-        batch.update(inventoryRef, {
-          quantity_on_hand: FieldValue.increment(-requirement.requiredQuantity),
-          updatedAt: new Date()
-        });
-
-        // Create inventory movement record
-        const movementRef = db.collection(COLLECTIONS.INVENTORY_MOVEMENTS).doc();
-        batch.set(movementRef, {
-          item_id: requirement.inventoryItemId,
-          qty: -requirement.requiredQuantity, // Negative for issue
-          type: "issue",
-          related_doc: workOrderId,
-          created_at: new Date(),
-          description: `Issued for work order ${workOrderId} - Design ${designId}`,
-          unit_cost: requirement.costPerUnit,
-          total_cost: requirement.totalCost
-        });
-
-        issuedMaterials.push(requirement);
-        totalCost += requirement.totalCost;
-      }
-
-      // Update work order with issued materials
-      const workOrderRef = db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId);
-      batch.update(workOrderRef, {
-        materials_issued: issuedMaterials.map(m => ({
-          inventoryItemId: m.inventoryItemId,
-          inventoryItemName: m.inventoryItemName,
-          quantityIssued: m.requiredQuantity,
-          unitCost: m.costPerUnit,
-          totalCost: m.totalCost
-        })),
-        status: "in_progress",
-        updated_at: new Date()
-      });
-
-      // Create journal entry via EnhancedAccountingService (BUG-2 Fix: Accounting BEFORE Batch)
-      // This handles real COA codes (1210 WIP, 1201 Raw Materials) and indexing
-      const accountingMaterials = issuedMaterials.map(m => ({
+      // Create journal entry via EnhancedAccountingService (BUG-2 Fix: Accounting BEFORE inventory updates)
+      const accountingMaterials = requirements.map(m => ({
         itemId: m.inventoryItemId,
         itemName: m.inventoryItemName,
         quantity: m.requiredQuantity,
@@ -107,7 +64,59 @@ export class WorkOrderMaterialService {
       }
 
       // Commit inventory and status changes ONLY if accounting succeeded
-      await batch.commit();
+      for (const requirement of requirements) {
+        // Read current quantity first (replaces FieldValue.increment)
+        const { data: currentItem } = await getServiceSupabase()
+          .from(TABLES.INVENTORY_ITEMS)
+          .select("quantity_on_hand")
+          .eq("id", requirement.inventoryItemId)
+          .single();
+
+        const currentQty = currentItem?.quantity_on_hand || 0;
+        const newQty = currentQty - requirement.requiredQuantity;
+
+        // Update inventory quantity
+        await getServiceSupabase()
+          .from(TABLES.INVENTORY_ITEMS)
+          .update({
+            quantity_on_hand: newQty,
+            updatedAt: new Date().toISOString()
+          })
+          .eq("id", requirement.inventoryItemId);
+
+        // Create inventory movement record
+        await getServiceSupabase()
+          .from(TABLES.INVENTORY_MOVEMENTS)
+          .insert({
+            item_id: requirement.inventoryItemId,
+            qty: -requirement.requiredQuantity, // Negative for issue
+            type: "issue",
+            related_doc: workOrderId,
+            created_at: new Date().toISOString(),
+            description: `Issued for work order ${workOrderId} - Design ${designId}`,
+            unit_cost: requirement.costPerUnit,
+            total_cost: requirement.totalCost
+          });
+
+        issuedMaterials.push(requirement);
+        totalCost += requirement.totalCost;
+      }
+
+      // Update work order with issued materials
+      await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .update({
+          materials_issued: issuedMaterials.map(m => ({
+            inventoryItemId: m.inventoryItemId,
+            inventoryItemName: m.inventoryItemName,
+            quantityIssued: m.requiredQuantity,
+            unitCost: m.costPerUnit,
+            totalCost: m.totalCost
+          })),
+          status: "in_progress",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", workOrderId);
 
       console.log(`✅ Successfully issued materials for work order ${workOrderId}, total cost: ${formatCurrency(totalCost)}`);
 
@@ -145,12 +154,17 @@ export class WorkOrderMaterialService {
       console.log(`Completing work order ${workOrderId} for design ${designId}`);
 
       // Get work order
-      const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get();
-      if (!workOrderDoc.exists) {
+      const { data: workOrderDoc } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .eq("id", workOrderId)
+        .single();
+
+      if (!workOrderDoc) {
         throw new Error("Work order not found");
       }
 
-      const workOrderData = workOrderDoc.data();
+      const workOrderData = workOrderDoc;
       
       // Per IAS 2.10 / EAS 2: WIP→FG transfer at ACTUAL cost, never at estimated cost
       // 1. Check materials_issued array (formal issue path from service)
@@ -196,15 +210,18 @@ export class WorkOrderMaterialService {
       }
 
       // Update work order status ONLY after successful accounting
-      await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).update({
-        status: "completed",
-        completed_at: new Date(),
-        updated_at: new Date(),
-        final_completion_cost: totalCost,
-        notes: totalCost > 0 
-          ? `Completed with WIP→FG transfer at EGP ${totalCost.toFixed(2)}`
-          : `Completed — no actual costs recorded. WIP→FG transfer skipped.`
-      });
+      await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          final_completion_cost: totalCost,
+          notes: totalCost > 0 
+            ? `Completed with WIP→FG transfer at EGP ${totalCost.toFixed(2)}`
+            : `Completed — no actual costs recorded. WIP→FG transfer skipped.`
+        })
+        .eq("id", workOrderId);
 
 
       console.log(`✅ Successfully completed work order ${workOrderId}`);
@@ -230,12 +247,17 @@ export class WorkOrderMaterialService {
     workOrderId: string
   ): Promise<MaterialRequirement[]> {
     try {
-      const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get();
-      if (!workOrderDoc.exists) {
+      const { data: workOrderDoc } = await getServiceSupabase()
+        .from(TABLES.WORK_ORDERS)
+        .select("*")
+        .eq("id", workOrderId)
+        .single();
+
+      if (!workOrderDoc) {
         throw new Error("Work order not found");
       }
 
-      const workOrderData = workOrderDoc.data();
+      const workOrderData = workOrderDoc;
       const designId = workOrderData?.design_id;
       const quantity = workOrderData?.quantity || 1;
 

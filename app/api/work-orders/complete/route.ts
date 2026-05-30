@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 
 export async function POST(request: Request) {
@@ -16,19 +16,21 @@ export async function POST(request: Request) {
       )
     }
     
-    // Get work order
-    const workOrderDoc = await db.collection(COLLECTIONS.WORK_ORDERS).doc(workOrderId).get()
-    if (!workOrderDoc.exists) {
+    const serviceDb = getServiceClient()
+
+    const { data: workOrder } = await serviceDb
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .eq("id", workOrderId)
+      .single()
+    
+    if (!workOrder) {
       return NextResponse.json(
         { error: "Work order not found" },
         { status: 404 }
       )
     }
     
-    const workOrder = workOrderDoc.data() as any
-    
-    // Call service first – it handles status update + accounting entries atomically.
-    // Do NOT update status before the service call; if accounting fails the WO stays as-is.
     const { WorkOrderMaterialService } = await import("@/lib/services/work-order-material-service")
 
     const result = await WorkOrderMaterialService.completeWorkOrder(
@@ -40,22 +42,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
 
-    // Update linked sales order status when WO is completed
     if (workOrder.sales_order_id) {
-      await db.runTransaction(async (tx) => {
-        const soRef = db.collection(COLLECTIONS.SALES_ORDERS).doc(workOrder.sales_order_id)
-        const manualRef = db.collection(COLLECTIONS.MANUAL_ORDERS).doc(workOrder.sales_order_id)
+      const soId = workOrder.sales_order_id
 
-        const soDoc = await tx.get(soRef)
-        const manualDoc = await tx.get(manualRef)
+      const { data: soDoc } = await serviceDb
+        .from(TABLES.SALES_ORDERS)
+        .select("*")
+        .eq("id", soId)
+        .single()
 
-        if (soDoc.exists) {
-          tx.update(soRef, { status: "completed", updated_at: new Date() })
-        }
-        if (manualDoc.exists) {
-          tx.update(manualRef, { status: "completed", updatedAt: new Date() })
-        }
-      })
+      const { data: manualDoc } = await serviceDb
+        .from(TABLES.MANUAL_ORDERS)
+        .select("*")
+        .eq("id", soId)
+        .single()
+
+      if (soDoc) {
+        await serviceDb.from(TABLES.SALES_ORDERS).update({
+          status: "completed",
+          updated_at: new Date().toISOString()
+        }).eq("id", soId)
+      }
+      if (manualDoc) {
+        await serviceDb.from(TABLES.MANUAL_ORDERS).update({
+          status: "completed",
+          updatedAt: new Date().toISOString()
+        }).eq("id", soId)
+      }
     }
     
     return NextResponse.json({
@@ -74,4 +87,3 @@ export async function POST(request: Request) {
     )
   }
 }
-

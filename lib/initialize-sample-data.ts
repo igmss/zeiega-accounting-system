@@ -1,6 +1,5 @@
-import { db, COLLECTIONS } from "./firebase"
+import { supabase, TABLES, getServiceSupabase } from "./supabase"
 
-// Sample data to initialize Firestore collections
 const sampleCustomers = [
   {
     name: "Acme Corporation",
@@ -10,9 +9,9 @@ const sampleCustomers = [
     type: "business",
     status: "active",
     totalOrders: 15,
-    totalSpent: 1350000, // ~45,000 USD in EGP
+    totalSpent: 1350000,
     lastOrderDate: "2024-01-15",
-    createdAt: new Date("2023-06-01"),
+    createdAt: new Date("2023-06-01").toISOString(),
   },
   {
     name: "Ahmed Hassan",
@@ -22,9 +21,9 @@ const sampleCustomers = [
     type: "individual",
     status: "active",
     totalOrders: 8,
-    totalSpent: 375000, // ~12,500 USD in EGP
+    totalSpent: 375000,
     lastOrderDate: "2024-01-10",
-    createdAt: new Date("2023-08-15"),
+    createdAt: new Date("2023-08-15").toISOString(),
   },
   {
     name: "Tech Solutions Egypt",
@@ -34,9 +33,9 @@ const sampleCustomers = [
     type: "business",
     status: "active",
     totalOrders: 22,
-    totalSpent: 2340000, // ~78,000 USD in EGP
+    totalSpent: 2340000,
     lastOrderDate: "2024-01-20",
-    createdAt: new Date("2023-04-10"),
+    createdAt: new Date("2023-04-10").toISOString(),
   },
 ]
 
@@ -46,36 +45,36 @@ const sampleInventoryItems = [
     name: "Steel Rod 10mm",
     type: "raw",
     quantity_on_hand: 150,
-    cost_per_unit: 375, // ~12.5 USD in EGP
+    cost_per_unit: 375,
     reorder_level: 50,
     supplier: "MetalCorp Egypt",
     location: "Warehouse A-1",
-    last_updated: new Date("2025-01-11"),
-    createdAt: new Date(),
+    last_updated: new Date("2025-01-11").toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     id: "PLASTIC-002",
     name: "ABS Plastic Pellets",
     type: "raw",
     quantity_on_hand: 25,
-    cost_per_unit: 97.5, // ~3.25 USD in EGP
+    cost_per_unit: 97.5,
     reorder_level: 100,
     supplier: "PlastiTech Egypt",
     location: "Warehouse B-2",
-    last_updated: new Date("2025-01-10"),
-    createdAt: new Date(),
+    last_updated: new Date("2025-01-10").toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     id: "WIDGET-A",
     name: "Premium Widget Assembly",
     type: "finished",
     quantity_on_hand: 45,
-    cost_per_unit: 562.5, // ~18.75 USD in EGP
+    cost_per_unit: 562.5,
     reorder_level: 20,
     supplier: "Internal Production",
     location: "Finished Goods",
-    last_updated: new Date("2025-01-11"),
-    createdAt: new Date(),
+    last_updated: new Date("2025-01-11").toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ]
 
@@ -85,23 +84,23 @@ const sampleSalesOrders = [
     customer_id: "CUST-001",
     customer_name: "Acme Corporation",
     items: [
-      { sku: "WIDGET-A", qty: 10, unit_price: 750 }, // ~25 USD in EGP
-      { sku: "GADGET-B", qty: 5, unit_price: 1350 }, // ~45 USD in EGP
+      { sku: "WIDGET-A", qty: 10, unit_price: 750 },
+      { sku: "GADGET-B", qty: 5, unit_price: 1350 },
     ],
-    total: 14250, // ~475 USD in EGP
+    total: 14250,
     status: "producing",
-    created_at: new Date("2025-01-10"),
-    createdAt: new Date(),
+    created_at: new Date("2025-01-10").toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     website_order_id: "WEB-002",
     customer_id: "CUST-002",
     customer_name: "Tech Solutions Egypt",
-    items: [{ sku: "COMPONENT-C", qty: 20, unit_price: 465 }], // ~15.5 USD in EGP
-    total: 9300, // ~310 USD in EGP
+    items: [{ sku: "COMPONENT-C", qty: 20, unit_price: 465 }],
+    total: 9300,
     status: "pending",
-    created_at: new Date("2025-01-11"),
-    createdAt: new Date(),
+    created_at: new Date("2025-01-11").toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ]
 
@@ -111,13 +110,13 @@ const sampleInvoices = [
     customer_id: "CUST-001",
     customer_name: "Acme Corporation",
     customer_email: "billing@acme.com",
-    amount: 14250, // ~475 USD in EGP
-    tax_amount: 1425, // ~47.5 USD in EGP
-    total: 15675, // ~522.5 USD in EGP
-    due_date: new Date("2025-02-10"),
+    amount: 14250,
+    tax_amount: 1425,
+    total: 15675,
+    due_date: new Date("2025-02-10").toISOString(),
     status: "unpaid",
-    created_at: new Date("2025-01-11"),
-    createdAt: new Date(),
+    created_at: new Date("2025-01-11").toISOString(),
+    createdAt: new Date().toISOString(),
     items: [
       { sku: "WIDGET-A", description: "Premium Widget Assembly", qty: 10, unit_price: 750, total: 7500 },
       { sku: "GADGET-B", description: "Electronic Gadget", qty: 5, unit_price: 1350, total: 6750 },
@@ -130,18 +129,18 @@ const sampleWorkOrders = [
     sales_order_id: "SO-2025-0001",
     customer_name: "Acme Corporation",
     raw_materials_used: [
-      { item_id: "STEEL-001", qty: 5, cost: 375 }, // ~12.5 USD in EGP
-      { item_id: "PLASTIC-002", qty: 10, cost: 97.5 }, // ~3.25 USD in EGP
+      { item_id: "STEEL-001", qty: 5, cost: 375 },
+      { item_id: "PLASTIC-002", qty: 10, cost: 97.5 },
     ],
     labor_hours: 8.5,
-    overhead_cost: 3750, // ~125 USD in EGP
-    materialCost: 1875, // ~62.5 USD in EGP
-    laborCost: 2550, // ~85 USD in EGP
+    overhead_cost: 3750,
+    materialCost: 1875,
+    laborCost: 2550,
     status: "in_progress",
     completion_percentage: 75,
-    created_at: new Date("2025-01-10"),
-    started_at: new Date("2025-01-10T09:00:00"),
-    createdAt: new Date(),
+    created_at: new Date("2025-01-10").toISOString(),
+    started_at: new Date("2025-01-10T09:00:00").toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ]
 
@@ -149,63 +148,58 @@ const samplePayments = [
   {
     invoice_id: "INV-0001",
     customer_name: "Acme Corporation",
-    amount: 15675, // ~522.5 USD in EGP
+    amount: 15675,
     method: "bank_transfer",
     reference: "TXN-789456123",
-    date: new Date("2025-01-15"),
-    created_at: new Date("2025-01-15T14:30:00"),
-    createdAt: new Date(),
+    date: new Date("2025-01-15").toISOString(),
+    created_at: new Date("2025-01-15T14:30:00").toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     invoice_id: "INV-0002",
     customer_name: "Tech Solutions Egypt",
-    amount: 10230, // ~341 USD in EGP
+    amount: 10230,
     method: "credit_card",
     reference: "CC-987654321",
-    date: new Date("2025-01-14"),
-    created_at: new Date("2025-01-14T11:20:00"),
-    createdAt: new Date(),
+    date: new Date("2025-01-14").toISOString(),
+    created_at: new Date("2025-01-14T11:20:00").toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ]
 
-// Initialize sample data in Firestore
 export async function initializeSampleData() {
   try {
-    console.log("Initializing sample data in Firestore...")
+    console.log("Initializing sample data in Supabase...")
 
-    // Add customers
+    const client = getServiceSupabase()
+
     for (const customer of sampleCustomers) {
-      await db.collection(COLLECTIONS.CUSTOMERS).add(customer)
+      await client.from(TABLES.CUSTOMERS).insert(customer as any).select()
     }
     console.log("✅ Added sample customers")
 
-    // Add inventory items
     for (const item of sampleInventoryItems) {
-      await db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(item.id).set(item)
+      await client.from(TABLES.INVENTORY_ITEMS).upsert(item as any, { onConflict: "id" })
     }
     console.log("✅ Added sample inventory items")
 
-    // Add sales orders
     for (const order of sampleSalesOrders) {
-      await db.collection(COLLECTIONS.SALES_ORDERS).add(order)
+      await client.from(TABLES.SALES_ORDERS).insert(order as any).select()
     }
     console.log("✅ Added sample sales orders")
 
-    // Add invoices
     for (const invoice of sampleInvoices) {
-      await db.collection(COLLECTIONS.INVOICES).add(invoice)
+      await client.from(TABLES.INVOICES).insert(invoice as any).select()
     }
     console.log("✅ Added sample invoices")
 
-    // Add work orders
     for (const workOrder of sampleWorkOrders) {
-      await db.collection(COLLECTIONS.WORK_ORDERS).add(workOrder)
+      await client.from(TABLES.WORK_ORDERS).insert(workOrder as any).select()
     }
     console.log("✅ Added sample work orders")
 
-    // Add payments
     for (const payment of samplePayments) {
-      await db.collection(COLLECTIONS.PAYMENTS).add(payment)
+      await client.from(TABLES.PAYMENTS).insert(payment as any).select()
     }
     console.log("✅ Added sample payments")
 
@@ -217,7 +211,6 @@ export async function initializeSampleData() {
   }
 }
 
-// Initialize chart of accounts
 export async function initializeChartOfAccounts() {
   try {
     const accounts = [
@@ -232,13 +225,11 @@ export async function initializeChartOfAccounts() {
       { id: "VAT_PAYABLE", name: "VAT Payable", type: "liability" },
     ]
 
-    const batch = db.batch()
-    accounts.forEach((account) => {
-      const ref = db.collection(COLLECTIONS.CHART_OF_ACCOUNTS).doc(account.id)
-      batch.set(ref, account)
-    })
+    const client = getServiceSupabase()
+    for (const account of accounts) {
+      await client.from(TABLES.CHART_OF_ACCOUNTS).upsert(account as any, { onConflict: "id" })
+    }
 
-    await batch.commit()
     console.log("✅ Chart of accounts initialized")
     return { success: true, message: "Chart of accounts initialized successfully" }
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
@@ -25,26 +25,22 @@ export async function GET(request: Request) {
     const toDate = new Date(to)
     toDate.setHours(23, 59, 59, 999)
 
-    // Fetch work orders and sales orders
-    const workOrdersSnapshot = await db.collection(COLLECTIONS.WORK_ORDERS)
-      .where('created_at', '>=', fromDate)
-      .where('created_at', '<=', toDate)
-      .get()
+    const { data: workOrders, error: woError } = await getServiceClient()
+      .from(TABLES.WORK_ORDERS)
+      .select("*")
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toDate.toISOString())
 
-    const workOrders: any[] = workOrdersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    if (woError) throw woError
 
-    const salesOrdersSnapshot = await db.collection(COLLECTIONS.SALES_ORDERS).get()
-    const salesOrders: any[] = salesOrdersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const { data: salesOrders, error: soError } = await getServiceClient()
+      .from(TABLES.SALES_ORDERS)
+      .select("*")
 
-    // Create job profitability data
+    if (soError) throw soError
+
     const jobData = workOrders.map((wo: any) => {
-      const salesOrder = (salesOrders as any[]).find(so => so.id === wo.sales_order_id)
+      const salesOrder = salesOrders.find((so: any) => so.id === wo.sales_order_id)
 
       const materialCost = wo.raw_materials_used?.reduce((sum: number, mat: any) =>
         sum + (mat.qty * mat.cost), 0) || 0
@@ -72,7 +68,6 @@ export async function GET(request: Request) {
       }
     })
 
-    // If no job data, return empty structure
     if (jobData.length === 0) {
       return NextResponse.json({
         jobData: [],
@@ -89,13 +84,12 @@ export async function GET(request: Request) {
       })
     }
 
-    // Calculate totals
-    const totalRevenue = jobData.reduce((sum, job) => sum + job.revenue, 0)
-    const totalCost = jobData.reduce((sum, job) => sum + job.total_cost, 0)
+    const totalRevenue = jobData.reduce((sum: any, job: any) => sum + job.revenue, 0)
+    const totalCost = jobData.reduce((sum: any, job: any) => sum + job.total_cost, 0)
     const totalProfit = totalRevenue - totalCost
     const averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
 
-    const chartData = jobData.map((job) => ({
+    const chartData = jobData.map((job: any) => ({
       job: job.work_order_id,
       revenue: job.revenue,
       cost: job.total_cost,
@@ -111,8 +105,8 @@ export async function GET(request: Request) {
         totalProfit: Math.round(totalProfit),
         averageMargin: Math.round(averageMargin * 10) / 10,
         jobCount: jobData.length,
-        completedJobs: jobData.filter(job => job.status === 'completed').length,
-        inProgressJobs: jobData.filter(job => job.status === 'in_progress').length,
+        completedJobs: jobData.filter((job: any) => job.status === 'completed').length,
+        inProgressJobs: jobData.filter((job: any) => job.status === 'in_progress').length,
       }
     }
 

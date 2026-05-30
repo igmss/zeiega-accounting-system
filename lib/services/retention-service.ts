@@ -1,44 +1,12 @@
-/**
- * Retention Service — Customer Holdback Accounting
- *
- * Handles the common MTO/garment pattern where customers withhold a percentage
- * (typically 5–10%) of each invoice until final delivery / quality sign-off.
- *
- * Accounting treatment:
- *
- *   On invoice with retention:
- *     DR  Accounts Receivable (1110)        billedAmount    (net of retention)
- *     DR  Retention Receivable (1116)       retentionAmount
- *         CR  Revenue (4003)                        totalInvoiceAmount
- *         CR  VAT Payable (2110)                    vatAmount  [if applicable]
- *
- *   On retention release (sign-off):
- *     DR  Accounts Receivable (1110)        retentionAmount
- *         CR  Retention Receivable (1116)           retentionAmount
- */
-
-import { db, COLLECTIONS } from "../firebase"
+import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { ACCOUNT_CODES, getAccountName } from "../accounting/account-types"
 import type { RetentionSchedule } from "../types"
 import { EnhancedAccountingService, JournalEntryType } from "./enhanced-accounting-service"
 import { formatCurrency } from "@/lib/utils"
 
 export class RetentionService {
-  private static readonly COLLECTION = COLLECTIONS.RETENTION_SCHEDULES
+  private static readonly TABLE = TABLES.RETENTION_SCHEDULES
 
-  /**
-   * Create an invoice with a retention split.
-   * Records the journal entry and persists the RetentionSchedule document.
-   *
-   * @param contractId         Contract this invoice belongs to
-   * @param invoiceId          Invoice reference number
-   * @param customerId         Customer ID
-   * @param totalInvoiceAmount Total gross amount (EGP) before VAT
-   * @param retentionPct       Retention percentage (e.g. 10 for 10%)
-   * @param vatAmount          VAT on the billed (non-retention) portion
-   * @param revenueAccountCode Revenue account to credit (default: 4003 Custom MTO)
-   * @param expectedReleaseDate When retention is expected to be released
-   */
   static async createRetentionInvoice(
     contractId: string,
     invoiceId: string,
@@ -56,10 +24,8 @@ export class RetentionService {
     const retentionAmount = Math.round(totalInvoiceAmount * (retentionPct / 100) * 100) / 100
     const billedAmount    = totalInvoiceAmount - retentionAmount
 
-    // Journal entry lines
     interface JLine { accountCode: string; accountName: string; debit: number; credit: number; description: string }
     const lines: JLine[] = [
-      // Billed AR (net of retention)
       {
         accountCode: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE,
         accountName: getAccountName(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE),
@@ -67,15 +33,13 @@ export class RetentionService {
         credit: 0,
         description: `Billed AR (net retention): Invoice ${invoiceId}`,
       },
-      // Retention receivable
       {
-        accountCode: ACCOUNT_CODES.RETENTION_RECEIVABLE, // 1116
+        accountCode: ACCOUNT_CODES.RETENTION_RECEIVABLE,
         accountName: getAccountName(ACCOUNT_CODES.RETENTION_RECEIVABLE),
         debit: retentionAmount,
         credit: 0,
         description: `${retentionPct}% retention withheld by customer`,
       },
-      // Revenue credit
       {
         accountCode: revenueAccountCode,
         accountName: getAccountName(revenueAccountCode),
@@ -87,7 +51,7 @@ export class RetentionService {
 
     if (vatAmount > 0) {
       lines.push({
-        accountCode: ACCOUNT_CODES.VAT_PAYABLE, // 2110
+        accountCode: ACCOUNT_CODES.VAT_PAYABLE,
         accountName: getAccountName(ACCOUNT_CODES.VAT_PAYABLE),
         debit: 0,
         credit: vatAmount,
@@ -105,8 +69,8 @@ export class RetentionService {
 
     if (!result.success) return result
 
-    // Persist retention schedule
     const scheduleId = `RET-${invoiceId}-${Date.now()}`
+    const now = new Date().toISOString()
     const schedule: RetentionSchedule = {
       id: scheduleId,
       contractId,
@@ -118,10 +82,11 @@ export class RetentionService {
       billedAmount,
       status: "withheld",
       expectedReleaseDate,
-      created_at: new Date(),
+      created_at: now,
     }
 
-    await db.collection(this.COLLECTION).doc(scheduleId).set(schedule)
+    const { error } = await getServiceSupabase().from(this.TABLE).insert(schedule)
+    if (error) throw error
 
     console.log(
       `✅ Retention invoice: ${formatCurrency(billedAmount)} billed, ` +
@@ -130,21 +95,15 @@ export class RetentionService {
     return { success: true, scheduleId, entryId: result.entryId }
   }
 
-  /**
-   * Release a retention when the customer signs off on delivery.
-   *
-   * DR  Accounts Receivable (1110)        retentionAmount
-   *     CR  Retention Receivable (1116)           retentionAmount
-   */
   static async releaseRetention(
     scheduleId: string,
     userId: string = "system"
   ): Promise<{ success: boolean; entryId?: string; error?: string }> {
     try {
-      const doc = await db.collection(this.COLLECTION).doc(scheduleId).get()
-      if (!doc.exists) return { success: false, error: "Retention schedule not found" }
+      const { data, error } = await getServiceSupabase().from(this.TABLE).select("*").eq("id", scheduleId).single()
+      if (error || !data) return { success: false, error: "Retention schedule not found" }
 
-      const schedule = doc.data() as RetentionSchedule
+      const schedule = data as RetentionSchedule
       if (schedule.status === "released") {
         return { success: false, error: "Retention already released" }
       }
@@ -153,14 +112,14 @@ export class RetentionService {
       interface JLine { accountCode: string; accountName: string; debit: number; credit: number; description: string }
       const lines: JLine[] = [
         {
-          accountCode: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, // 1110
+          accountCode: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE,
           accountName: getAccountName(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE),
           debit: amount,
           credit: 0,
           description: `Retention released: ${scheduleId}`,
         },
         {
-          accountCode: ACCOUNT_CODES.RETENTION_RECEIVABLE, // 1116
+          accountCode: ACCOUNT_CODES.RETENTION_RECEIVABLE,
           accountName: getAccountName(ACCOUNT_CODES.RETENTION_RECEIVABLE),
           debit: 0,
           credit: amount,
@@ -178,12 +137,12 @@ export class RetentionService {
 
       if (!result.success) return result
 
-      // Update schedule status
-      await doc.ref.update({
+      const { error: updErr } = await getServiceSupabase().from(this.TABLE).update({
         status: "released",
-        actualReleaseDate: new Date(),
+        actualReleaseDate: new Date().toISOString(),
         releaseJournalEntryId: result.entryId,
-      })
+      }).eq("id", scheduleId)
+      if (updErr) throw updErr
 
       console.log(`✅ Retention released: EGP ${amount} (Schedule ${scheduleId})`)
       return { success: true, entryId: result.entryId }
@@ -195,38 +154,29 @@ export class RetentionService {
     }
   }
 
-  /**
-   * Get all outstanding (withheld) retentions.
-   * Used for cash flow forecasting and DSO analysis.
-   */
   static async getOutstandingRetentions(): Promise<RetentionSchedule[]> {
     try {
-      const snapshot = await db.collection(this.COLLECTION)
-        .where("status", "==", "withheld")
-        .get()
-      return snapshot.docs.map(d => d.data() as RetentionSchedule)
+      const { data, error } = await getServiceSupabase().from(this.TABLE)
+        .select("*")
+        .eq("status", "withheld")
+      if (error) throw error
+      return (data || []) as RetentionSchedule[]
     } catch {
       return []
     }
   }
 
-  /**
-   * Get total outstanding retention balance (EGP).
-   */
   static async getTotalRetentionBalance(): Promise<number> {
     const schedules = await this.getOutstandingRetentions()
     return schedules.reduce((sum, s) => sum + s.retentionAmount, 0)
   }
 
-  /**
-   * Get retentions due for release within the next N days.
-   */
   static async getRetentionsDueForRelease(daysAhead: number = 30): Promise<RetentionSchedule[]> {
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() + daysAhead)
     const outstanding = await this.getOutstandingRetentions()
     return outstanding.filter(
-      s => s.expectedReleaseDate && s.expectedReleaseDate <= cutoff
+      s => s.expectedReleaseDate && new Date(s.expectedReleaseDate) <= cutoff
     )
   }
 }

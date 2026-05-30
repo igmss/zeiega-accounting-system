@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
 import { FinancialStatementsService } from "@/lib/services/financial-statements-service"
 import { requirePermission } from "@/lib/auth"
 
@@ -20,7 +19,6 @@ export async function GET(request: NextRequest) {
         if (fromDateObj) fromDateObj.setHours(0, 0, 0, 0)
         const toDateObj = new Date(toDate)
         toDateObj.setHours(23, 59, 59, 999)
-        toDateObj.setHours(23, 59, 59, 999) // End of day
 
         // Fetch actual balances from FinancialStatementsService
         // 1. Output VAT (2110) - Liability (Credit Normal)
@@ -35,8 +33,6 @@ export async function GET(request: NextRequest) {
         const netVATPayable = outputVATPosted - inputVATPosted
         const vatOutstanding = netVATPayable - vatAlreadyFiled
 
-        // Also fetch total sales/purchases for context (optional but helpful)
-        // We can estimate these or just leave them if not strictly required from posted accounts
         const taxableSales = await FinancialStatementsService.getAccountBalance("4001", fromDateObj, toDateObj) +
                             await FinancialStatementsService.getAccountBalance("4002", fromDateObj, toDateObj) +
                             await FinancialStatementsService.getAccountBalance("4003", fromDateObj, toDateObj)

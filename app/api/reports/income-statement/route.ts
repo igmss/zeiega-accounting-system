@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
 
         return createSuccessResponse({
             ...statement,
-            periodStart: statement.periodStart.toISOString().split("T")[0],
-            periodEnd: statement.periodEnd.toISOString().split("T")[0],
+            periodStart: typeof statement.periodStart === 'string' ? statement.periodStart.split("T")[0] : new Date(statement.periodStart).toISOString().split("T")[0],
+            periodEnd: typeof statement.periodEnd === 'string' ? statement.periodEnd.split("T")[0] : new Date(statement.periodEnd).toISOString().split("T")[0],
         })
     } catch (error) {
         return createErrorResponse(

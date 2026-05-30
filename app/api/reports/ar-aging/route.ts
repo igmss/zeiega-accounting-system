@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
@@ -14,23 +14,23 @@ export async function GET(request: NextRequest) {
         const today = new Date(toDate)
         today.setHours(23, 59, 59, 999)
 
-        // Query invoices/receivables
-        const invoicesRef = db.collection(COLLECTIONS.INVOICES)
-        const invoicesSnapshot = await invoicesRef.get()
+        const { data: invoices, error: invoicesError } = await getServiceClient()
+            .from(TABLES.INVOICES)
+            .select("*")
 
-        // Initialize aging buckets
+        if (invoicesError) throw invoicesError
+
         const customers: { [key: string]: any } = {}
         let totalCurrent = 0
         let total31_60 = 0
         let total61_90 = 0
         let totalOver90 = 0
 
-        invoicesSnapshot.docs.forEach((doc) => {
-            const invoice = doc.data()
-            if (invoice.status === "paid") return // Skip paid invoices
+        invoices.forEach((invoice: any) => {
+            if (invoice.status === "paid") return
 
             const dueDateVal = invoice.due_date || invoice.dueDate || invoice.date
-            const dueDate = dueDateVal?.toDate ? dueDateVal.toDate() : new Date(dueDateVal)
+            const dueDate = new Date(dueDateVal)
             const daysPastDue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
             const amount = invoice.total_amount || invoice.amount || invoice.balance || invoice.total || 0
             const customerName = invoice.customer_name || invoice.customerName || invoice.customer || "Unknown Customer"
@@ -63,14 +63,15 @@ export async function GET(request: NextRequest) {
             customers[customerName].total += amount
         })
 
-        // If no invoice data, get AR from journal entries
         if (Object.keys(customers).length === 0) {
-            const journalEntriesRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES)
-            const journalSnapshot = await journalEntriesRef.get()
+            const { data: journalEntries, error: jeError } = await getServiceClient()
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("*")
+
+            if (jeError) throw jeError
 
             let arBalance = 0
-            journalSnapshot.docs.forEach((doc) => {
-                const entry = doc.data()
+            journalEntries.forEach((entry: any) => {
                 const lines = entry.entries || entry.lines || []
                 lines.forEach((line: any) => {
                     const accountCode = line.account_id || line.accountCode || ""
