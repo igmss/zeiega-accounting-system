@@ -97,20 +97,12 @@ export class JournalEntryService {
             }
 
             const accountIds = Array.from(new Set(lines.map(l => l.accountCode)))
-            const entryId = `JE-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`
-
-            const linesJson = lines.map(line => ({
-                account_code: line.accountCode,
-                account_name: line.accountName,
-                debit: line.debit,
-                credit: line.credit,
-                description: line.description,
-            }))
+            const entryNumber = `JE-${entryDate.getFullYear()}${String(entryDate.getMonth() + 1).padStart(2, "0")}${String(entryDate.getDate()).padStart(2, "0")}-${crypto.randomUUID().substring(0, 8)}`
 
             const { data: entry, error: entryError } = await client
                 .from(TABLES.JOURNAL_ENTRIES)
                 .insert({
-                    id: entryId,
+                    entry_number: entryNumber,
                     date: entryDate.toISOString().split("T")[0],
                     type: entryType,
                     reference_id: referenceDoc,
@@ -129,7 +121,7 @@ export class JournalEntryService {
             }
 
             const lineInserts = lines.map(line => ({
-                journal_entry_id: entryId,
+                journal_entry_id: entry.id,
                 account_code: line.accountCode,
                 account_name: line.accountName,
                 debit: line.debit,
@@ -175,7 +167,7 @@ export class JournalEntryService {
                     }, { onConflict: "account_code, period_end" })
             }
 
-            return { success: true, entryId }
+            return { success: true, entryId: entry.id }
 
         } catch (error) {
             console.error("Error creating journal entry:", error)
