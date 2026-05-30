@@ -355,19 +355,7 @@ export class FinancialStatementsService {
 
         accounts.sort((a, b) => a.code.localeCompare(b.code))
 
-        return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits }
-    }
-        }
-
-        accounts.sort((a, b) => a.code.localeCompare(b.code))
-
-        return {
-            asOfDate: asOfDate.toISOString(),
-            accounts,
-            totalDebits,
-            totalCredits,
-            isBalanced: Math.abs(totalDebits - totalCredits) < 0.01,
-        }
+        return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: Math.abs(totalDebits - totalCredits) < 0.01 }
     }
 
     static async getFinancialSummary(year: number): Promise<{
