@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -15,6 +16,7 @@ import { toast } from "sonner"
 export function CreateInvoiceDialog() {
   const [isOpen, setIsOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const router = useRouter()
   const [invoiceData, setInvoiceData] = useState({
     customer_id: "",
     customer_name: "",
@@ -69,7 +71,7 @@ export function CreateInvoiceDialog() {
           tax_rate: "10",
           items: [{ sku: "", description: "", qty: 1, unit_price: 0 }],
         })
-        window.location.reload()
+        router.refresh()
       } else {
         const errData = await response.json().catch(() => ({}))
         toast.error(errData.error || 'Failed to create invoice')

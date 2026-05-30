@@ -80,7 +80,7 @@ export class WorkOrderMaterialService {
           .from(TABLES.INVENTORY_ITEMS)
           .update({
             quantity_on_hand: newQty,
-            updatedAt: new Date().toISOString()
+            updated_at: new Date().toISOString()
           })
           .eq("id", requirement.inventoryItemId);
 

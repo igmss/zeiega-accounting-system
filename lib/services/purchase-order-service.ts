@@ -225,7 +225,7 @@ export class PurchaseOrderService {
             if (allReceived) {
                 const { data: existingEntries } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
                     .select("id")
-                    .eq("reference_doc", receipt.purchase_order_id)
+                    .eq("reference_id", receipt.purchase_order_id)
                     .eq("type", JournalEntryType.MATERIAL_RECEIPT)
                     .limit(1)
 

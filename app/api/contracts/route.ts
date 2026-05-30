@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RevenueRecognitionService } from "@/lib/services/revenue-recognition-service"
-import { requireAuth } from "@/lib/auth"
+import { requireAuth, requirePermission } from "@/lib/auth"
 
 export async function GET() {
   try {
@@ -16,6 +16,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requirePermission("contracts:create")
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const result = await RevenueRecognitionService.createContract(
       body.salesOrderId,

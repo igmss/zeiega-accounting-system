@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { BOMService } from "@/lib/services/bom-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
 // GET /api/bom/[id] - Get a single BOM
 export async function GET(
@@ -8,6 +9,9 @@ export async function GET(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const bom = await BOMService.getBOM(params.id)
 
         if (!bom) {
@@ -26,6 +30,9 @@ export async function PUT(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requirePermission("bom:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
 
         const result = await BOMService.updateBOM(params.id, body)
@@ -46,6 +53,9 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requirePermission("bom:create")
+        if (!auth.authorized) return auth.response
+
         const result = await BOMService.deleteBOM(params.id)
 
         if (result.success) {

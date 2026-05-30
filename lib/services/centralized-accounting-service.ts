@@ -1,4 +1,5 @@
 import { supabase, TABLES, getServiceSupabase } from "../supabase"
+import { JournalEntryService, JournalEntryType } from "./journal-entry-service"
 
 export class CentralizedAccountingService {
   
@@ -18,36 +19,35 @@ export class CentralizedAccountingService {
       }
       
       const { data: journalRows, error: jeErr } = await (getServiceSupabase() as any).from(TABLES.JOURNAL_ENTRIES)
-        .select("*")
+        .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
         .contains("account_ids", [accountId])
       if (jeErr) throw jeErr
       
       let balance = 0
       for (const entry of (journalRows || [])) {
-        if (entry.entries) {
-          for (const subEntry of entry.entries) {
-            if (subEntry.account_id === accountId) {
-              if (account.type === 'asset') {
-                balance += (subEntry.debit || 0) - (subEntry.credit || 0)
-              } else if (account.type === 'liability' || account.type === 'equity') {
-                balance += (subEntry.credit || 0) - (subEntry.debit || 0)
-              } else if (account.type === 'revenue') {
-                balance += (subEntry.credit || 0) - (subEntry.debit || 0)
-              } else if (account.type === 'expense') {
-                balance += (subEntry.debit || 0) - (subEntry.credit || 0)
-              }
+        const lines = (entry as any).journal_entry_lines || []
+        for (const line of lines) {
+          if (line.account_code === accountId) {
+            if (account.type === 'asset') {
+              balance += (line.debit || 0) - (line.credit || 0)
+            } else if (account.type === 'liability' || account.type === 'equity') {
+              balance += (line.credit || 0) - (line.debit || 0)
+            } else if (account.type === 'revenue') {
+              balance += (line.credit || 0) - (line.debit || 0)
+            } else if (account.type === 'expense') {
+              balance += (line.debit || 0) - (line.credit || 0)
             }
           }
         }
       }
       
       const { error: updErr } = await (getServiceSupabase() as any).from(TABLES.CHART_OF_ACCOUNTS).update({
-        balance: balance,
+        closing_balance: balance,
         last_updated: now
       }).eq("id", accountId)
       if (updErr) throw updErr
       
-      console.log(`✅ Auto-synced ${accountId} balance to $${balance.toLocaleString()}`)
+      console.log(`✅ Auto-synced ${accountId} closing_balance to $${balance.toLocaleString()}`)
       return balance
       
     } catch (error) {
@@ -91,19 +91,27 @@ export class CentralizedAccountingService {
   
   static async createJournalEntryAndSync(entries: any[], linkedDoc?: string, skipSync: boolean = true): Promise<string> {
     try {
-      const now = new Date().toISOString()
+      const lines = entries.map(e => ({
+        accountCode: e.account_id,
+        accountName: e.account_name || "",
+        debit: e.debit || 0,
+        credit: e.credit || 0,
+        description: e.description || "",
+      }))
       
-      const journalEntry = {
-        date: now,
-        entries: entries,
-        account_ids: [...new Set(entries.map(e => e.account_id))],
-        linked_doc: linkedDoc || `ENTRY_${Date.now()}`,
-        created_at: now
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.GENERAL,
+        lines,
+        linkedDoc || `ENTRY_${Date.now()}`,
+        `Journal entry for ${linkedDoc || "auto-sync"}`,
+        "system"
+      )
+      
+      if (!result.success || !result.entryId) {
+        throw new Error(result.error || "Failed to create journal entry")
       }
       
-      const { data, error } = await (getServiceSupabase() as any).from(TABLES.JOURNAL_ENTRIES).insert(journalEntry).select("id").single()
-      if (error) throw error
-      console.log(`✅ Created journal entry: ${data.id}`)
+      console.log(`✅ Created journal entry: ${result.entryId}`)
       
       const affectedAccountIds = [...new Set(entries.map(entry => entry.account_id))]
       
@@ -111,7 +119,7 @@ export class CentralizedAccountingService {
         await this.syncMultipleAccountBalances(affectedAccountIds)
       }
       
-      return data.id
+      return result.entryId
       
     } catch (error) {
       console.error("Error creating journal entry and syncing:", error)

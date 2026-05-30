@@ -58,16 +58,22 @@ export async function POST(request: Request) {
         .single()
 
       if (soDoc) {
-        await serviceDb.from(TABLES.SALES_ORDERS).update({
+        const { error: soUpdateErr } = await serviceDb.from(TABLES.SALES_ORDERS).update({
           status: "completed",
           updated_at: new Date().toISOString()
         }).eq("id", soId)
+        if (soUpdateErr) {
+          console.error("Failed to update sales order status:", soUpdateErr)
+        }
       }
       if (manualDoc) {
-        await serviceDb.from(TABLES.MANUAL_ORDERS).update({
+        const { error: moUpdateErr } = await serviceDb.from(TABLES.MANUAL_ORDERS).update({
           status: "completed",
-          updatedAt: new Date().toISOString()
+          updated_at: new Date().toISOString()
         }).eq("id", soId)
+        if (moUpdateErr) {
+          console.error("Failed to update manual order status:", moUpdateErr)
+        }
       }
     }
     

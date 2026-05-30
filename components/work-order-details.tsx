@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +19,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
   const [laborHours, setLaborHours] = useState(workOrder.labor_hours?.toString() || "0")
   const [overheadCost, setOverheadCost] = useState(workOrder.overhead_cost?.toString() || "0")
   const [saving, setSaving] = useState(false)
+  const router = useRouter()
 
   const handleSaveCosts = async () => {
     setSaving(true)
@@ -42,7 +44,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
       if (response.ok) {
         toast.success("Labor and overhead costs updated successfully!")
         setTimeout(() => {
-          window.location.reload()
+          router.refresh()
         }, 1000)
       } else {
         toast.error("Failed to update costs")
@@ -154,12 +156,11 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
           <CardContent>
             <div className="space-y-3">
               {workOrder.items.map((item: any, index: number) => {
-                // Handle different item formats (original order vs accounting sales order)
                 const productName = item.name || item.productName || item.sku || "Unknown Product";
                 const quantity = item.quantity || item.qty || 0;
                 const unitPrice = item.basePrice || item.adjustedPrice || item.unit_price || 0;
                 const totalPrice = quantity * unitPrice;
-                
+
                 return (
                   <div key={index} className="flex justify-between items-center p-3 border rounded-lg">
                     <div className="flex items-center space-x-3">

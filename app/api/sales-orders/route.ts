@@ -17,14 +17,14 @@ export async function GET(request: Request) {
       .from(TABLES.SALES_ORDERS)
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(limit)
+      .limit(limit + 1)
     
     if (cursor) {
       const { data: cursorDoc } = await getServiceClient()
         .from(TABLES.SALES_ORDERS)
         .select("created_at")
         .eq("id", cursor)
-        .single()
+        .maybeSingle()
       
       if (cursorDoc) {
         query = query.lt("created_at", cursorDoc.created_at)
@@ -35,6 +35,11 @@ export async function GET(request: Request) {
 
     if (error) throw error
 
+    const hasMore = (data || []).length > limit
+    if (hasMore) {
+      data!.pop()
+    }
+
     const salesOrders = (data || []).map((item: any) => ({
       ...item,
       created_at: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
@@ -43,7 +48,6 @@ export async function GET(request: Request) {
 
     const lastVisible = (data || []).length > 0 ? data![data!.length - 1] : null
     const nextCursor = lastVisible ? lastVisible.id : null
-    const hasMore = (data || []).length === limit
 
     return NextResponse.json({
       data: salesOrders,

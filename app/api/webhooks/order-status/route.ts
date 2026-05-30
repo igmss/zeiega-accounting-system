@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     const currentPriority = STATUS_PRIORITY[currentStatus] ?? 0
     const newPriority = STATUS_PRIORITY[status] ?? 0
 
-    const now = new Date()
+    const now = new Date().toISOString()
 
     // 4. Status Regression Protection (Idempotent FIX-007)
     if (newPriority >= currentPriority || status === "cancelled") {
@@ -273,7 +273,7 @@ export async function POST(request: NextRequest) {
       message: `Order ${orderId} status updated to ${status}`,
       orderId,
       status,
-      timestamp: now.toISOString()
+      timestamp: now
     }, {
       headers: getCORSHeaders(request, ["x-webhook-secret"])
     })

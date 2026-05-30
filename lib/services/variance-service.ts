@@ -284,13 +284,14 @@ export class VarianceService {
 
       for (const code of varianceAccounts) {
         const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-          .select("*")
+          .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
           .contains("account_ids", [code])
 
         let netBalance = 0
-        for (const doc of (snap || [])) {
-          for (const line of doc.entries || []) {
-            if (line.account_id === code) {
+        for (const entry of (snap || [])) {
+          const lines = (entry as any).journal_entry_lines || []
+          for (const line of lines) {
+            if (line.account_code === code) {
               netBalance += (line.debit || 0) - (line.credit || 0)
             }
           }

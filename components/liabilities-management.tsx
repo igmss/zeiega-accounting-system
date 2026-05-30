@@ -40,7 +40,6 @@ export function LiabilitiesManagement() {
         acc => acc.type === AccountType.LIABILITY && acc.isActive
     )
 
-    // When repaying, only show liability accounts that have an outstanding balance
     const liabilityAccounts = newLiability.transactionType === 'repay'
         ? allLiabilityAccounts.filter(acc => (coaBalances[acc.code] || 0) > 0)
         : allLiabilityAccounts
@@ -61,7 +60,9 @@ export function LiabilitiesManagement() {
                 }
                 setCoaBalances(balances)
             }
-        } catch {}
+        } catch {
+            console.error("Failed to fetch account balances")
+        }
     }
 
     async function fetchLiabilities() {

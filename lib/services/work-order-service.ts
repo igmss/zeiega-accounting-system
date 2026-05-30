@@ -55,8 +55,8 @@ export class WorkOrderService {
         total_cost: 0, // Will be updated when materials are issued
         estimated_cost: estimatedTotalCost,
         status: "pending",
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         completionPercentage: 0,
         notes: `Work order for design: ${design.name} (${quantity} units)`,
         ...additionalData
@@ -618,8 +618,8 @@ export class WorkOrderService {
       const now = new Date().toISOString()
       const workOrder = {
         ...workOrderData,
-        createdAt: now,
-        updatedAt: now,
+        created_at: now,
+        updated_at: now,
         status: workOrderData.status || "pending",
         completionPercentage: workOrderData.completionPercentage || 0,
         total_cost: 0,

@@ -104,7 +104,7 @@ export async function GET() {
             description: entry.description || cashEntry?.description || "",
             liabilityAccount: liabilityEntry?.account_id || "",
             loanType: liabilityEntry?.account_id === "2201" ? "long-term" : "short-term",
-            date: entry.date ? new Date(entry.date) : new Date()
+            date: entry.date ? new Date(entry.date).toISOString() : new Date().toISOString()
           })
         }
       }

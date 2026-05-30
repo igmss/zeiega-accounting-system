@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
         const { data: invoices, error: invoicesError } = await getServiceClient()
             .from(TABLES.INVOICES)
             .select("*")
+            .limit(500)
 
         if (invoicesError) throw invoicesError
 

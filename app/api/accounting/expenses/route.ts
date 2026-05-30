@@ -124,8 +124,8 @@ export async function GET() {
           description: entry.description || entry.memo || expenseLine.description || '',
           expenseAccount: expenseLine.account_id || expenseLine.accountCode || '',
           paymentAccount: paymentLine?.account_id || paymentLine?.accountCode || '',
-          date: entry.date ? new Date(entry.date) : new Date(),
-          created_at: entry.created_at ? new Date(entry.created_at) : new Date()
+          date: entry.date ? new Date(entry.date).toISOString() : new Date().toISOString(),
+          created_at: entry.created_at ? new Date(entry.created_at).toISOString() : new Date().toISOString()
         })
       }
     }

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Download, TrendingUp } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 import { useState, useEffect } from "react"
 
 interface ProfitLossReportProps {
@@ -36,10 +37,18 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
         setLoading(false)
       }
     }
-    
+
     fetchReportData()
-    const interval = setInterval(fetchReportData, 30000)
-    return () => clearInterval(interval)
+
+    const channel = supabase
+      .channel("pl-report-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "journal_entries" },
+        () => fetchReportData()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [dateRange.from, dateRange.to])
 
   if (loading) {
@@ -66,11 +75,11 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
     )
   }
 
-  const grossMargin = reportData.revenue.total_revenue > 0 
-    ? (reportData.gross_profit / reportData.revenue.total_revenue) * 100 
+  const grossMargin = reportData.revenue.total_revenue > 0
+    ? (reportData.gross_profit / reportData.revenue.total_revenue) * 100
     : 0
-  const netMargin = reportData.revenue.total_revenue > 0 
-    ? (reportData.net_income / reportData.revenue.total_revenue) * 100 
+  const netMargin = reportData.revenue.total_revenue > 0
+    ? (reportData.net_income / reportData.revenue.total_revenue) * 100
     : 0
 
   return (

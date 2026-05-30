@@ -50,7 +50,9 @@ export function IFRS15ContractDashboard() {
       const res = await fetch("/api/contracts")
       const data = await res.json()
       setContracts(data.contracts || [])
-    } catch {}
+    } catch (err) {
+      console.error("Failed to fetch contracts", err)
+    }
   }
 
   const createContract = async () => {

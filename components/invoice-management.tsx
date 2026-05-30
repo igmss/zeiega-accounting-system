@@ -13,6 +13,7 @@ import { InvoiceDetails } from "./invoice-details"
 import { CreateInvoiceDialog } from "./create-invoice-dialog"
 import { RecordPaymentDialog } from "./record-payment-dialog"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 
 export function InvoiceManagement() {
   const [invoices, setInvoices] = useState<any[]>([])
@@ -22,7 +23,6 @@ export function InvoiceManagement() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null)
 
-  // Fetch invoices from Firestore
   useEffect(() => {
     async function fetchInvoices() {
       try {
@@ -39,25 +39,18 @@ export function InvoiceManagement() {
         setLoading(false)
       }
     }
-    
+
     fetchInvoices()
-  }, [])
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/invoices')
-        if (response.ok) {
-          const result = await response.json()
-          setInvoices(result.data || [])
-        }
-      } catch (error) {
-        console.error('Error refreshing invoices:', error)
-      }
-    }, 30000) // 30 seconds
+    const channel = supabase
+      .channel("invoice-management-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "invoices" },
+        () => fetchInvoices()
+      )
+      .subscribe()
 
-    return () => clearInterval(interval)
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   useEffect(() => {
@@ -241,7 +234,7 @@ export function InvoiceManagement() {
                   </TableCell>
                   <TableCell>{getStatusBadge(invoice.status, invoice.due_date)}</TableCell>
                   <TableCell>
-                    {invoice.created_at 
+                    {invoice.created_at
                       ? (invoice.created_at?.toDate ? invoice.created_at.toDate() : new Date(invoice.created_at || new Date())).toLocaleDateString()
                       : 'N/A'
                     }

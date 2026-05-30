@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const now = new Date()
+    const now = new Date().toISOString()
 
     // 1. Update the return status (if not already updated)
     if (returnData.status !== status) {
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       message: `Return ${returnId} status updated to ${status}`,
       returnId,
       status,
-      timestamp: now.toISOString()
+      timestamp: now
     }, {
       headers: getCORSHeaders(request, ["x-webhook-secret"])
     })

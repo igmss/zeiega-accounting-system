@@ -44,7 +44,6 @@ export function InventoryManagement() {
   const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Fetch inventory items from Firestore
   useEffect(() => {
     async function fetchInventoryItems() {
       try {
@@ -61,7 +60,7 @@ export function InventoryManagement() {
         setLoading(false)
       }
     }
-    
+
     fetchInventoryItems()
   }, [refreshKey])
 
@@ -72,6 +71,7 @@ export function InventoryManagement() {
       filtered = filtered.filter(
         (item) =>
           item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (item.supplier || '').toLowerCase().includes(searchTerm.toLowerCase()),
       )
@@ -87,7 +87,7 @@ export function InventoryManagement() {
   const getStockStatus = (item: InventoryItem) => {
     const quantity = item.quantity_on_hand || 0
     const reorderLevel = item.reorder_level || 0
-    
+
     if (quantity <= 0) {
       return { status: "out-of-stock", label: "Out of Stock", variant: "destructive" as const }
     } else if (quantity <= reorderLevel) {
@@ -252,7 +252,7 @@ export function InventoryManagement() {
                     const stockStatus = getStockStatus(item)
                     return (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.id}</TableCell>
+                        <TableCell className="font-medium">{item.sku}</TableCell>
                         <TableCell>
                           <div>
                             <div className="font-medium">{item.name}</div>
@@ -295,26 +295,26 @@ export function InventoryManagement() {
                                 {selectedItem && <InventoryItemDetails item={selectedItem} />}
                               </DialogContent>
                             </Dialog>
-                            
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
+
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleEditItem(item)}
                             >
                               Edit
                             </Button>
-                            
-                            <Button 
-                              variant="secondary" 
-                              size="sm" 
+
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={() => handleAdjustItem(item)}
                             >
                               Adjust
                             </Button>
-                            
-                            <Button 
-                              variant="destructive" 
-                              size="sm" 
+
+                            <Button
+                              variant="destructive"
+                              size="sm"
                               onClick={() => handleDeleteItem(item.id)}
                             >
                               Delete
@@ -335,11 +335,11 @@ export function InventoryManagement() {
           <InventoryMovements />
         </TabsContent>
       </Tabs>
-      
+
       {/* Edit Inventory Dialog */}
       {editingItem && (
-        <EditInventoryDialog 
-          item={editingItem} 
+        <EditInventoryDialog
+          item={editingItem}
           onClose={() => setEditingItem(null)}
           onSave={() => {
             setEditingItem(null)
@@ -347,11 +347,11 @@ export function InventoryManagement() {
           }}
         />
       )}
-      
+
       {/* Adjust Inventory Dialog */}
       {adjustingItem && (
-        <AdjustInventoryDialog 
-          item={adjustingItem} 
+        <AdjustInventoryDialog
+          item={adjustingItem}
           onClose={() => setAdjustingItem(null)}
           onSave={() => {
             setAdjustingItem(null)
@@ -369,7 +369,7 @@ function InventoryItemDetails({ item }: { item: InventoryItem }) {
 
   const quantity = item.quantity_on_hand || 0
   const reorderLevel = item.reorder_level || 0
-  
+
   const stockStatus =
     quantity <= 0
       ? { status: "out-of-stock", label: "Out of Stock", variant: "destructive" as const }
@@ -387,7 +387,7 @@ function InventoryItemDetails({ item }: { item: InventoryItem }) {
           <CardContent className="space-y-3">
             <div className="flex justify-between">
               <span className="text-muted-foreground">SKU:</span>
-              <span className="font-medium">{item.id}</span>
+              <span className="font-medium">{item.sku || item.id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Name:</span>
@@ -481,10 +481,10 @@ function InventoryItemDetails({ item }: { item: InventoryItem }) {
   )
 }
 
-function EditInventoryDialog({ item, onClose, onSave }: { 
-  item: InventoryItem, 
-  onClose: () => void, 
-  onSave: () => void 
+function EditInventoryDialog({ item, onClose, onSave }: {
+  item: InventoryItem,
+  onClose: () => void,
+  onSave: () => void
 }) {
   const [formData, setFormData] = useState({
     sku: item.sku || "",
@@ -501,7 +501,7 @@ function EditInventoryDialog({ item, onClose, onSave }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     try {
       const response = await fetch('/api/inventory', {
         method: 'PUT',
@@ -675,10 +675,10 @@ function EditInventoryDialog({ item, onClose, onSave }: {
   )
 }
 
-function AdjustInventoryDialog({ item, onClose, onSave }: { 
-  item: InventoryItem, 
-  onClose: () => void, 
-  onSave: () => void 
+function AdjustInventoryDialog({ item, onClose, onSave }: {
+  item: InventoryItem,
+  onClose: () => void,
+  onSave: () => void
 }) {
   const [formData, setFormData] = useState({
     adjustmentType: 'set',
@@ -688,7 +688,7 @@ function AdjustInventoryDialog({ item, onClose, onSave }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     try {
       const response = await fetch('/api/inventory/adjust', {
         method: 'POST',
@@ -749,8 +749,8 @@ function AdjustInventoryDialog({ item, onClose, onSave }: {
 
           <div className="space-y-2">
             <Label htmlFor="adjustmentQty">
-              {formData.adjustmentType === 'set' ? 'New Quantity' : 
-               formData.adjustmentType === 'add' ? 'Quantity to Add' : 
+              {formData.adjustmentType === 'set' ? 'New Quantity' :
+               formData.adjustmentType === 'add' ? 'Quantity to Add' :
                'Quantity to Subtract'} *
             </Label>
             <Input

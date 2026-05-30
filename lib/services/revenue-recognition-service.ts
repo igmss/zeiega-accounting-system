@@ -177,39 +177,32 @@ export class RevenueRecognitionService {
       const entryId = `REV-${contractId}-${Date.now()}`
       const now = new Date().toISOString()
 
-      const entries = [
-        {
-          account_id: ACCOUNT_CODES.CONTRACT_ASSET,
-          account_name: "Contract Asset (Unbilled Revenue)",
-          debit: revenueThisPeriod,
-          credit: 0,
-          description: `Revenue recognized: ${pctComplete.toFixed(1)}% complete`,
-        },
-        {
-          account_id: ACCOUNT_CODES.SALES_CUSTOM_MTO,
-          account_name: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
-          debit: 0,
-          credit: revenueThisPeriod,
-          description: `MTO contract revenue — ${contract.description}`,
-        },
-      ]
+      const result = await JournalEntryService.createJournalEntry(
+        JournalEntryType.GENERAL,
+        [
+          {
+            accountCode: ACCOUNT_CODES.CONTRACT_ASSET,
+            accountName: "Contract Asset (Unbilled Revenue)",
+            debit: revenueThisPeriod,
+            credit: 0,
+            description: `Revenue recognized: ${pctComplete.toFixed(1)}% complete`,
+          },
+          {
+            accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO,
+            accountName: getAccountName(ACCOUNT_CODES.SALES_CUSTOM_MTO),
+            debit: 0,
+            credit: revenueThisPeriod,
+            description: `MTO contract revenue — ${contract.description}`,
+          },
+        ],
+        contractId,
+        `IFRS 15 revenue recognition: ${contract.description} (${pctComplete.toFixed(1)}%)`,
+        userId
+      )
 
-      const journalEntry = {
-        id: entryId,
-        date: now,
-        type: "REVENUE_RECOGNITION",
-        reference_doc: contractId,
-        description: `IFRS 15 revenue recognition: ${contract.description} (${pctComplete.toFixed(1)}%)`,
-        entries,
-        account_ids: entries.map(e => e.account_id),
-        total_debits: revenueThisPeriod,
-        total_credits: revenueThisPeriod,
-        created_at: now,
-        created_by: userId,
+      if (!result.success) {
+        return { success: false, error: result.error }
       }
-
-      const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
-      if (jeErr) throw jeErr
 
       contract.updatedAt = now
       const { error: updErr } = await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
@@ -223,7 +216,7 @@ export class RevenueRecognitionService {
         revenueThisPeriod,
         costsThisPeriod: costsIncurredThisPeriod,
         grossProfitThisPeriod: revenueThisPeriod - costsIncurredThisPeriod,
-        journalEntryId: entryId,
+        journalEntryId: result.entryId,
       }
 
       console.log(
@@ -390,52 +383,46 @@ export class RevenueRecognitionService {
           }
         }
 
-        const entryId = `ONEROUS-${contractId}-${Date.now()}`
         const now = new Date().toISOString()
 
-        const journalEntry = {
-          id: entryId,
-          date: now,
-          type: "GENERAL",
-          reference_doc: contractId,
-          description: `Onerous contract provision: ${formatCurrency(expectedLoss)} loss on ${contract.description}`,
-          entries: [
+        const result = await JournalEntryService.createJournalEntry(
+          JournalEntryType.GENERAL,
+          [
             {
-              account_id: "7002",
-              account_name: "Loss on Onerous Contract",
+              accountCode: "7002",
+              accountName: "Loss on Onerous Contract",
               debit: expectedLoss,
               credit: 0,
               description: `Expected loss on contract ${contractId}`,
             },
             {
-              account_id: "2150",
-              account_name: "Provision for Onerous Contract",
+              accountCode: "2150",
+              accountName: "Provision for Onerous Contract",
               debit: 0,
               credit: expectedLoss,
               description: `Onerous contract provision per IAS 37`,
             },
           ],
-          account_ids: ["7002", "2150"],
-          total_debits: expectedLoss,
-          total_credits: expectedLoss,
-          created_at: now,
-          created_by: userId,
-        }
+          contractId,
+          `Onerous contract provision: ${formatCurrency(expectedLoss)} loss on ${contract.description}`,
+          userId
+        )
 
-        const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
-        if (jeErr) throw jeErr
+        if (!result.success) {
+          return { success: false, error: result.error }
+        }
 
         contract.isOnerous = true
         contract.expectedLoss = expectedLoss
         contract.lossProvisionRecognized = true
-        contract.lossProvisionEntryId = entryId
+        contract.lossProvisionEntryId = result.entryId
         contract.status = "onerous"
         contract.updatedAt = now
 
         await getServiceSupabase().from(this.TABLE).upsert(contract, { onConflict: "id" })
 
         console.log(`⚠️ Onerous contract ${contractId}: ${formatCurrency(expectedLoss)} loss provisioned`)
-        return { success: true, expectedLoss, entryId }
+        return { success: true, expectedLoss, entryId: result.entryId }
       }
 
       contract.updatedAt = new Date().toISOString()
@@ -527,28 +514,17 @@ export class RevenueRecognitionService {
                 },
               ]
 
-          const jeId = `CO-${contractId}-${Date.now()}`
-          const journalEntry = {
-            id: jeId,
-            date: now,
-            type: "GENERAL",
-            reference_doc: contractId,
-            description: `IFRS 15.18 change order catch-up: ${description}`,
-            entries: lines.map(l => ({
-              account_id: l.accountCode,
-              account_name: l.accountName,
-              debit: l.debit,
-              credit: l.credit,
-              description: l.description,
-            })),
-            account_ids: lines.map(l => l.accountCode),
-            total_debits: amount,
-            total_credits: amount,
-            created_at: now,
-            created_by: userId,
+          const result = await JournalEntryService.createJournalEntry(
+            JournalEntryType.GENERAL,
+            lines,
+            contractId,
+            `IFRS 15.18 change order catch-up: ${description}`,
+            userId
+          )
+
+          if (result.success && result.entryId) {
+            entryId = result.entryId
           }
-          const { error: jeErr } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES).insert(journalEntry)
-          if (!jeErr) entryId = jeId
         }
 
         contract.contractPrice           = revisedContractPrice

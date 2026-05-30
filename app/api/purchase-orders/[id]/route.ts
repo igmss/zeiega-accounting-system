@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { PurchaseOrderService } from "@/lib/services/purchase-order-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
 // GET /api/purchase-orders/[id] - Get a single purchase order
 export async function GET(
@@ -8,6 +9,9 @@ export async function GET(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const po = await PurchaseOrderService.getPurchaseOrder(params.id)
 
         if (!po) {
@@ -26,6 +30,9 @@ export async function PUT(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requirePermission("purchase-orders:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
         const { action } = body
 

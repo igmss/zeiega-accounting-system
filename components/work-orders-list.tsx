@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Play, CheckCircle, Clock, Wrench, Trash } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { WorkOrderDetails } from "./work-order-details"
 
@@ -22,7 +23,6 @@ export function WorkOrdersList() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
 
-  // Fetch work orders from Firestore
   useEffect(() => {
     async function fetchWorkOrders() {
       try {
@@ -31,20 +31,30 @@ export function WorkOrdersList() {
           throw new Error('Failed to fetch work orders')
         }
         const responseData = await response.json()
-        // Handle the API response structure: { success: true, data: workOrders, count: number }
         const workOrdersData = responseData.success ? responseData.data : []
         setWorkOrders(Array.isArray(workOrdersData) ? workOrdersData : [])
       } catch (error) {
         console.error("Error loading work orders:", error)
+        toast.error("Failed to load work orders")
         setWorkOrders([])
       } finally {
         setLoading(false)
       }
     }
-    
+
     fetchWorkOrders()
+
+    const channel = supabase
+      .channel("work-orders-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "work_orders" },
+        () => fetchWorkOrders()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [])
-  
+
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<any | null>(null)
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
   const [updateData, setUpdateData] = useState({
@@ -106,7 +116,6 @@ export function WorkOrdersList() {
       })
 
       if (response.ok) {
-        // Refresh work orders
         const workOrdersResponse = await fetch('/api/work-orders')
         if (workOrdersResponse.ok) {
           const responseData = await workOrdersResponse.json()
@@ -155,7 +164,6 @@ export function WorkOrdersList() {
 
   const handleStartWorkOrder = async (workOrderId: string) => {
     try {
-      // Update work order status in database
       const response = await fetch('/api/work-orders', {
         method: 'PUT',
         headers: {
@@ -169,7 +177,6 @@ export function WorkOrdersList() {
       })
 
       if (response.ok) {
-        // Update local state
         setWorkOrders((prev) =>
           prev.map((wo) =>
             wo.id === workOrderId ? { ...wo, status: "in_progress" as const, started_at: new Date() } : wo,
@@ -177,15 +184,16 @@ export function WorkOrdersList() {
         )
       } else {
         console.error('Failed to update work order status')
+        toast.error('Failed to update work order status')
       }
     } catch (error) {
       console.error('Error updating work order:', error)
+      toast.error('Failed to update work order')
     }
   }
 
   const handleCompleteWorkOrder = async (workOrderId: string) => {
     try {
-      // Complete work order through the dedicated endpoint to trigger WIP -> Finished Goods journal entries
       const response = await fetch('/api/work-orders/complete', {
         method: 'POST',
         headers: {
@@ -197,10 +205,8 @@ export function WorkOrdersList() {
       })
 
       if (response.ok) {
-        // Get the work order to find the sales order ID
         const workOrder = (Array.isArray(workOrders) ? workOrders : []).find(wo => wo.id === workOrderId)
         if (workOrder && workOrder.sales_order_id) {
-          // Trigger complete order workflow to generate invoice and record revenue
           const completeResponse = await fetch('/api/workflow/complete-order', {
             method: 'POST',
             headers: {
@@ -221,21 +227,6 @@ export function WorkOrdersList() {
           }
         }
 
-        // Update local state
-        setWorkOrders((prev) =>
-          prev.map((wo) =>
-            wo.id === workOrderId
-              ? {
-                  ...wo,
-                  status: "completed" as const,
-                  completionPercentage: 100,
-                  completed_at: new Date(),
-                }
-              : wo,
-          ),
-        )
-
-        // Refresh work orders to get updated data
         const workOrdersResponse = await fetch('/api/work-orders')
         if (workOrdersResponse.ok) {
           const responseData = await workOrdersResponse.json()
@@ -333,7 +324,7 @@ export function WorkOrdersList() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
-                      {workOrder.raw_materials_used && workOrder.raw_materials_used.length > 0 
+                      {workOrder.raw_materials_used && workOrder.raw_materials_used.length > 0
                         ? (
                           <>
                             <span>{formatCurrency(totalMaterialCost(workOrder.raw_materials_used))}</span>
@@ -382,8 +373,8 @@ export function WorkOrdersList() {
                       )}
 
                       {workOrder.status !== "completed" && (
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => {
                             setSelectedWorkOrder(workOrder)
@@ -410,7 +401,7 @@ export function WorkOrdersList() {
           <DialogHeader>
             <DialogTitle>Update Materials & Labor</DialogTitle>
           </DialogHeader>
-          
+
           {selectedWorkOrder && (
             <div className="space-y-4">
               <div>
@@ -480,8 +471,8 @@ export function WorkOrdersList() {
                     )}
                   </div>
                 ))}
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   variant="outline"
                   onClick={() => {
                     setUpdateData({
@@ -536,4 +527,3 @@ export function WorkOrdersList() {
     </div>
   )
 }
-

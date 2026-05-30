@@ -52,13 +52,13 @@ export class CurrencyService {
 
       const { error } = await getServiceSupabase().from(this.TABLE).insert({
         id: rateId,
-        fromCurrency,
-        toCurrency,
+        from_currency: fromCurrency,
+        to_currency: toCurrency,
         rate,
         date: now,
         source,
-        createdAt: now,
-        createdBy: userId,
+        created_at: now,
+        created_by: userId,
       })
       if (error) throw error
 
@@ -76,8 +76,8 @@ export class CurrencyService {
     try {
       const { data, error } = await getServiceSupabase().from(this.TABLE)
         .select("*")
-        .eq("fromCurrency", fromCurrency)
-        .eq("toCurrency", toCurrency)
+        .eq("from_currency", fromCurrency)
+        .eq("to_currency", toCurrency)
         .order("date", { ascending: false })
         .limit(1)
         .single()
@@ -251,8 +251,8 @@ export class CurrencyService {
     try {
       const { data, error } = await getServiceSupabase().from(this.TABLE)
         .select("*")
-        .eq("fromCurrency", fromCurrency)
-        .eq("toCurrency", toCurrency)
+        .eq("from_currency", fromCurrency)
+        .eq("to_currency", toCurrency)
         .order("date", { ascending: false })
         .limit(limit)
       if (error) throw error

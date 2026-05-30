@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, Building, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 import { useState, useEffect } from "react"
 
 interface BalanceSheetReportProps {
@@ -35,9 +36,18 @@ export function BalanceSheetReport({ dateRange }: BalanceSheetReportProps) {
         setLoading(false)
       }
     }
+
     fetchReportData()
-    const interval = setInterval(fetchReportData, 30000)
-    return () => clearInterval(interval)
+
+    const channel = supabase
+      .channel("bs-report-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "journal_entries" },
+        () => fetchReportData()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [dateRange.from, dateRange.to])
 
   if (loading) {

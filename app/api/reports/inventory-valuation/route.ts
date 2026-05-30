@@ -22,7 +22,7 @@ export async function GET() {
       quantity: item.quantity_on_hand || 0,
       cost_per_unit: item.cost_per_unit || 0,
       total_value: (item.quantity_on_hand || 0) * (item.cost_per_unit || 0),
-      last_movement: item.last_updated || item.createdAt || new Date(),
+      last_movement: item.last_updated || item.createdAt || new Date().toISOString(),
       turnover_days: 0,
     }))
 

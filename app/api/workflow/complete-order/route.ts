@@ -65,12 +65,12 @@ export async function POST(request: Request) {
     if (orderSource === "manual_orders") {
       await serviceDb.from(TABLES.MANUAL_ORDERS).update({
         status: "completed",
-        updatedAt: new Date()
+        updated_at: new Date().toISOString()
       }).eq("id", orderId)
     } else if (orderSource === "orders") {
       await serviceDb.from(TABLES.ORDERS).update({
         status: "completed",
-        updatedAt: new Date()
+        updated_at: new Date().toISOString()
       }).eq("id", orderId)
     }
 
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     if (salesOrderDoc) {
       await serviceDb.from(TABLES.SALES_ORDERS).update({
         status: "completed",
-        updated_at: new Date()
+        updated_at: new Date().toISOString()
       }).eq("id", orderId)
     } else {
       await serviceDb.from(TABLES.SALES_ORDERS).upsert({
@@ -96,8 +96,8 @@ export async function POST(request: Request) {
         status: "completed",
         total_amount: orderData.total || orderData.total_amount || 0,
         order_source: orderSource === "orders" ? "web" : "manual",
-        created_at: orderData.created_at ? new Date(orderData.created_at) : new Date(),
-        updated_at: new Date()
+        created_at: orderData.created_at ? new Date(orderData.created_at).toISOString() : new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }, { onConflict: "id" })
     }
 
@@ -143,13 +143,18 @@ export async function POST(request: Request) {
         total: totalAmount,
         tax_amount: 0,
         total_amount: totalAmount,
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         status: "unpaid",
-        created_at: new Date(),
+        created_at: new Date().toISOString(),
         items: orderData.items || []
       }
 
-      await serviceDb.from(TABLES.INVOICES).upsert(invoice, { onConflict: "id" })
+      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).upsert(invoice, { onConflict: "id" })
+
+      if (invoiceError) {
+        console.error("Failed to upsert invoice:", invoiceError)
+        return NextResponse.json({ error: "Failed to create invoice" }, { status: 500 })
+      }
 
       const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
       

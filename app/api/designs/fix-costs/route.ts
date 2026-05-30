@@ -4,6 +4,9 @@ import { requirePermission } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requirePermission("designs:create");
+    if (!auth.authorized) return auth.response;
+
     console.log('🔧 Starting design cost fix...');
     
     // Get all designs
@@ -15,10 +18,7 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
     
     for (const design of designs) {
-  const auth = await requirePermission("designs:create");
-  if (!auth.authorized) return auth.response;
-
-  try {
+      try {
         // Calculate correct total cost
         // Labor cost = cost per hour × manufacturing time
         const laborCostPerHour = design.laborCost || 0;

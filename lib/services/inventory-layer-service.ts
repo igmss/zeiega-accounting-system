@@ -43,12 +43,12 @@ export class InventoryLayerService {
       const layer: InventoryLayer = {
         id: layerId,
         sku,
-        receiptDate: new Date(),
-        quantityReceived,
-        quantityRemaining: quantityReceived,
-        unitCost,
-        referenceDoc,
-        created_at: new Date(),
+        receipt_date: new Date().toISOString(),
+        quantity_received: quantityReceived,
+        quantity_remaining: quantityReceived,
+        unit_cost: unitCost,
+        reference_doc: referenceDoc,
+        created_at: new Date().toISOString(),
       }
 
       await getServiceSupabase()
@@ -86,8 +86,8 @@ export class InventoryLayerService {
         .from(TABLES.INVENTORY_LAYERS)
         .select("*")
         .eq("sku", sku)
-        .gt("quantityRemaining", 0)
-        .order("receiptDate", { ascending: true })
+        .gt("quantity_remaining", 0)
+        .order("receipt_date", { ascending: true })
 
       if (error) throw error
 
@@ -108,14 +108,14 @@ export class InventoryLayerService {
       for (const layer of snapshot) {
         if (remaining <= 0) break
 
-        const take  = Math.min(remaining, layer.quantityRemaining)
+        const take  = Math.min(remaining, layer.quantity_remaining)
 
-        totalCost += take * layer.unitCost
-        layersConsumed.push({ layerId: layer.id, quantityUsed: take, unitCost: layer.unitCost })
+        totalCost += take * layer.unit_cost
+        layersConsumed.push({ layerId: layer.id, quantityUsed: take, unitCost: layer.unit_cost })
 
         await getServiceSupabase()
           .from(TABLES.INVENTORY_LAYERS)
-          .update({ quantityRemaining: layer.quantityRemaining - take })
+          .update({ quantity_remaining: layer.quantity_remaining - take })
           .eq("id", layer.id)
 
         remaining -= take
@@ -159,8 +159,8 @@ export class InventoryLayerService {
         .from(TABLES.INVENTORY_LAYERS)
         .select("*")
         .eq("sku", sku)
-        .gt("quantityRemaining", 0)
-        .order("receiptDate", { ascending: true })
+        .gt("quantity_remaining", 0)
+        .order("receipt_date", { ascending: true })
 
       return (snapshot || []) as InventoryLayer[]
     } catch {
@@ -176,8 +176,8 @@ export class InventoryLayerService {
     const layers = await this.getCurrentLayers(sku)
     if (layers.length === 0) return { unitCost: 0, totalUnits: 0, totalValue: 0 }
 
-    const totalUnits = layers.reduce((sum, l) => sum + l.quantityRemaining, 0)
-    const totalValue = layers.reduce((sum, l) => sum + l.quantityRemaining * l.unitCost, 0)
+    const totalUnits = layers.reduce((sum, l) => sum + l.quantity_remaining, 0)
+    const totalValue = layers.reduce((sum, l) => sum + l.quantity_remaining * l.unit_cost, 0)
     return {
       unitCost: totalUnits > 0 ? Math.round((totalValue / totalUnits) * 10000) / 10000 : 0,
       totalUnits,

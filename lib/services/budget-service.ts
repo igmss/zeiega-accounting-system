@@ -50,14 +50,12 @@ export class BudgetService {
 
       const line: BudgetLine = {
         id: lineId,
-        fiscalYear,
-        period,
-        accountCode,
-        accountName: account.name,
-        budgetedAmount,
-        notes,
+        fiscal_year_id: String(fiscalYear),
+        period_number: period,
+        account_code: accountCode,
+        budget_amount: budgetedAmount,
+        actual_amount: 0,
         created_at: now,
-        created_by: userId,
         updated_at: now,
       }
 
@@ -104,9 +102,9 @@ export class BudgetService {
 
     let query = (getServiceSupabase() as any).from(this.TABLE)
       .select("*")
-      .eq("fiscalYear", fiscalYear)
+      .eq("fiscal_year_id", fiscalYear)
     if (period > 0) {
-      query = query.eq("period", period)
+      query = query.eq("period_number", period)
     }
 
     const { data: budgetLines, error } = await query
@@ -182,10 +180,10 @@ export class BudgetService {
     try {
       const { data, error } = await getServiceSupabase().from(this.TABLE)
         .select("*")
-        .eq("fiscalYear", fiscalYear)
+        .eq("fiscal_year_id", fiscalYear)
       if (error) throw error
       return ((data || []) as BudgetLine[])
-        .sort((a, b) => a.period - b.period || a.accountCode.localeCompare(b.accountCode))
+        .sort((a, b) => a.period_number || 0 - (b.period_number || 0) || a.account_code.localeCompare(b.account_code || ""))
     } catch {
       return []
     }

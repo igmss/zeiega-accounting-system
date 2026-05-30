@@ -1,13 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { timingSafeEqual } from "crypto"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
-import { requireAdmin } from "@/lib/auth/auth-helpers"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdmin()
-  if (!auth.authorized) return auth.response
   try {
     const authHeader = request.headers.get("authorization")
     const expected = process.env.CRON_SECRET

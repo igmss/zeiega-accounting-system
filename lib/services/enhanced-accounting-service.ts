@@ -418,7 +418,7 @@ export class EnhancedAccountingService {
                     .eq("account_code", accountCode)
                     .order("period_end", { ascending: false })
                     .limit(1)
-                    .single()
+                    .maybeSingle()
 
                 if (data) {
                     return { balance: data.closing_balance || 0 }
@@ -480,13 +480,51 @@ export class EnhancedAccountingService {
         let totalDebits = 0
         let totalCredits = 0
 
-        const accountsList = Object.entries(CHART_OF_ACCOUNTS) as [string, any][]
+        const client = getServiceSupabase()
+        const allCodes = Object.keys(CHART_OF_ACCOUNTS)
 
+        const { data: balanceRows } = await client
+            .from(TABLES.ACCOUNT_BALANCES)
+            .select("account_code, closing_balance, period_end")
+            .in("account_code", allCodes)
+            .order("period_end", { ascending: false })
+
+        const balanceMap = new Map<string, number>()
+        for (const row of (balanceRows || [])) {
+            if (!balanceMap.has(row.account_code)) {
+                balanceMap.set(row.account_code, row.closing_balance || 0)
+            }
+        }
+
+        const uncachedCodes = allCodes.filter(c => !balanceMap.has(c))
+        if (uncachedCodes.length > 0) {
+            const { data: lines } = await client
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .select("account_code, debit, credit")
+                .in("account_code", uncachedCodes)
+
+            const lineTotals = new Map<string, { d: number; c: number }>()
+            for (const line of (lines || [])) {
+                const t = lineTotals.get(line.account_code) || { d: 0, c: 0 }
+                t.d += line.debit || 0
+                t.c += line.credit || 0
+                lineTotals.set(line.account_code, t)
+            }
+
+            for (const code of uncachedCodes) {
+                const t = lineTotals.get(code) || { d: 0, c: 0 }
+                const balance = isDebitNormalBalance(code)
+                    ? t.d - t.c
+                    : t.c - t.d
+                balanceMap.set(code, balance)
+            }
+        }
+
+        const accountsList = Object.entries(CHART_OF_ACCOUNTS) as [string, any][]
         for (const [code, account] of accountsList) {
-            const { balance } = await this.getAccountBalance(code)
+            const balance = balanceMap.get(code) || 0
 
             if (balance !== 0) {
-                // Determine which column the balance belongs in based on NORMAL balance
                 const normalIsDebit = isDebitNormalBalance(code)
                 const isDebit = (balance > 0 && normalIsDebit) || (balance < 0 && !normalIsDebit)
 

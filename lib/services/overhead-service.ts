@@ -220,20 +220,14 @@ export class OverheadService {
     const end = endDate.toISOString()
     let total = 0
 
-    for (const code of ohAccounts) {
-      const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-        .select("*")
-        .contains("account_ids", [code])
-        .gte("date", start)
-        .lte("date", end)
+    const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRY_LINES)
+      .select(`account_code, debit, credit, journal_entries!inner(id, date)`)
+      .in("account_code", ohAccounts)
+      .gte("journal_entries.date", start)
+      .lte("journal_entries.date", end)
 
-      for (const entry of (data || [])) {
-        for (const line of entry.entries || []) {
-          if (line.account_id === code) {
-            total += (line.debit || 0) - (line.credit || 0)
-          }
-        }
-      }
+    for (const line of (data || [])) {
+      total += (line.debit || 0) - (line.credit || 0)
     }
     return total
   }
@@ -246,15 +240,16 @@ export class OverheadService {
     const end = endDate.toISOString()
 
     const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-      .select("*")
+      .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
       .contains("account_ids", [ACCOUNT_CODES.OH_APPLIED])
       .gte("date", start)
       .lte("date", end)
 
     let total = 0
     for (const entry of (data || [])) {
-      for (const line of entry.entries || []) {
-        if (line.account_id === ACCOUNT_CODES.OH_APPLIED) {
+      const lines = (entry as any).journal_entry_lines || []
+      for (const line of lines) {
+        if (line.account_code === ACCOUNT_CODES.OH_APPLIED) {
           total += (line.credit || 0) - (line.debit || 0)
         }
       }
@@ -408,13 +403,14 @@ export class OverheadService {
         const endStr = endDate.toISOString()
         const getBal = async (code: string) => {
           const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-            .select("*")
+            .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
             .contains("account_ids", [code])
             .lte("date", endStr)
           let d = 0, c = 0
-          for (const doc of (snap || [])) {
-            for (const line of doc.entries || []) {
-              if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
+          for (const entry of (snap || [])) {
+            const lines = (entry as any).journal_entry_lines || []
+            for (const line of lines) {
+              if (line.account_code === code) { d += line.debit || 0; c += line.credit || 0 }
             }
           }
           return Math.abs(ACCOUNT_CODES.INVENTORY_WIP === code ? d - c : c - d)

@@ -60,7 +60,15 @@ export class FiscalPeriodService {
                     createdAt: now,
                 }
 
-                const { error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).insert(period)
+                const { error } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).insert({
+                    id: periodId,
+                    year,
+                    month: month + 1,
+                    start_date: periodStart,
+                    end_date: periodEnd,
+                    status: PeriodStatus.OPEN,
+                    created_at: now,
+                })
                 if (error) throw error
                 periodIds.push(periodId)
             }
@@ -152,8 +160,8 @@ export class FiscalPeriodService {
 
             const { error: updErr } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).update({
                 status: PeriodStatus.CLOSED,
-                closedAt: new Date().toISOString(),
-                closedBy,
+                closed_at: new Date().toISOString(),
+                closed_by: closedBy,
             }).eq("id", periodId)
             if (updErr) throw updErr
 
@@ -183,8 +191,8 @@ export class FiscalPeriodService {
 
             const { error: updErr } = await getServiceSupabase().from(TABLES.FISCAL_PERIODS).update({
                 status: PeriodStatus.OPEN,
-                closedAt: null,
-                closedBy: null,
+                closed_at: null,
+                closed_by: null,
             }).eq("id", periodId)
             if (updErr) throw updErr
 
@@ -265,12 +273,12 @@ export class FiscalPeriodService {
             id: data.id,
             year: data.year,
             month: data.month,
-            startDate: data.startDate || new Date().toISOString(),
-            endDate: data.endDate || new Date().toISOString(),
+            startDate: data.start_date || new Date().toISOString(),
+            endDate: data.end_date || new Date().toISOString(),
             status: data.status as PeriodStatus,
-            closedAt: data.closedAt || undefined,
-            closedBy: data.closedBy,
-            createdAt: data.createdAt || new Date().toISOString(),
+            closedAt: data.closed_at || undefined,
+            closedBy: data.closed_by,
+            createdAt: data.created_at || new Date().toISOString(),
         }
     }
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { VendorService } from "@/lib/services/vendor-service"
 import { createSuccessResponse, createErrorResponse } from "@/lib/validation/helpers"
+import { requirePermission, requireAuth } from "@/lib/auth"
 
 // GET /api/vendors/[id] - Get a single vendor
 export async function GET(
@@ -8,6 +9,9 @@ export async function GET(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requireAuth()
+        if (!auth.authenticated) return auth.response
+
         const vendor = await VendorService.getVendor(params.id)
 
         if (!vendor) {
@@ -26,6 +30,9 @@ export async function PUT(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requirePermission("vendors:create")
+        if (!auth.authorized) return auth.response
+
         const body = await request.json()
 
         const result = await VendorService.updateVendor(params.id, body)
@@ -46,6 +53,9 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ) {
     try {
+        const auth = await requirePermission("vendors:create")
+        if (!auth.authorized) return auth.response
+
         const result = await VendorService.deactivateVendor(params.id)
 
         if (result.success) {

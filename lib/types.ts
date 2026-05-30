@@ -4,7 +4,7 @@ export interface Customer {
   email: string
   phone: string
   address: string
-  created_at: Date
+  created_at: string
 }
 
 export interface ChartOfAccount {
@@ -16,15 +16,14 @@ export interface ChartOfAccount {
 
 export interface JournalEntry {
   id: string
-  date: Date
-  entries: {
-    account_id: string
-    debit: number
-    credit: number
-    description: string
-  }[]
+  date: string
+  description?: string | null
+  type?: string | null
+  reference_id?: string | null
+  reference_type?: string | null
   linked_doc?: string
-  created_at: Date
+  account_ids?: string[]
+  created_at: string
 }
 
 export interface SalesOrder {
@@ -38,14 +37,14 @@ export interface SalesOrder {
     bom_id?: string
   }[]
   status: "pending" | "producing" | "completed" | "invoiced"
-  created_at: Date
+  created_at: string
 }
 
 export interface WorkOrder {
   id: string
   sales_order_id: string
-  design_id?: string // Reference to design configuration
-  design_name?: string // Cached design name for display
+  design_id?: string
+  design_name?: string
   bom_id?: string
   raw_materials_used: {
     item_id: string
@@ -60,48 +59,56 @@ export interface WorkOrder {
     totalCost: number
   }[]
   labor_hours: number
-  labor_cost: number // Cost per hour * hours
+  labor_cost: number
   overhead_cost: number
-  total_cost: number // Calculated total cost
-  estimated_cost: number // Estimated cost from design
+  total_cost: number
+  estimated_cost: number
   status: "pending" | "in_progress" | "completed"
-  created_at: Date | any
-  completed_at?: Date | any
-  updated_at?: Date | any
+  created_at: string
+  completed_at?: string | null
+  updated_at?: string
   completionPercentage?: number
   assigned_worker?: string
-  start_time?: Date | any
-  estimated_completion?: Date | any
+  start_time?: string | null
+  estimated_completion?: string | null
   notes?: string
-  items?: any[] // Order items from sales order
-  item_costs?: any[] // Calculated costs per item
-  customer_name?: string // Fetched from customer collection
+  items?: any[]
+  item_costs?: any[]
+  customer_name?: string
   customer_email?: string
   customer_phone?: string
   customer_address?: string
-  total_amount?: number // Total order value from sales order
-  order_status?: string // Status from sales order
+  total_amount?: number
+  order_status?: string
   cost_override?: number
   cost_override_reason?: string
   cost_override_by?: string
 }
 
 export interface InventoryItem {
-  id: string // SKU
+  id: string
+  sku: string
   name: string
   type: "raw" | "finished"
   quantity_on_hand: number
   cost_per_unit: number
-  created_at: Date | any
+  reorder_level?: number
+  unit?: string
+  supplier?: string | null
+  location?: string | null
+  description?: string | null
+  created_at: string
 }
 
 export interface InventoryMovement {
   id: string
   item_id: string
+  sku?: string | null
   qty: number
   type: "issue" | "receipt" | "return" | "adjustment"
   related_doc?: string
-  created_at: Date | any
+  notes?: string | null
+  created_at: string
 }
 
 export interface Invoice {
@@ -113,10 +120,11 @@ export interface Invoice {
   amount: number
   tax_amount?: number
   total_amount?: number
-  due_date: Date | any
+  due_date: string | null
   status: "unpaid" | "paid" | "partial" | "overdue"
-  created_at: Date | any
-  paid_at?: Date | any
+  notes?: string | null
+  created_at: string
+  paid_at?: string | null
   items?: any[]
 }
 
@@ -125,8 +133,9 @@ export interface Payment {
   invoice_id: string
   amount: number
   method: string
-  date: Date
-  created_at: Date
+  date: string
+  created_at: string
+  notes?: string | null
 }
 
 // Source data types (from existing website)
@@ -137,8 +146,8 @@ export interface WebsiteOrder {
   items: any[]
   total: number
   processed?: boolean
-  processed_at?: Date
-  created_at: Date
+  processed_at?: string
+  created_at: string
 }
 
 export interface WebsiteReturn {
@@ -147,120 +156,84 @@ export interface WebsiteReturn {
   items: any[]
   reason: string
   processed?: boolean
-  processed_at?: Date
-  created_at: Date
+  processed_at?: string
+  created_at: string
 }
 
 // ─── Manufacturing gap-fill types ────────────────────────────────────────────
 
-/**
- * FIFO inventory cost layer (IAS 2.25).
- * One document per receipt lot. Consumed in chronological order on issue.
- */
 export interface InventoryLayer {
   id: string
   sku: string
-  receiptDate: Date
-  quantityReceived: number
-  quantityRemaining: number  // decremented as material is issued
-  unitCost: number           // cost at time of receipt (EGP)
-  referenceDoc: string       // purchase order / receipt doc ID
-  created_at: Date
+  receipt_date: string
+  quantity_received: number
+  quantity_remaining: number
+  unit_cost: number
+  reference_doc: string
+  purchase_batch_id?: string | null
+  source?: string | null
+  source_id?: string | null
+  created_at: string
 }
 
-/**
- * Scrap event during production.
- * Normal scrap → charged to job (product cost via WIP).
- * Abnormal scrap → period expense (DR Rework & Spoilage 6209).
- */
 export interface ScrapRecord {
   id: string
-  workOrderId: string
+  work_order_id: string
   sku: string
-  quantityScrapped: number
-  unitCost: number
-  totalCost: number
-  salvageValue: number       // recoverable amount credited to Scrap Inventory 1205
-  isAbnormal: boolean        // true → expense, false → charged to job
+  quantity: number
+  unit_cost: number
+  cost: number
   reason: string
-  journalEntryId?: string
-  created_at: Date
-  created_by: string
+  journal_entry_id?: string
+  created_at: string
 }
 
-/**
- * Rework order linked to an original work order.
- * Additional materials and labor consumed to correct defects.
- */
 export interface ReworkOrder {
   id: string
-  originalWorkOrderId: string
+  work_order_id: string
   reason: string
-  additionalMaterialCost: number
-  additionalLaborCost: number
-  additionalOverheadCost: number
-  totalReworkCost: number
-  isNormalRework: boolean    // true → charged to job; false → period expense
-  journalEntryId?: string
+  additional_cost: number
   status: "open" | "completed"
-  created_at: Date
-  completed_at?: Date
-  created_by: string
+  journal_entry_id?: string
+  created_at: string
+  completed_at?: string | null
 }
 
-/**
- * Contract modification record (IFRS 15.18–21).
- * Tracks original vs revised contract values and the accounting treatment applied.
- */
 export interface ChangeOrder {
   id: string
-  contractId: string
+  contract_id: string
   description: string
-  originalContractPrice: number
-  revisedContractPrice: number
-  originalEstimatedCost: number
-  revisedEstimatedCost: number
-  // IFRS 15 treatment applied
-  treatment: "new_contract" | "cumulative_catchup" | "prospective"
-  revenueAdjustment: number  // amount adjusted in the period of change
-  journalEntryId?: string
-  approvedBy: string
-  created_at: Date
+  additional_revenue: number
+  additional_cost: number
+  status: "pending" | "approved" | "rejected"
+  approved_at?: string | null
+  journal_entry_id?: string
+  created_at: string
 }
 
-/**
- * Customer retention / holdback schedule.
- * Tracks amounts withheld by the customer until project sign-off.
- */
 export interface RetentionSchedule {
   id: string
-  contractId: string
-  invoiceId: string
-  customerId: string
-  totalInvoiceAmount: number
-  retentionPercentage: number  // e.g., 10 for 10%
-  retentionAmount: number      // totalInvoiceAmount × retentionPercentage / 100
-  billedAmount: number         // totalInvoiceAmount − retentionAmount
+  contract_id: string
+  invoice_id: string
+  customer_id: string
+  total_invoice_amount: number
+  retention_percentage: number
+  retention_amount: number
+  billed_amount: number
   status: "withheld" | "released" | "disputed"
-  expectedReleaseDate?: Date
-  actualReleaseDate?: Date
-  releaseJournalEntryId?: string
+  expected_release_date?: string | null
+  actual_release_date?: string | null
+  release_journal_entry_id?: string
   created_at: string
 }
 
-/**
- * Budget line for a single account in a single fiscal period.
- * Used for budget vs actual variance reporting.
- */
 export interface BudgetLine {
   id: string
-  fiscalYear: number
-  period: number              // 1–12 (month), or 0 for annual
-  accountCode: string
-  accountName: string
-  budgetedAmount: number      // EGP
-  notes?: string
+  fiscal_year_id: string
+  period_number: number | null
+  account_code: string
+  budget_amount: number
+  actual_amount: number
   created_at: string
-  created_by: string
   updated_at?: string
 }

@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
           overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + item.overheadCost, 0),
           item_costs: costCalculation.itemCosts,
           notes: `Background job: Auto-calculated costs from designs (EGP ${costCalculation.totalEstimatedCost})`,
-          updated_at: new Date()
+          updated_at: new Date().toISOString()
         };
 
         await serviceDb.from(TABLES.WORK_ORDERS).update(updateData).eq("id", workOrderId);

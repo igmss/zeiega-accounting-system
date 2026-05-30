@@ -3,8 +3,8 @@ import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { isDebitNormalBalance } from "@/lib/accounting/account-types"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service"
+import { JournalEntryService } from "@/lib/services/journal-entry-service"
 
- 
 
 export async function POST(request: Request) {
   try {
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
       }
 
       for (const doc of entriesToVoid) {
-        await serviceDb.from(TABLES.JOURNAL_ENTRIES).delete().eq("id", doc.id)
+        await JournalEntryService.voidJournalEntry(doc.id, "system")
       }
 
       const balanceAdjustments: Record<string, { debits: number; credits: number }> = {}
@@ -161,10 +161,10 @@ export async function POST(request: Request) {
             : newTotalCredits - newTotalDebits
           
           await serviceDb.from(TABLES.ACCOUNT_BALANCES).update({
-            totalDebits: newTotalDebits,
-            totalCredits: newTotalCredits,
-            balance,
-            updatedAt: new Date().toISOString()
+            total_debits: newTotalDebits,
+            total_credits: newTotalCredits,
+            closing_balance: balance,
+            updated_at: new Date().toISOString()
           }).eq("id", accountCode)
         }
       }

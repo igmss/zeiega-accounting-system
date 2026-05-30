@@ -73,15 +73,15 @@ export class RetentionService {
     const now = new Date().toISOString()
     const schedule: RetentionSchedule = {
       id: scheduleId,
-      contractId,
-      invoiceId,
-      customerId,
-      totalInvoiceAmount,
-      retentionPercentage: retentionPct,
-      retentionAmount,
-      billedAmount,
+      contract_id: contractId,
+      invoice_id: invoiceId,
+      customer_id: customerId,
+      total_invoice_amount: totalInvoiceAmount,
+      retention_percentage: retentionPct,
+      retention_amount: retentionAmount,
+      billed_amount: billedAmount,
       status: "withheld",
-      expectedReleaseDate,
+      expected_release_date: expectedReleaseDate?.toISOString(),
       created_at: now,
     }
 
@@ -108,7 +108,7 @@ export class RetentionService {
         return { success: false, error: "Retention already released" }
       }
 
-      const amount = schedule.retentionAmount
+      const amount = schedule.retention_amount
       interface JLine { accountCode: string; accountName: string; debit: number; credit: number; description: string }
       const lines: JLine[] = [
         {
@@ -123,7 +123,7 @@ export class RetentionService {
           accountName: getAccountName(ACCOUNT_CODES.RETENTION_RECEIVABLE),
           debit: 0,
           credit: amount,
-          description: `Release retention withheld on Invoice ${schedule.invoiceId}`,
+          description: `Release retention withheld on Invoice ${schedule.invoice_id}`,
         },
       ]
 
@@ -131,7 +131,7 @@ export class RetentionService {
         JournalEntryType.RETENTION_RELEASE,
         lines,
         scheduleId,
-        `Retention release: EGP ${amount} from Invoice ${schedule.invoiceId}`,
+        `Retention release: EGP ${amount} from Invoice ${schedule.invoice_id}`,
         userId
       )
 
@@ -139,8 +139,8 @@ export class RetentionService {
 
       const { error: updErr } = await getServiceSupabase().from(this.TABLE).update({
         status: "released",
-        actualReleaseDate: new Date().toISOString(),
-        releaseJournalEntryId: result.entryId,
+        actual_release_date: new Date().toISOString(),
+        release_journal_entry_id: result.entryId,
       }).eq("id", scheduleId)
       if (updErr) throw updErr
 
@@ -168,7 +168,7 @@ export class RetentionService {
 
   static async getTotalRetentionBalance(): Promise<number> {
     const schedules = await this.getOutstandingRetentions()
-    return schedules.reduce((sum, s) => sum + s.retentionAmount, 0)
+    return schedules.reduce((sum, s) => sum + s.retention_amount, 0)
   }
 
   static async getRetentionsDueForRelease(daysAhead: number = 30): Promise<RetentionSchedule[]> {
@@ -176,7 +176,7 @@ export class RetentionService {
     cutoff.setDate(cutoff.getDate() + daysAhead)
     const outstanding = await this.getOutstandingRetentions()
     return outstanding.filter(
-      s => s.expectedReleaseDate && new Date(s.expectedReleaseDate) <= cutoff
+      s => s.expected_release_date && new Date(s.expected_release_date) <= cutoff
     )
   }
 }

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server"
 import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
+import { requireAuth, requirePermission } from "@/lib/auth"
 
 export async function GET(request: Request) {
   try {
+    const auth = await requireAuth()
+    if (!auth.authenticated) return auth.response
+
     const { searchParams } = new URL(request.url)
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
     const cursor = searchParams.get("cursor")
@@ -59,6 +63,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requirePermission("payments:create")
+    if (!auth.authorized) return auth.response
+
     const body = await request.json()
     const {
       amount,
@@ -166,9 +173,15 @@ export async function POST(request: Request) {
       created_at: new Date().toISOString()
     }
 
-    await getServiceClient()
+    const { error: paymentError } = await getServiceClient()
       .from(TABLES.PAYMENTS)
       .insert(payment)
+      .select()
+
+    if (paymentError) {
+      console.error("Failed to insert payment after journal entry creation:", paymentError)
+      return NextResponse.json({ error: "Failed to create payment record. Journal entry was created and may need manual cleanup.", journalEntryId: jeResult.entryId }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true, paymentId, ...payment })
   } catch (error) {

@@ -19,7 +19,7 @@ export class ManufacturingAccountingService {
             total_cost: 0,
             estimated_cost: 0,
             status: "pending",
-            created_at: new Date(),
+            created_at: new Date().toISOString(),
         }
 
         await getServiceSupabase()

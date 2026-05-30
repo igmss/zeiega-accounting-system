@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button"
 import { DollarSign, Package, TrendingUp, Clock, AlertCircle, CheckCircle, Wrench } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 import { useEffect, useState } from "react"
-// Removed direct import of AccountingService - now using API route
 
 interface DashboardData {
   kpiData: {
@@ -53,10 +53,8 @@ export function DashboardOverview() {
         }
         const apiData = await response.json()
 
-        // Use data from API route
         const { kpiData, monthlyRevenue, topCustomers, recentOrders, inventoryAlerts, workOrderStatus } = apiData
 
-        // Transform API data to match component interface
         const orderStatusData = [
           { name: "Pending", value: workOrderStatus?.pending || 0, color: "#f97316" },
           { name: "In Production", value: workOrderStatus?.in_progress || 0, color: "#164e63" },
@@ -66,14 +64,14 @@ export function DashboardOverview() {
 
         const recentOrdersData = recentOrders?.slice(0, 4).map((order: any) => ({
           id: order.id,
-          customer: order.customerName,
+          customer: order.customer_name,
           amount: order.total,
           status: order.status,
         })) || []
 
-        const activeWorkOrders = workOrderStatus?.active?.slice(0, 3).map((wo: any) => ({
+        const activeWorkOrders = workOrderStatus?.slice(0, 3).map((wo: any) => ({
           id: wo.id,
-          salesOrder: wo.salesOrderId,
+          salesOrder: wo.sales_order_id,
           status: wo.status,
           completion: wo.status === "completed" ? 100 : wo.completionPercentage ?? 0,
         })) || []
@@ -99,10 +97,26 @@ export function DashboardOverview() {
 
     loadDashboardData()
 
-    // Auto-refresh every 30 seconds to get new orders
-    const interval = setInterval(loadDashboardData, 30000)
+    const salesChannel = supabase
+      .channel("dashboard-sales-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sales_orders" },
+        () => loadDashboardData()
+      )
+      .subscribe()
 
-    return () => clearInterval(interval)
+    const woChannel = supabase
+      .channel("dashboard-wo-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "work_orders" },
+        () => loadDashboardData()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(salesChannel)
+      supabase.removeChannel(woChannel)
+    }
   }, [])
 
   if (loading) {

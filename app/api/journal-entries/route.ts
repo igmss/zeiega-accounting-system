@@ -20,11 +20,22 @@ export async function GET(request: NextRequest) {
         const endDate = searchParams.get("endDate")
         const type = searchParams.get("type")
 
-        const { data, error } = await getServiceClient()
+        let query = getServiceClient()
             .from(TABLES.JOURNAL_ENTRIES)
             .select("*")
             .order("date", { ascending: false })
-            .limit(limit)
+
+        if (startDate) {
+            query = query.gte("date", startDate)
+        }
+        if (endDate) {
+            query = query.lte("date", endDate)
+        }
+        if (type) {
+            query = query.eq("type", type)
+        }
+
+        const { data, error } = await query.limit(limit)
 
         if (error) throw error
 
@@ -37,24 +48,10 @@ export async function GET(request: NextRequest) {
             }
         })
 
-        // Filter by date range if specified
-        let filteredEntries = entries
-        if (startDate) {
-            const start = new Date(startDate)
-            filteredEntries = filteredEntries.filter((e: any) => new Date(e.date) >= start)
-        }
-        if (endDate) {
-            const end = new Date(endDate)
-            filteredEntries = filteredEntries.filter((e: any) => new Date(e.date) <= end)
-        }
-        if (type) {
-            filteredEntries = filteredEntries.filter((e: any) => e.type === type)
-        }
-
         return NextResponse.json({
             success: true,
-            entries: filteredEntries,
-            count: filteredEntries.length,
+            entries,
+            count: entries.length,
         })
     } catch (error) {
         console.error("Error fetching journal entries:", error instanceof Error ? error.message : error)

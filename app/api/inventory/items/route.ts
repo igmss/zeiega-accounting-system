@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
     let query = getServiceClient()
       .from(TABLES.INVENTORY_ITEMS)
       .select("*")
-      .order("name", { ascending: true });
+      .order("name", { ascending: true })
+      .limit(1000);
     
     if (type) {
       query = query.eq("type", type);

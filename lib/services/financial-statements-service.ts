@@ -88,14 +88,14 @@ export class FinancialStatementsService {
     ): Promise<number> {
         try {
             if (!startDate && !endDate) {
-                const { data: balDoc } = await getServiceSupabase().from(TABLES.ACCOUNT_BALANCES).select("balance").eq("id", accountCode).single()
+                const { data: balDoc } = await getServiceSupabase().from(TABLES.ACCOUNT_BALANCES).select("closing_balance").eq("account_code", accountCode).single()
                 if (balDoc) {
-                    return balDoc.balance || 0
+                    return balDoc.closing_balance || 0
                 }
             }
 
             let query = getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-                .select("*")
+                .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
                 .contains("account_ids", [accountCode])
 
             if (startDate) {
@@ -112,12 +112,11 @@ export class FinancialStatementsService {
             let totalCredits = 0
 
             for (const entry of (rows || [])) {
-                if (entry.entries && Array.isArray(entry.entries)) {
-                    for (const line of entry.entries) {
-                        if (line.account_id === accountCode) {
-                            totalDebits += line.debit || 0
-                            totalCredits += line.credit || 0
-                        }
+                const lines = (entry as any).journal_entry_lines || []
+                for (const line of lines) {
+                    if (line.account_code === accountCode) {
+                        totalDebits += line.debit || 0
+                        totalCredits += line.credit || 0
                     }
                 }
             }
@@ -381,13 +380,14 @@ export class FinancialStatementsService {
     static async generateCashFlowStatement(startDate: Date, endDate: Date) {
         const balAsOf = async (code: string, asOf: Date) => {
             const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-                .select("*")
+                .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
                 .contains("account_ids", [code])
                 .lte("date", asOf.toISOString())
             let d = 0, c = 0
-            for (const doc of (snap || [])) {
-                for (const line of doc.entries || []) {
-                    if (line.account_id === code) { d += line.debit || 0; c += line.credit || 0 }
+            for (const entry of (snap || [])) {
+                const lines = (entry as any).journal_entry_lines || []
+                for (const line of lines) {
+                    if (line.account_code === code) { d += line.debit || 0; c += line.credit || 0 }
                 }
             }
             const isDebit = isDebitNormalBalance(code)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +14,7 @@ import { Search, Plus, Eye, Play, CheckCircle } from "lucide-react"
 import { SalesOrderDetails } from "./sales-order-details"
 import { ProcessOrdersDialog } from "./process-orders-dialog"
 import { formatCurrency } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
 export function SalesOrdersList() {
@@ -24,6 +25,7 @@ export function SalesOrdersList() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
+  const inFlightOrderIds = useRef<Set<string>>(new Set())
   const [newManualOrder, setNewManualOrder] = useState({
     customer_name: "",
     customer_email: "",
@@ -48,7 +50,6 @@ export function SalesOrdersList() {
     notes: ""
   })
 
-  // Fetch sales orders from Firestore
   useEffect(() => {
     async function fetchSalesOrders() {
       try {
@@ -65,13 +66,18 @@ export function SalesOrdersList() {
         setLoading(false)
       }
     }
-    
+
     fetchSalesOrders()
 
-    // Auto-refresh every 30 seconds to get new orders
-    const interval = setInterval(fetchSalesOrders, 30000)
+    const channel = supabase
+      .channel("sales-orders-changes")
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sales_orders" },
+        () => fetchSalesOrders()
+      )
+      .subscribe()
 
-    return () => clearInterval(interval)
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   useEffect(() => {
@@ -82,7 +88,7 @@ export function SalesOrdersList() {
         (order) =>
           order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
           order.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          order.website_order_id.toLowerCase().includes(searchTerm.toLowerCase()),
+          order.website_order_id?.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }
 
@@ -109,8 +115,8 @@ export function SalesOrdersList() {
   }
 
   const handleStartProduction = async (orderId: string) => {
+    inFlightOrderIds.current.add(orderId)
     try {
-      // Update status via API for manual orders
       const response = await fetch('/api/sales-orders', {
         method: 'PUT',
         headers: {
@@ -133,12 +139,14 @@ export function SalesOrdersList() {
       }
     } catch (error) {
       toast.error("Network error — failed to update order status")
+    } finally {
+      inFlightOrderIds.current.delete(orderId)
     }
   }
 
   const handleCompleteOrder = async (orderId: string) => {
+    inFlightOrderIds.current.add(orderId)
     try {
-      // Call complete workflow API
       const response = await fetch('/api/workflow/complete-order', {
         method: 'POST',
         headers: {
@@ -152,13 +160,11 @@ export function SalesOrdersList() {
       if (response.ok) {
         const result = await response.json()
         console.log('Order completed:', result)
-        
-        // Update local state
+
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "completed" as const } : order)),
         )
-        
-        // Show success message
+
         toast.success('Order completed!')
       } else {
         console.error('Failed to complete order')
@@ -167,12 +173,13 @@ export function SalesOrdersList() {
     } catch (error) {
       console.error('Error completing order:', error)
       toast.error('Failed to complete order')
+    } finally {
+      inFlightOrderIds.current.delete(orderId)
     }
   }
 
   const handleCreateManualOrder = async () => {
     try {
-      // Calculate total before sending
       const calculatedTotal = newManualOrder.items[0].quantity * newManualOrder.items[0].unit_price
       const orderToCreate = {
         ...newManualOrder,
@@ -191,7 +198,6 @@ export function SalesOrdersList() {
         throw new Error('Failed to create manual order')
       }
 
-      // Reset form
       setNewManualOrder({
         customer_name: "",
         customer_email: "",
@@ -304,16 +310,16 @@ export function SalesOrdersList() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {order.items
-                        .map((item: any) => `${item.qty}x ${item.name || item.sku}`)
+                        .map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`)
                         .join(", ")
                         .slice(0, 30)}
-                      {order.items.map((item: any) => `${item.qty}x ${item.name || item.sku}`).join(", ").length > 30 ? "..." : ""}
+                      {order.items.map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`).join(", ").length > 30 ? "..." : ""}
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{formatCurrency(order.total_amount ?? order.total ?? 0)}</TableCell>
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
                   <TableCell>
-                    {order.created_at 
+                    {order.created_at
                       ? ((order.created_at as any).toDate ? (order.created_at as any).toDate() : new Date(order.created_at)).toLocaleDateString()
                       : 'N/A'
                     }
@@ -335,13 +341,23 @@ export function SalesOrdersList() {
                       </Dialog>
 
                       {order.status === "pending" && order.order_source === "manual" && (
-                        <Button size="sm" onClick={() => handleStartProduction(order.id)} aria-label="Start production">
+                        <Button
+                          size="sm"
+                          onClick={() => handleStartProduction(order.id)}
+                          disabled={inFlightOrderIds.current.has(order.id)}
+                          aria-label="Start production"
+                        >
                           <Play className="h-4 w-4" />
                         </Button>
                       )}
 
                       {order.status === "producing" && order.order_source === "manual" && (
-                        <Button size="sm" onClick={() => handleCompleteOrder(order.id)} aria-label="Complete order">
+                        <Button
+                          size="sm"
+                          onClick={() => handleCompleteOrder(order.id)}
+                          disabled={inFlightOrderIds.current.has(order.id)}
+                          aria-label="Complete order"
+                        >
                           <CheckCircle className="h-4 w-4" />
                         </Button>
                       )}

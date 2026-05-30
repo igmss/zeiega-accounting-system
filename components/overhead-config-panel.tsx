@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { formatCurrency, formatNumber } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -85,8 +85,15 @@ export function OverheadConfigPanel() {
       const res = await fetch(`/api/overhead/config?fiscalYear=${fiscalYear}`)
       const data = await res.json()
       if (data.configs) setConfigs(data.configs)
-    } catch {}
+    } catch {
+      console.error("Failed to fetch overhead configs")
+    }
   }
+
+  useEffect(() => {
+    fetchConfigs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const applyOverhead = async (workOrderId: string, actualActivity: number) => {
     try {
