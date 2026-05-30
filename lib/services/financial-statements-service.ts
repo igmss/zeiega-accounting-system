@@ -88,9 +88,14 @@ export class FinancialStatementsService {
     ): Promise<number> {
         try {
             if (!startDate && !endDate) {
-                const { data: balDoc } = await getServiceSupabase().from(TABLES.ACCOUNT_BALANCES).select("closing_balance").eq("account_code", accountCode).single()
-                if (balDoc) {
-                    return balDoc.closing_balance || 0
+                const { data: balRows } = await getServiceSupabase()
+                    .from(TABLES.ACCOUNT_BALANCES)
+                    .select("closing_balance")
+                    .eq("account_code", accountCode)
+                    .order("period_end", { ascending: false })
+                    .limit(1)
+                if (balRows && balRows.length > 0) {
+                    return balRows[0].closing_balance || 0
                 }
             }
 
