@@ -87,51 +87,38 @@ export class FinancialStatementsService {
         endDate?: Date
     ): Promise<number> {
         try {
-            if (!startDate && !endDate) {
-                const { data: balRows } = await getServiceSupabase()
-                    .from(TABLES.ACCOUNT_BALANCES)
-                    .select("closing_balance")
-                    .eq("account_code", accountCode)
-                    .order("period_end", { ascending: false })
-                    .limit(1)
-                if (balRows && balRows.length > 0) {
-                    return balRows[0].closing_balance || 0
-                }
+            // Direct query on journal_entry_lines (most reliable)
+            let query = getServiceSupabase().from(TABLES.JOURNAL_ENTRY_LINES)
+                .select("debit, credit, journal_entry_id")
+                .eq("account_code", accountCode)
+
+            if (startDate || endDate) {
+                const { data: jeIds } = await getServiceSupabase()
+                    .from(TABLES.JOURNAL_ENTRIES)
+                    .select("id")
+                    .gte("date", startDate ? startDate.toISOString().split("T")[0] : "2000-01-01")
+                    .lte("date", endDate ? endDate.toISOString().split("T")[0] : "2099-12-31")
+                
+                const ids = (jeIds || []).map((j: any) => j.id)
+                if (ids.length === 0) return 0
+                query = query.in("journal_entry_id", ids)
             }
 
-            let query = getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-                .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
-                .contains("account_ids", [accountCode])
-
-            if (startDate) {
-                query = query.gte("date", startDate.toISOString())
-            }
-            if (endDate) {
-                query = query.lte("date", endDate.toISOString())
-            }
-
-            const { data: rows, error } = await query
-            if (error) throw error
+            const { data: lines, error } = await query
+            if (error) { console.error("Balance query error:", error); return 0 }
 
             let totalDebits = 0
             let totalCredits = 0
-
-            for (const entry of (rows || [])) {
-                const lines = (entry as any).journal_entry_lines || []
-                for (const line of lines) {
-                    if (line.account_code === accountCode) {
-                        totalDebits += line.debit || 0
-                        totalCredits += line.credit || 0
-                    }
-                }
+            for (const line of (lines || [])) {
+                totalDebits += line.debit || 0
+                totalCredits += line.credit || 0
             }
 
             const isDebit = isDebitNormalBalance(accountCode)
             return isDebit ? totalDebits - totalCredits : totalCredits - totalDebits
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            console.error(`Error getting balance for ${accountCode}:`, message)
-            throw new Error(`Failed to get balance for account ${accountCode}: ${message}`)
+            console.error(`Error getting balance for ${accountCode}:`, error)
+            return 0
         }
     }
 
@@ -314,25 +301,34 @@ export class FinancialStatementsService {
 
         const asOfISO = asOfDate.toISOString().split("T")[0]
 
-        const { data: entries, error } = await getServiceSupabase()
+        // Fetch JE IDs up to the date
+        const { data: jeIds } = await getServiceSupabase()
             .from(TABLES.JOURNAL_ENTRIES)
-            .select(`id, date, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit)`)
+            .select("id")
             .lte("date", asOfISO)
+
+        const ids = (jeIds || []).map((j: any) => j.id)
+        if (ids.length === 0) {
+            return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: true }
+        }
+
+        // Fetch all lines for those entries
+        const { data: lines, error } = await getServiceSupabase()
+            .from(TABLES.JOURNAL_ENTRY_LINES)
+            .select("account_code, debit, credit")
+            .in("journal_entry_id", ids)
 
         if (error) {
             console.error("Trial balance query error:", error)
-            // Fallback: return empty
+            return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: true }
         }
 
         const balances: Record<string, { debits: number; credits: number }> = {}
-        for (const entry of (entries || [])) {
-            const lines = (entry as any).journal_entry_lines || []
-            for (const line of lines) {
-                const code = line.account_code
-                if (!balances[code]) balances[code] = { debits: 0, credits: 0 }
-                balances[code].debits += line.debit || 0
-                balances[code].credits += line.credit || 0
-            }
+        for (const line of (lines || [])) {
+            const code = line.account_code
+            if (!balances[code]) balances[code] = { debits: 0, credits: 0 }
+            balances[code].debits += line.debit || 0
+            balances[code].credits += line.credit || 0
         }
 
         for (const [code, bal] of Object.entries(balances)) {
@@ -354,7 +350,6 @@ export class FinancialStatementsService {
         }
 
         accounts.sort((a, b) => a.code.localeCompare(b.code))
-
         return { asOfDate: asOfDate.toISOString(), accounts, totalDebits, totalCredits, isBalanced: Math.abs(totalDebits - totalCredits) < 0.01 }
     }
 
