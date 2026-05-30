@@ -29,11 +29,11 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 
 interface ChartAccount {
-  id: string
+  code: string
   name: string
   type: string
   balance: number
-  parent_id?: string | null
+  parent_code?: string | null
   isActive?: boolean
   deprecatedReason?: string
 }
@@ -45,7 +45,7 @@ export function ChartOfAccountsManagement() {
   const [error, setError] = useState<string | null>(null)
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false)
   const [newAccount, setNewAccount] = useState({
-    id: "",
+    code: "",
     name: "",
     type: "",
     balance: 0,
@@ -92,7 +92,7 @@ export function ChartOfAccountsManagement() {
 
       // Reset form
       setNewAccount({
-        id: "",
+        code: "",
         name: "",
         type: "",
         balance: 0,
@@ -140,7 +140,7 @@ export function ChartOfAccountsManagement() {
 
   const filteredAccounts = accounts.filter(
     (account) =>
-      account.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      account.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       account.name.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
@@ -277,10 +277,10 @@ export function ChartOfAccountsManagement() {
                 </TableHeader>
                 <TableBody>
                   {filteredAccounts.map((account) => (
-                    <TableRow key={account.id} className={account.isActive === false ? "opacity-60 bg-muted/30" : ""}>
+                    <TableRow key={account.code} className={account.isActive === false ? "opacity-60 bg-muted/30" : ""}>
                       <TableCell className="font-medium">
                         <span className={account.isActive === false ? "line-through text-muted-foreground" : ""}>
-                          {account.id}
+                          {account.code}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -320,8 +320,8 @@ export function ChartOfAccountsManagement() {
               </Label>
               <Input
                 id="account-id"
-                value={newAccount.id}
-                onChange={(e) => setNewAccount({...newAccount, id: e.target.value})}
+                value={newAccount.code}
+                onChange={(e) => setNewAccount({...newAccount, code: e.target.value})}
                 className="col-span-3"
                 placeholder="e.g., CASH001"
               />
@@ -385,7 +385,7 @@ export function ChartOfAccountsManagement() {
             <Button variant="outline" onClick={() => setIsAddAccountOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddAccount} disabled={!newAccount.id || !newAccount.name || !newAccount.type}>
+            <Button onClick={handleAddAccount} disabled={!newAccount.code || !newAccount.name || !newAccount.type}>
               Add Account
             </Button>
           </DialogFooter>
