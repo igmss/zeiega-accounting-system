@@ -314,10 +314,10 @@ export class FinancialStatementsService {
 
         const asOfISO = asOfDate.toISOString().split("T")[0]
 
-        const { data: lines, error } = await getServiceSupabase()
-            .from(TABLES.JOURNAL_ENTRY_LINES)
-            .select(`account_code, account_name, debit, credit, journal_entries!inner(date)`)
-            .lte("journal_entries.date", asOfISO)
+        const { data: entries, error } = await getServiceSupabase()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select(`id, date, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit)`)
+            .lte("date", asOfISO)
 
         if (error) {
             console.error("Trial balance query error:", error)
@@ -325,14 +325,14 @@ export class FinancialStatementsService {
         }
 
         const balances: Record<string, { debits: number; credits: number }> = {}
-        for (const line of (lines || [])) {
-            const jeDate = (line as any).journal_entries?.date
-            if (!jeDate) continue
-
-            const code = line.account_code
-            if (!balances[code]) balances[code] = { debits: 0, credits: 0 }
-            balances[code].debits += line.debit || 0
-            balances[code].credits += line.credit || 0
+        for (const entry of (entries || [])) {
+            const lines = (entry as any).journal_entry_lines || []
+            for (const line of lines) {
+                const code = line.account_code
+                if (!balances[code]) balances[code] = { debits: 0, credits: 0 }
+                balances[code].debits += line.debit || 0
+                balances[code].credits += line.credit || 0
+            }
         }
 
         for (const [code, bal] of Object.entries(balances)) {
