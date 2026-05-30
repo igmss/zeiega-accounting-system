@@ -17,7 +17,7 @@ export interface StandardCost {
   budgetedActivity: number
   standardFOHRate: number
   updatedAt: string
-  updatedBy: string
+  updatedBy?: string | null
 }
 
 export interface JobVariance {

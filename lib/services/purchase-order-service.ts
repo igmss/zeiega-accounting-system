@@ -28,7 +28,7 @@ export interface PurchaseOrder {
     status: "draft" | "sent" | "confirmed" | "partial" | "received" | "cancelled"
     created_at: string
     updated_at: string
-    created_by: string
+    created_by?: string | null
     approved_by?: string
     approved_at?: string
 }
