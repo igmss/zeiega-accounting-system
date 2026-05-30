@@ -176,7 +176,7 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",
-            "connect-src 'self'",
+            "connect-src 'self' https://rczjehwxqjfdpcjfjhhn.supabase.co wss://rczjehwxqjfdpcjfjhhn.supabase.co",
             "object-src 'none'",
             "base-uri 'self'",
             "frame-ancestors 'none'",
