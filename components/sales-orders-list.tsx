@@ -39,7 +39,6 @@ export function SalesOrdersList() {
   const [newManualOrder, setNewManualOrder] = useState({
     customer_name: "",
     customer_email: "",
-    payment_method: "manual",
     items: [{
       product_name: "",
       product_id: "",
@@ -492,18 +491,6 @@ export function SalesOrdersList() {
                 </Badge>
               </div>
             )}
-            <div>
-              <Label>Payment Method</Label>
-                <Select value={newManualOrder.payment_method} onValueChange={(v) => setNewManualOrder({...newManualOrder, payment_method: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank">Bank Transfer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
             <div>
               <Label htmlFor="notes">Notes</Label>
               <Textarea id="notes" value={newManualOrder.notes} onChange={(e) => setNewManualOrder({...newManualOrder, notes: e.target.value})} placeholder="Enter order notes" />
