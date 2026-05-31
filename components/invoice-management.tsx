@@ -89,10 +89,10 @@ export function InvoiceManagement() {
     .filter((inv) => inv.status === "paid")
     .reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
   const unpaidAmount = invoices
-    .filter((inv) => inv.status === "unpaid" || inv.status === "partial" || inv.status === "overdue")
-    .reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+    .filter((inv) => inv.status !== "paid")
+    .reduce((sum, invoice) => sum + (invoice.total_amount || invoice.amount || 0), 0)
   const overdueCount = invoices.filter(
-    (inv) => inv.status === "overdue" || (inv.status === "unpaid" && inv.due_date && new Date() > new Date(inv.due_date || new Date())),
+    (inv) => inv.status === "overdue" || (inv.status !== "paid" && inv.due_date && new Date() > new Date(inv.due_date || new Date())),
   ).length
 
   return (
@@ -221,7 +221,7 @@ export function InvoiceManagement() {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{formatCurrency(invoice.total_amount || 0)}</div>
+                       <div className="font-medium">{formatCurrency(invoice.total_amount || invoice.amount || 0)}</div>
                       <div className="text-sm text-muted-foreground">
                         {formatCurrency(invoice.amount || invoice.total_amount || 0)} + {formatCurrency(invoice.tax_amount || 0)} tax
                       </div>

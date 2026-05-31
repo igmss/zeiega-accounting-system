@@ -62,3 +62,10 @@ ALTER TABLE public.bom
   ADD COLUMN IF NOT EXISTS total_labor_cost     numeric(15,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS total_overhead_cost  numeric(15,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS total_cost           numeric(15,2) DEFAULT 0;
+
+-- Extend invoices table with payment tracking fields
+ALTER TABLE public.invoices
+  ADD COLUMN IF NOT EXISTS paid_amount      numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_payment_at  timestamptz,
+  ADD COLUMN IF NOT EXISTS tax_amount       numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_amount     numeric(15,2) DEFAULT 0;
