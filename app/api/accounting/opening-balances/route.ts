@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
+import { getAccountName } from "@/lib/accounting/account-types"
 
 export async function POST(request: Request) {
     try {
@@ -8,173 +9,83 @@ export async function POST(request: Request) {
         if (!auth.authorized) return auth.response
 
         const body = await request.json()
-        const { 
-            date, 
-            cashOnHand, 
-            bankAccounts, 
-            receivables,
-            inventory,
-            fixedAssets,
-            digitalAssets,
-            partnerCapital,
-            rebalancingEnabled,
-            liabilities,
-            loans, 
-            otherLiabilities 
-        } = body
+        const { date, accounts } = body
 
         if (!date) {
             return NextResponse.json({ error: "Date is required" }, { status: 400 })
         }
 
-        const journalEntries: string[] = []
-        const now = new Date()
-        const effectiveDate = new Date(date)
         const userId = auth.user?.id || null
+        const effectiveDate = new Date(date)
 
-        const recordEntry = async (idPrefix: string, description: string, lines: { account_id: string, debit: number, credit: number, description: string }[]) => {
-            const result = await EnhancedAccountingService.createJournalEntry(
-                JournalEntryType.GENERAL,
-                lines.map(l => ({
-                    accountCode: l.account_id,
-                    accountName: l.account_id,
-                    debit: l.debit,
-                    credit: l.credit,
-                    description: l.description,
-                })),
-                idPrefix,
-                description,
-                userId,
-                effectiveDate
-            )
-            if (result.success && result.entryId) {
-                journalEntries.push(result.entryId)
-            }
-            return result
-        }
-
-        // OB-01: Ahmed's Machine Contribution (Part of his total capital)
-        // If Ahmed's capital is provided, we assume 47,400 is for machines as per OB-01
-        if (partnerCapital?.ahmed >= 47400) {
-            await recordEntry("OB-01", "Ahmed's Machine Contribution (2x Over Machines)", [
-                { account_id: "1303", debit: 47400, credit: 0, description: "Contribution of 2x Over Machines" },
-                { account_id: "3011", debit: 0, credit: 47400, description: "Capital contribution - Ahmed" }
-            ])
-        } else if (partnerCapital?.ahmed > 0) {
-             // Fallback if less than machine value
-             await recordEntry("OB-01", "Ahmed's Initial Contribution", [
-                { account_id: "1303", debit: partnerCapital.ahmed, credit: 0, description: "Initial asset contribution" },
-                { account_id: "3011", debit: 0, credit: partnerCapital.ahmed, description: "Capital contribution - Ahmed" }
-            ])
-        }
-
-        // OB-02: Ibrahim's Cash Contribution
-        if (partnerCapital?.ibrahim > 0) {
-            // We'll record a portion as cash contribution if we have a split, 
-            // but for simple setup we'll record his entered capital as initial cash DR 1101
-            // Note: OB-05 will handle some of Ibrahim's capital too, so we'll adjust later or record simply.
-            // According to OB entries, Ibrahim initially contributes 70,000 cash.
-            const ibrahimCash = Math.min(partnerCapital.ibrahim, 70000)
-            if (ibrahimCash > 0) {
-                await recordEntry("OB-02", "Ibrahim's Cash Contribution", [
-                    { account_id: "1101", debit: ibrahimCash, credit: 0, description: "Cash injection" },
-                    { account_id: "3012", debit: 0, credit: ibrahimCash, description: "Capital contribution - Ibrahim" }
-                ])
-            }
-        }
-
-        // OB-03: Fathy's Cash Contribution
-        if (partnerCapital?.fathy > 0) {
-            await recordEntry("OB-03", "Fathy's Cash Contribution", [
-                { account_id: "1101", debit: partnerCapital.fathy, credit: 0, description: "Initial cash contribution" },
-                { account_id: "3013", debit: 0, credit: partnerCapital.fathy, description: "Capital contribution - Fathy" }
-            ])
-        }
-
-        // OB-04: Purchase Physical Assets from Cash Pool
-        // We look at entered fixedAssets and subtract OB-01 machine if it exists
-        const machineryValue = (fixedAssets?.machinery || 0)
-        const equipmentValue = (fixedAssets?.equipment || 0)
-        const officeValue = (fixedAssets?.office || 0)
-        const computersValue = (fixedAssets?.vehicles || 0) // Vehicles was used for Computers in UI? No, let's use UI field names
-        
-        // Use exact values from OB-04 description if they are provided in fixedAssets
-        const ob04Lines = []
-        if (fixedAssets?.machinery > 0) ob04Lines.push({ account_id: "1301", debit: fixedAssets.machinery, credit: 0, description: "Sewing Machines Purchase" })
-        if (fixedAssets?.equipment > 0) ob04Lines.push({ account_id: "1303", debit: fixedAssets.equipment, credit: 0, description: "Production Equipment Purchase" })
-        if (fixedAssets?.office > 0) ob04Lines.push({ account_id: "1304", debit: fixedAssets.office, credit: 0, description: "Office Equipment Purchase" })
-        if (fixedAssets?.furniture > 0) ob04Lines.push({ account_id: "1306", debit: fixedAssets.furniture, credit: 0, description: "Furniture & Fixtures" })
-        if (fixedAssets?.vehicles > 0) ob04Lines.push({ account_id: "1305", debit: fixedAssets.vehicles, credit: 0, description: "Computers & Tablets" })
-        
-        const totalPurchase = ob04Lines.reduce((sum, l) => sum + l.debit, 0)
-        if (totalPurchase > 0) {
-            ob04Lines.push({ account_id: "1101", debit: 0, credit: totalPurchase, description: "Payment from cash pool" })
-            await recordEntry("OB-04", "Asset Purchases from Cash Pool", ob04Lines)
-        }
-
-        // OB-05: Website & App as Intangible Asset
-        if (digitalAssets?.domains > 0 || digitalAssets?.software > 0) {
-            const erpVal = (digitalAssets.domains || 0) + (digitalAssets.software || 0)
-            await recordEntry("OB-05", "Website & App (Intangible Assets)", [
-                { account_id: "1402", debit: erpVal, credit: 0, description: "ERP/Systems Valuation" },
-                { account_id: "3011", debit: 0, credit: erpVal * 0.3, description: "Ahmed 30% Contribution" },
-                { account_id: "3012", debit: 0, credit: erpVal * 0.7, description: "Ibrahim 70% Contribution" }
-            ])
-        }
-
-        // OB-06: Capital Rebalancing (Selective)
-        if (rebalancingEnabled) {
-            // As per OB-06 example
-            await recordEntry("OB-06", "Partner Capital Rebalancing (60/25/15 Alignment)", [
-                { account_id: "3012", debit: 154400, credit: 0, description: "Rebalance Capital" },
-                { account_id: "3013", debit: 78640, credit: 0, description: "Rebalance Capital" },
-                { account_id: "3011", debit: 0, credit: 233040, description: "Rebalance Capital to Ahmed" }
-            ])
-        }
-
-        // 7. Record remaining balances (Inventory, Receivables, Liabilities, Loans)
-        const genericLines = []
-        if (receivables > 0) genericLines.push({ account_id: "1110", debit: receivables, credit: 0, description: "Accounts Receivable" })
-        if (inventory?.rawMaterials > 0) genericLines.push({ account_id: "1201", debit: inventory.rawMaterials, credit: 0, description: "Raw Materials" })
-        if (inventory?.wip > 0) genericLines.push({ account_id: "1210", debit: inventory.wip, credit: 0, description: "WIP" })
-        if (inventory?.finishedGoods > 0) genericLines.push({ account_id: "1220", debit: inventory.finishedGoods, credit: 0, description: "Finished Goods" })
-        
-        if (liabilities?.accountsPayable > 0) genericLines.push({ account_id: "2101", debit: 0, credit: liabilities.accountsPayable, description: "Accounts Payable" })
-        if (liabilities?.accruedExpenses > 0) genericLines.push({ account_id: "2140", debit: 0, credit: liabilities.accruedExpenses, description: "Accrued Expenses" })
-        
-        if (Array.isArray(loans)) {
-            for (const loan of loans) {
-                if (loan.amount > 0) genericLines.push({ account_id: loan.accountId, debit: 0, credit: loan.amount, description: loan.name })
-            }
-        }
-
-        // Plug remaining difference to Retained Earnings or Suspense to ensure balance
-        let drTotal = genericLines.reduce((sum, l) => sum + l.debit, 0)
-        let crTotal = genericLines.reduce((sum, l) => sum + l.credit, 0)
-        
-        if (Math.abs(drTotal - crTotal) > 0.01) {
-            const diff = crTotal - drTotal
-            genericLines.push({ 
-                account_id: diff > 0 ? "1199" : "3100", // 1199 Suspense or 3100 Retained Earnings
-                debit: diff > 0 ? diff : 0,
-                credit: diff < 0 ? Math.abs(diff) : 0,
-                description: "Opening Balance Cleanup / Rounding" 
+        // If accounts array is provided (simpler format), use it directly
+        if (accounts && Array.isArray(accounts) && accounts.length >= 2) {
+            const lines = accounts.map((a: any) => {
+                const code = a.code || a.account_id
+                const balance = a.balance || 0
+                return {
+                    accountCode: code,
+                    accountName: a.name || getAccountName(code) || code,
+                    debit: balance > 0 ? balance : 0,
+                    credit: balance < 0 ? Math.abs(balance) : 0,
+                    description: a.description || `Opening balance`,
+                }
             })
+
+            const result = await EnhancedAccountingService.createJournalEntry(
+                JournalEntryType.GENERAL, lines, "OB-INIT",
+                `Opening Balances as of ${date}`, userId, effectiveDate
+            )
+
+            if (!result.success) {
+                return NextResponse.json({ error: result.error }, { status: 400 })
+            }
+
+            return NextResponse.json({ success: true, message: "Opening balances recorded", entryId: result.entryId })
         }
 
-        if (genericLines.length > 0) {
-            await recordEntry("OB-GEN", "Miscellaneous Opening Balances", genericLines)
+        // Legacy format: cashOnHand, bankAccounts, partnerCapital, etc.
+        const { cashOnHand, bankAccounts, receivables, inventory, fixedAssets, partnerCapital } = body
+        const jeLines: any[] = []
+        const add = (code: string, name: string, dr: number, cr: number, desc: string) => {
+            if (dr > 0 || cr > 0) jeLines.push({ accountCode: code, accountName: name, debit: dr, credit: cr, description: desc })
         }
 
-        return NextResponse.json({
-            success: true, 
-            message: "ZEIEGA Opening Structure recorded",
-            entriesCreated: journalEntries.length 
-        })
+        if (cashOnHand > 0) add("1101", "Cash on Hand", cashOnHand, 0, "Opening cash")
+        if (Array.isArray(bankAccounts)) {
+            for (const b of bankAccounts) {
+                if (b.amount > 0) add(b.accountId || "1103", b.name || "Bank", b.amount, 0, "Opening bank balance")
+            }
+        }
+        if (receivables > 0) add("1110", "Accounts Receivable", receivables, 0, "Opening receivables")
+        if (inventory?.rawMaterials > 0) add("1201", "Raw Materials", inventory.rawMaterials, 0, "Opening inventory")
+        if (inventory?.finishedGoods > 0) add("1220", "Finished Goods", inventory.finishedGoods, 0, "Opening FG")
+        if (fixedAssets?.machinery > 0) add("1301", "Machinery", fixedAssets.machinery, 0, "Opening machinery")
+        if (fixedAssets?.equipment > 0) add("1303", "Equipment", fixedAssets.equipment, 0, "Opening equipment")
+        if (fixedAssets?.furniture > 0) add("1306", "Furniture", fixedAssets.furniture, 0, "Opening furniture")
+        if (fixedAssets?.vehicles > 0) add("1305", "Vehicles", fixedAssets.vehicles, 0, "Opening vehicles")
+
+        if (partnerCapital?.ahmed > 0) add("3011", "Ahmed Capital", 0, partnerCapital.ahmed, "Capital - Ahmed")
+        if (partnerCapital?.ibrahim > 0) add("3012", "Ibrahim Capital", 0, partnerCapital.ibrahim, "Capital - Ibrahim")
+        if (partnerCapital?.fathy > 0) add("3013", "Fathy Capital", 0, partnerCapital.fathy, "Capital - Fathy")
+
+        if (jeLines.length < 2) {
+            return NextResponse.json({ error: "At least 2 accounts required" }, { status: 400 })
+        }
+
+        const result = await EnhancedAccountingService.createJournalEntry(
+            JournalEntryType.GENERAL, jeLines, "OB-INIT",
+            `Opening Balances as of ${date}`, userId, effectiveDate
+        )
+
+        if (!result.success) {
+            return NextResponse.json({ error: result.error }, { status: 400 })
+        }
+
+        return NextResponse.json({ success: true, message: "Opening balances recorded", entryId: result.entryId })
 
     } catch (error) {
         console.error("Error creating opening balances:", error)
         return NextResponse.json({ error: "Failed to create opening balances" }, { status: 500 })
     }
 }
-
