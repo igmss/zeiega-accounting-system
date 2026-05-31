@@ -45,24 +45,28 @@ export async function POST(request: Request) {
     const accountingMaterials = []
     const inventoryRefs: Array<{ id: string; qty: number }> = []
     for (const material of materials) {
+      const matId = material.materialId || material.item_id || material.inventoryItemId
+      const matQty = material.qty || material.quantity || 0
+
       const { data: inventoryData } = await serviceDb
         .from(TABLES.INVENTORY_ITEMS)
         .select("*")
-        .eq("sku", material.item_id)
+        .or(`id.eq.${matId},sku.eq.${matId}`)
         .limit(1)
         .single()
       
       const itemName = inventoryData ? (inventoryData.name || 'Unknown Item') : 'Unknown Item'
+      const unitCost = inventoryData ? (inventoryData.cost_per_unit || 0) : 0
       
       if (inventoryData) {
-        inventoryRefs.push({ id: inventoryData.id, qty: material.qty })
+        inventoryRefs.push({ id: inventoryData.id, qty: matQty })
       }
       
       accountingMaterials.push({
-        itemId: material.item_id,
-        itemName: itemName,
-        quantity: material.qty,
-        unitCost: material.cost || 0
+        itemId: inventoryData?.id || matId,
+        itemName,
+        quantity: matQty,
+        unitCost
       })
     }
 
@@ -89,8 +93,7 @@ export async function POST(request: Request) {
       
       const currentQty = currentInv?.quantity_on_hand || 0
       await serviceDb.from(TABLES.INVENTORY_ITEMS).update({
-        quantity_on_hand: currentQty - inv.qty,
-        last_updated: new Date().toISOString()
+        quantity_on_hand: currentQty - inv.qty
       }).eq("id", inv.id)
     }
     
