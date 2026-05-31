@@ -524,12 +524,14 @@ function DesignDialog({
 
   useEffect(() => {
     if (design) {
+      const matCost = (design.materials || []).reduce((sum: number, m: any) =>
+        sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0)
       setFormData({
         name: design.name || "",
         description: design.description || "",
         category: design.category || "",
         subcategory: design.subcategory || "",
-        materialCost: design.materialCost || 0,
+        materialCost: matCost || design.materialCost || 0,
         laborCost: design.laborCost || 0,
         overheadCost: design.overheadCost || 0,
         manufacturingTime: design.manufacturingTime || 0,

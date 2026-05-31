@@ -248,8 +248,14 @@ export class DesignService {
 
       if (shouldRecalculate) {
         const mergedDesign = { ...existingDesign, ...updates };
-        updateData.totalCost = this.calculateTotalCost(mergedDesign);
-        console.log(`Recalculated totalCost for design ${id}: ${formatCurrency(updateData.totalCost)}`);
+        updateData.total_cost = this.calculateTotalCost(mergedDesign);
+        console.log(`Recalculated totalCost for design ${id}: ${formatCurrency(updateData.total_cost)}`);
+      }
+
+      if ((updates as any).materials !== undefined) {
+        const matCost = (updates as any).materials.reduce((sum: number, m: any) =>
+          sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0)
+        updateData.total_cost = matCost + (updates.laborCost || existingDesign.laborCost || 0) + (updates.overheadCost || existingDesign.overheadCost || 0)
       }
 
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).update(updateData).eq("id", id);
@@ -276,7 +282,14 @@ export class DesignService {
     try {
       const { data: rows, error } = await getServiceSupabase().from(this.TABLE_NAME).select("*");
       if (error) throw error;
-      const designs = (rows || []) as Design[];
+      const designs = (rows || []).map((row: any) => ({
+        id: row.id as string,
+        name: (row.name || "") as string,
+        category: (row.category || "") as string,
+        totalCost: (row.total_cost || 0) as number,
+        status: (row.status || "active") as Design["status"],
+        complexity: (row.complexity || "medium") as Design["complexity"],
+      })) as Design[];
 
       const activeDesigns = designs.filter(d => d.status === 'active');
 
@@ -452,7 +465,9 @@ export class DesignService {
   }
 
   private static calculateTotalCost(design: Partial<Design>): number {
-    const materialCost = design.materialCost || 0;
+    const matsCost = (design.materials || []).reduce((sum: number, m: any) =>
+      sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0)
+    const materialCost = matsCost || design.materialCost || 0;
     const laborCostPerHour = design.laborCost || 0;
     const manufacturingTime = design.manufacturingTime || 0;
     const overheadCost = design.overheadCost || 0;
