@@ -40,10 +40,10 @@ export function PaymentManagement() {
   useEffect(() => {
     const filtered = payments.filter((payment) => {
       const matchesSearch =
-        payment.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        payment.invoice_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        payment.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        payment.reference.toLowerCase().includes(searchTerm.toLowerCase())
+        payment.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        payment.invoice_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        payment.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        payment.reference?.toLowerCase().includes(searchTerm.toLowerCase())
 
       const matchesMethod = methodFilter === "all" || payment.method === methodFilter
 
@@ -81,13 +81,13 @@ export function PaymentManagement() {
     }
   }
 
-  const totalPayments = payments.reduce((sum, payment) => sum + payment.amount, 0)
+  const totalPayments = payments.reduce((sum, payment) => sum + (payment.amount || 0), 0)
   const todayPayments = payments
     .filter((p) => {
       const paymentDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || new Date())
       return paymentDate.toDateString() === new Date().toDateString()
     })
-    .reduce((sum, payment) => sum + payment.amount, 0)
+    .reduce((sum, payment) => sum + (payment.amount || 0), 0)
   const thisWeekPayments = payments
     .filter((p) => {
       const paymentDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || new Date())
@@ -95,7 +95,7 @@ export function PaymentManagement() {
       weekAgo.setDate(weekAgo.getDate() - 7)
       return paymentDate >= weekAgo
     })
-    .reduce((sum, payment) => sum + payment.amount, 0)
+    .reduce((sum, payment) => sum + (payment.amount || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -215,7 +215,7 @@ export function PaymentManagement() {
                   <TableCell className="font-medium">{payment.id}</TableCell>
                   <TableCell>{payment.invoice_id}</TableCell>
                   <TableCell>{payment.customer_name}</TableCell>
-                  <TableCell className="font-medium text-green-600 dark:text-green-400">{formatCurrency(payment.amount)}</TableCell>
+                  <TableCell className="font-medium text-green-600 dark:text-green-400">{formatCurrency(payment.amount || 0)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {getMethodIcon(payment.method)}

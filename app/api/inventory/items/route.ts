@@ -42,8 +42,6 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    items = items.filter((item: any) => (item.quantity_on_hand || 0) > 0);
-    
     return NextResponse.json({
       success: true,
       data: items,

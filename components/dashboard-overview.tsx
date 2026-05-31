@@ -53,7 +53,7 @@ export function DashboardOverview() {
         }
         const apiData = await response.json()
 
-        const { kpiData, monthlyRevenue, topCustomers, recentOrders, inventoryAlerts, workOrderStatus } = apiData
+        const { kpiData, monthlyRevenue, recentOrders, inventoryAlerts, workOrderStatus } = apiData
 
         const orderStatusData = [
           { name: "Pending", value: workOrderStatus?.pending || 0, color: "#f97316" },
@@ -64,14 +64,14 @@ export function DashboardOverview() {
 
         const recentOrdersData = recentOrders?.slice(0, 4).map((order: any) => ({
           id: order.id,
-          customer: order.customer_name,
+          customer: order.customerName,
           amount: order.total,
           status: order.status,
         })) || []
 
         const activeWorkOrders = workOrderStatus?.slice(0, 3).map((wo: any) => ({
           id: wo.id,
-          salesOrder: wo.sales_order_id,
+          salesOrder: wo.salesOrderId,
           status: wo.status,
           completion: wo.status === "completed" ? 100 : wo.completionPercentage ?? 0,
         })) || []
@@ -97,25 +97,32 @@ export function DashboardOverview() {
 
     loadDashboardData()
 
-    const salesChannel = supabase
-      .channel("dashboard-sales-changes")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "sales_orders" },
-        () => loadDashboardData()
-      )
-      .subscribe()
+    let salesChannel: any = null
+    let woChannel: any = null
 
-    const woChannel = supabase
-      .channel("dashboard-wo-changes")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "work_orders" },
-        () => loadDashboardData()
-      )
-      .subscribe()
+    try {
+      salesChannel = supabase
+        .channel("dashboard-sales-changes")
+        .on("postgres_changes",
+          { event: "*", schema: "public", table: "sales_orders" },
+          () => loadDashboardData()
+        )
+        .subscribe()
+
+      woChannel = supabase
+        .channel("dashboard-wo-changes")
+        .on("postgres_changes",
+          { event: "*", schema: "public", table: "work_orders" },
+          () => loadDashboardData()
+        )
+        .subscribe()
+    } catch (err) {
+      console.warn("Supabase realtime unavailable:", err)
+    }
 
     return () => {
-      supabase.removeChannel(salesChannel)
-      supabase.removeChannel(woChannel)
+      if (salesChannel) supabase.removeChannel(salesChannel)
+      if (woChannel) supabase.removeChannel(woChannel)
     }
   }, [])
 

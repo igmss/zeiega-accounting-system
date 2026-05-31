@@ -59,9 +59,9 @@ export function InvoiceManagement() {
     if (searchTerm) {
       filtered = filtered.filter(
         (invoice) =>
-          invoice.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          invoice.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          invoice.sales_order_id.toLowerCase().includes(searchTerm.toLowerCase()),
+          invoice.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.sales_order_id?.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }
 
@@ -84,13 +84,13 @@ export function InvoiceManagement() {
     }
   }
 
-  const totalInvoiceAmount = invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0)
+  const totalInvoiceAmount = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
   const paidAmount = invoices
     .filter((inv) => inv.status === "paid")
-    .reduce((sum, invoice) => sum + invoice.total_amount, 0)
+    .reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
   const unpaidAmount = invoices
     .filter((inv) => inv.status === "unpaid" || inv.status === "partial" || inv.status === "overdue")
-    .reduce((sum, invoice) => sum + invoice.total_amount, 0)
+    .reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
   const overdueCount = invoices.filter(
     (inv) => inv.status === "overdue" || (inv.status === "unpaid" && inv.due_date && new Date() > (inv.due_date?.toDate ? inv.due_date.toDate() : new Date(inv.due_date || new Date()))),
   ).length
@@ -221,9 +221,9 @@ export function InvoiceManagement() {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{formatCurrency(invoice.total_amount)}</div>
+                      <div className="font-medium">{formatCurrency(invoice.total_amount || 0)}</div>
                       <div className="text-sm text-muted-foreground">
-                        {formatCurrency(invoice.amount)} + {formatCurrency(invoice.tax_amount)} tax
+                        {formatCurrency(invoice.amount || invoice.total_amount || 0)} + {formatCurrency(invoice.tax_amount || 0)} tax
                       </div>
                     </div>
                   </TableCell>

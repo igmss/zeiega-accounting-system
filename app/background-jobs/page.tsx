@@ -75,7 +75,9 @@ export default function BackgroundJobsPage() {
         status: result.success ? "completed" : "failed",
         startTime: startTime.toISOString(),
         endTime: new Date().toISOString(),
-        processed: result.processed?.length ?? result.processed ?? 0,
+        processed: runningJob.jobType === 'inventory'
+          ? (result.updated?.length ?? result.updated ?? 0)
+          : (result.processed?.length ?? result.processed ?? 0),
         updated: result.updated?.length ?? result.updated ?? 0,
         lowStockAlerts: result.lowStockAlerts ?? 0,
         errors: result.errors ?? (result.error ? [result.error] : undefined),

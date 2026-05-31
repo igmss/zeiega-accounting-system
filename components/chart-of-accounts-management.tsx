@@ -49,7 +49,7 @@ export function ChartOfAccountsManagement() {
     name: "",
     type: "",
     balance: 0,
-    parent_id: null,
+    parent_code: null,
     description: ""
   })
 
@@ -96,7 +96,7 @@ export function ChartOfAccountsManagement() {
         name: "",
         type: "",
         balance: 0,
-        parent_id: null,
+        parent_code: null,
         description: ""
       })
       setIsAddAccountOpen(false)

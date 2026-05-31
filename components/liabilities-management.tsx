@@ -37,7 +37,7 @@ export function LiabilitiesManagement() {
     })
 
     const allLiabilityAccounts = Object.values(CHART_OF_ACCOUNTS).filter(
-        acc => acc.type === AccountType.LIABILITY && acc.isActive
+        acc => acc.type === AccountType.LIABILITY && acc.isActive !== false
     )
 
     const liabilityAccounts = newLiability.transactionType === 'repay'

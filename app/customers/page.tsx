@@ -153,7 +153,7 @@ export default function CustomersPage() {
                       })
                       if (response.ok) {
                         const updatedCustomer = await response.json()
-                        setCustomers(customers.map(c => c.id === editingCustomer.id ? updatedCustomer : c))
+                        setCustomers(customers.map(c => c.id === editingCustomer.id ? { ...c, ...updatedCustomer } : c))
                       }
                     } else {
                       // Create new customer
@@ -187,7 +187,7 @@ export default function CustomersPage() {
             <CardContent>
               <div className="text-2xl font-bold">{customers.length}</div>
               <p className="text-xs text-muted-foreground">
-                {customers.filter(c => c.status === "active").length} active
+                {customers.filter(c => (c.status || "active") === "active").length} active
               </p>
             </CardContent>
           </Card>
@@ -197,10 +197,10 @@ export default function CustomersPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {customers.filter(c => c.type === "business").length}
+                {customers.filter(c => (c.type || "individual") === "business").length}
               </div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((customers.filter(c => c.type === "business").length / customers.length) * 100)}% of total
+                {Math.round((customers.filter(c => (c.type || "individual") === "business").length / customers.length) * 100)}% of total
               </p>
             </CardContent>
           </Card>
@@ -210,7 +210,7 @@ export default function CustomersPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(customers.reduce((sum, c) => sum + c.totalSpent, 0))}
+                {formatCurrency(customers.reduce((sum, c) => sum + (c.totalSpent || 0), 0))}
               </div>
               <p className="text-xs text-muted-foreground">
                 From all customers
@@ -224,8 +224,8 @@ export default function CustomersPage() {
             <CardContent>
               <div className="text-2xl font-bold">
                 {formatCurrency(
-                  customers.reduce((sum, c) => sum + c.totalSpent, 0) / 
-                  customers.reduce((sum, c) => sum + c.totalOrders, 0) || 0
+                  customers.reduce((sum, c) => sum + (c.totalSpent || 0), 0) / 
+                  customers.reduce((sum, c) => sum + (c.totalOrders || 0), 0) || 0
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -289,8 +289,8 @@ export default function CustomersPage() {
                           {customer.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>{customer.totalOrders}</TableCell>
-                      <TableCell>{formatCurrency(customer.totalSpent)}</TableCell>
+                      <TableCell>{customer.totalOrders || 0}</TableCell>
+                      <TableCell>{formatCurrency(customer.totalSpent || 0)}</TableCell>
                       <TableCell>{customer.lastOrderDate ? formatDate(customer.lastOrderDate) : "Never"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">
