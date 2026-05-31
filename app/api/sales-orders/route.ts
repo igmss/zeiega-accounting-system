@@ -264,20 +264,15 @@ export async function PUT(request: Request) {
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              completionPercentage: 0,
-              notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost calculation failed)`,
-              items: orderData.items || [],
-              customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
-              customer_email: (orderData as any).user_id || (orderData as any).customer_email || "unknown_user",
-              total_amount: orderData.total || (orderData as any).total_amount || 0,
-              order_source: orderSource,
-              estimated_cost: 0,
-              total_cost: 0,
+              completionpercentage: 0,
+              raw_materials_used: [],
+              materials_issued: [],
+              labor_hours: 0,
               labor_cost: 0,
               overhead_cost: 0,
-              materials_issued: []
+              total_cost: 0,
+              estimated_cost: 0,
+              notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost failed: ${workOrderResult.error})`,
             };
 
             const { data: insertedWO } = await getServiceClient()
