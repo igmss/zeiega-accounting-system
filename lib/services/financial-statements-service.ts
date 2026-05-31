@@ -156,7 +156,12 @@ export class FinancialStatementsService {
         const revenueTotal = revenueItems.reduce((sum, item) => sum + item.amount, 0) - contraTotal
 
         const cogsItems = await this.getAccountBalancesByType(AccountType.COGS, startDate, endDate)
-        const cogsTotal = cogsItems.reduce((sum, item) => sum + item.amount, 0)
+        const cogsTotal = cogsItems
+            .filter(item => {
+                const isCredit = !isDebitNormalBalance(item.code)
+                return !isCredit
+            })
+            .reduce((sum, item) => sum + item.amount, 0)
         const grossProfit = revenueTotal - cogsTotal
 
         const operatingItems = await this.getAccountBalancesByType(AccountType.EXPENSE, startDate, endDate)
@@ -190,7 +195,7 @@ export class FinancialStatementsService {
                 contraTotal
             },
             costOfGoodsSold: {
-                items: cogsItems,
+                items: cogsItems.filter(item => isDebitNormalBalance(item.code)),
                 total: cogsTotal
             },
             grossProfit,
