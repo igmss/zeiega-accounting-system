@@ -134,8 +134,7 @@ export async function POST(request: Request) {
       const customerName = (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer"
       const totalAmount = orderData.total || orderData.total_amount || 0
 
-      const invoice = {
-        id: invoiceId,
+      const invoice: any = {
         sales_order_id: orderId,
         customer_id: customerId,
         customer_name: customerName,
