@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
             }
         })
 
-        const entryIds = rawEntries.map(e => e.id)
+        const entryIds = rawEntries.map((e: any) => e.id)
         const { data: lines } = entryIds.length > 0
             ? await getServiceClient().from(TABLES.JOURNAL_ENTRY_LINES).select("*").in("journal_entry_id", entryIds)
             : { data: [] }
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
             linesByEntry.set(l.journal_entry_id, arr)
         }
 
-        const entries = rawEntries.map((entry) => {
+        const entries = rawEntries.map((entry: any) => {
             const entryLines = linesByEntry.get(entry.id) || []
             const totalDebits = entryLines.reduce((s: number, l: any) => s + (l.debit || 0), 0)
             const totalCredits = entryLines.reduce((s: number, l: any) => s + (l.credit || 0), 0)
