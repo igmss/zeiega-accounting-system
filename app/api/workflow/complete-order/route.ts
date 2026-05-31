@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       }, { onConflict: "id" })
     }
 
-    // 3. Complete work order (if not already completed)
+    // 3. Complete work order
     const { data: workOrders } = await serviceDb
       .from(TABLES.WORK_ORDERS)
       .select("*")
@@ -109,14 +109,13 @@ export async function POST(request: Request) {
 
     if (workOrders && workOrders.length > 0) {
       const workOrderDoc = workOrders[0]
-
-      const { WorkOrderMaterialService } = await import("@/lib/services/work-order-material-service")
-
       if (workOrderDoc.status !== "completed") {
-        await WorkOrderMaterialService.completeWorkOrder(
-          workOrderDoc.id,
-          workOrderDoc.design_id
-        )
+        await serviceDb.from(TABLES.WORK_ORDERS).update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }).eq("id", workOrderDoc.id)
+        console.log(`WO ${workOrderDoc.id} marked completed`)
       }
     }
 
@@ -134,17 +133,15 @@ export async function POST(request: Request) {
       const customerName = (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer"
       const totalAmount = orderData.total || orderData.total_amount || 0
 
-      const invoice: any = {
+      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).insert({
         sales_order_id: orderId,
         customer_id: customerId,
         customer_name: customerName,
         amount: totalAmount,
+        total_amount: totalAmount,
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        status: "unpaid",
-        created_at: new Date().toISOString(),
-      }
-
-      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).insert(invoice)
+        status: "pending",
+      })
 
       if (invoiceError) {
         console.error("Failed to upsert invoice:", invoiceError)
