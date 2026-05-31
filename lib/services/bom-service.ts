@@ -80,15 +80,13 @@ export class BOMService {
             const totalCost = totalMaterialCost + totalLaborCost + totalOverheadCost
 
             const now = new Date().toISOString()
-            const bomId = `BOM-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
-            const bom: BOM = {
-                id: bomId,
+            const bomData = {
                 design_id: designId,
                 design_name: designName,
                 name,
                 version: "1.0",
-                items: processedItems,
+                items: processedItems as any,
                 labor_hours: laborHours,
                 labor_rate: laborRate,
                 labor_cost: totalLaborCost,
@@ -97,17 +95,17 @@ export class BOMService {
                 total_labor_cost: totalLaborCost,
                 total_overhead_cost: totalOverheadCost,
                 total_cost: totalCost,
-                notes,
+                notes: notes || null,
                 status: "draft",
                 created_at: now,
                 updated_at: now,
             }
 
-            const { error } = await (getServiceSupabase() as any).from(BOM_TABLE).insert(bom)
+            const { data: inserted, error } = await getServiceSupabase().from(BOM_TABLE).insert(bomData).select("id").single()
             if (error) throw error
 
-            console.log(`✅ Created BOM ${bomId} for design ${designName}`)
-            return { success: true, bomId }
+            console.log(`Created BOM ${inserted.id} for design ${designName}`)
+            return { success: true, bomId: inserted.id }
 
         } catch (error) {
             console.error("Error creating BOM:", error)

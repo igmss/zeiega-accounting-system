@@ -76,30 +76,26 @@ export class PurchaseOrderService {
             const totalAmount = subtotal + taxAmount + shippingCost
 
             const now = new Date().toISOString()
-            const poId = `PO-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
 
-            const purchaseOrder: PurchaseOrder = {
-                id: poId,
+            const poData = {
                 vendor_id: vendorId,
                 vendor_name: vendor.name,
-                items: processedItems,
-                subtotal,
-                tax_amount: taxAmount,
-                shipping_cost: shippingCost,
+                items: processedItems as any,
                 total_amount: totalAmount,
-                expected_delivery: options?.expectedDelivery?.toISOString(),
-                shipping_address: options?.shippingAddress,
-                notes: options?.notes,
-                status: "draft",
+                expected_delivery: options?.expectedDelivery?.toISOString().split("T")[0] || null,
+                shipping_address: options?.shippingAddress || null,
+                notes: options?.notes || null,
+                status: "draft" as const,
                 created_at: now,
                 updated_at: now,
             }
 
-            const { error } = await getServiceSupabase().from(TABLES.PURCHASE_ORDERS).insert(purchaseOrder)
+            const { data: inserted, error } = await getServiceSupabase().from(TABLES.PURCHASE_ORDERS)
+                .insert(poData).select("id").single()
             if (error) throw error
 
-            console.log(`✅ Created PO ${poId} for vendor ${vendor.name}`)
-            return { success: true, purchaseOrderId: poId }
+            console.log(`Created PO ${inserted.id} for vendor ${vendor.name} (${totalAmount} total)`)
+            return { success: true, purchaseOrderId: inserted.id }
         } catch (error) {
             console.error("Error creating purchase order:", error)
             return { success: false, error: error instanceof Error ? error.message : "Failed to create PO" }

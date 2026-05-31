@@ -51,3 +51,14 @@ ALTER TABLE public.vendors
   ADD COLUMN IF NOT EXISTS total_orders    integer DEFAULT 0,
   ADD COLUMN IF NOT EXISTS total_amount    numeric(15,2) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS last_order_date timestamptz;
+
+-- Extend BOM table with cost tracking fields
+ALTER TABLE public.bom
+  ADD COLUMN IF NOT EXISTS design_name          text,
+  ADD COLUMN IF NOT EXISTS labor_rate           numeric(10,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS labor_cost           numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS overhead_percentage  numeric(5,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_material_cost  numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_labor_cost     numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_overhead_cost  numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_cost           numeric(15,2) DEFAULT 0;
