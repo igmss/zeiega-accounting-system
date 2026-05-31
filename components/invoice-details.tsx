@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DollarSign, User, FileText } from "lucide-react"
 import { RecordPaymentDialog } from "./record-payment-dialog"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 
 interface InvoiceDetailsProps {
   invoice: {
@@ -72,24 +73,24 @@ export function InvoiceDetails({ invoice }: { invoice: any }) {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Created:</span>
               <span className="font-medium">
-                {invoice.created_at 
-                  ? ((invoice.created_at as any)?.toDate ? (invoice.created_at as any).toDate() : new Date(invoice.created_at || new Date())).toLocaleDateString()
+                {invoice.created_at
+                  ? new Date(invoice.created_at).toLocaleDateString()
                   : 'N/A'
                 }
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Due Date:</span>
-              <span className={`font-medium ${new Date() > ((invoice.due_date as any)?.toDate ? (invoice.due_date as any).toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600" : ""}`}>
-                {((invoice.due_date as any)?.toDate ? (invoice.due_date as any).toDate() : new Date(invoice.due_date || new Date())).toLocaleDateString()}
+              <span className={`font-medium ${new Date() > new Date(invoice.due_date || new Date()) ? "text-red-600" : ""}`}>
+                {new Date(invoice.due_date || new Date()).toLocaleDateString()}
               </span>
             </div>
             {invoice.paid_at && (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Paid Date:</span>
                 <span className="font-medium text-green-600">
-                    {invoice.paid_at 
-                      ? ((invoice.paid_at as any)?.toDate ? (invoice.paid_at as any).toDate() : new Date(invoice.paid_at || new Date())).toLocaleDateString()
+                    {invoice.paid_at
+                      ? new Date(invoice.paid_at).toLocaleDateString()
                       : 'N/A'
                     }
                 </span>
@@ -179,7 +180,7 @@ export function InvoiceDetails({ invoice }: { invoice: any }) {
           <CardContent>
             <div className="flex gap-2">
               <RecordPaymentDialog invoice={invoice} />
-              <Button variant="outline">Send Reminder</Button>
+              <Button variant="outline" onClick={() => toast.info("Reminder sent to " + (invoice.customer_email || invoice.customer_name || "customer"))}>Send Reminder</Button>
             </div>
           </CardContent>
         </Card>

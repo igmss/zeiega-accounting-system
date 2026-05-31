@@ -93,12 +93,12 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
               type="number"
               step="0.01"
               min="0"
-              max={invoice.total_amount}
+              max={invoice.total_amount ?? invoice.amount ?? 0}
               value={paymentData.amount}
               onChange={(e) => handleInputChange("amount", e.target.value)}
               required
             />
-            <div className="text-sm text-muted-foreground">Invoice total: {formatCurrency(invoice.total_amount)}</div>
+            <div className="text-sm text-muted-foreground">Invoice total: {formatCurrency(invoice.total_amount ?? invoice.amount ?? 0)}</div>
           </div>
 
           <div className="space-y-2">
