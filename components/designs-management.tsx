@@ -541,6 +541,7 @@ function DesignDialog({
         processes: design.processes || [],
         variants: design.variants || [],
       });
+    } else {
       setFormData({
         name: "",
         description: "",
