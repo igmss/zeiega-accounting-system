@@ -150,7 +150,7 @@ export function DashboardOverview() {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center">
         <p className="text-lg text-muted-foreground mb-4">Error loading dashboard data</p>
-        <Button variant="outline" onClick={() => { setLoading(true); fetch("/api/dashboard").then(r => r.json()).then(d => { setData(d as DashboardData); setLoading(false); }).catch(() => setLoading(false)); }}>
+        <Button variant="outline" onClick={() => window.location.reload()}>
           Retry
         </Button>
       </div>

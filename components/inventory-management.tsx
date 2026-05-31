@@ -70,9 +70,9 @@ export function InventoryManagement() {
     if (searchTerm) {
       filtered = filtered.filter(
         (item) =>
-          item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
           (item.supplier || '').toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }

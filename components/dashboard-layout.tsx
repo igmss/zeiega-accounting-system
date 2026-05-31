@@ -22,6 +22,7 @@ import {
   User,
   Receipt,
   Landmark,
+  Gavel,
   Activity,
   PenLine,
 } from "lucide-react"
@@ -40,7 +41,7 @@ const navigation = [
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Expenses", href: "/expenses", icon: Receipt },
   { name: "Assets", href: "/assets", icon: Landmark },
-  { name: "Liabilities", href: "/liabilities", icon: Landmark },
+  { name: "Liabilities", href: "/liabilities", icon: Gavel },
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Chart of Accounts", href: "/chart-of-accounts", icon: BookOpen },

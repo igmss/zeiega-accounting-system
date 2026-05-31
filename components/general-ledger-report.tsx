@@ -53,8 +53,8 @@ export function GeneralLedgerReport({ dateRange }: GeneralLedgerReportProps) {
     }
 
     const filteredAccounts = reportData?.accounts?.filter((account: any) =>
-        account.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        account.name.toLowerCase().includes(searchTerm.toLowerCase())
+        (account.code || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (account.name || "").toLowerCase().includes(searchTerm.toLowerCase())
     ) || []
 
     if (loading) {

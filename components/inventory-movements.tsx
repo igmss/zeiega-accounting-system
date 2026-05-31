@@ -39,8 +39,8 @@ export function InventoryMovements() {
   useEffect(() => {
     const filtered = movements.filter((movement) => {
       const matchesSearch =
-        movement.item_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        movement.item_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (movement.item_id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (movement.item_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         movement.related_doc?.toLowerCase().includes(searchTerm.toLowerCase())
 
       const matchesType = typeFilter === "all" || movement.type === typeFilter
