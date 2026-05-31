@@ -130,13 +130,33 @@ export class DesignService {
       const id = crypto.randomUUID();
       const designDoc = {
         id,
-        ...designData,
-        totalCost: this.calculateTotalCost(designData),
-        sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
-        createdAt: now,
-        updatedAt: now,
+        name: designData.name,
+        description: designData.description || null,
+        category: designData.category || "General",
+        subcategory: designData.subcategory || null,
+        image: designData.image || null,
+        images: designData.images || [],
+        material_cost: designData.materialCost || 0,
+        labor_cost: designData.laborCost || 0,
+        overhead_cost: designData.overheadCost || 0,
+        manufacturing_time: designData.manufacturingTime || 1,
+        total_cost: this.calculateTotalCost(designData),
+        size_costs: SizeCostService.generateSizeCosts(designData as Design),
+        complexity: designData.complexity || "medium",
+        status: designData.status || "active",
+        created_by: designData.createdBy || null,
+        updated_by: designData.updatedBy || null,
+        tags: designData.tags || [],
+        notes: designData.notes || null,
+        variants: designData.variants || [],
+        product_id: (designData as any).productId || null,
         name_lower: (designData.name || "").trim().toLowerCase(),
-        category_lower: (designData.category || "").trim().toLowerCase()
+        category_lower: (designData.category || "").trim().toLowerCase(),
+        materials: designData.materials || [],
+        processes: designData.processes || [],
+        size_configurations: designData.sizeConfigurations || [],
+        size_ranges: designData.sizeRanges || [],
+        default_size_multipliers: designData.defaultSizeMultipliers || {},
       };
 
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).insert(designDoc);
@@ -165,9 +185,26 @@ export class DesignService {
       const shouldRecalculate = costFields.some(field => field in updates);
       
       const updateData: any = {
-        ...updates,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString()
       };
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.subcategory !== undefined) updateData.subcategory = updates.subcategory;
+      if (updates.image !== undefined) updateData.image = updates.image;
+      if (updates.images !== undefined) updateData.images = updates.images;
+      if (updates.materialCost !== undefined) updateData.material_cost = updates.materialCost;
+      if (updates.laborCost !== undefined) updateData.labor_cost = updates.laborCost;
+      if (updates.overheadCost !== undefined) updateData.overhead_cost = updates.overheadCost;
+      if (updates.manufacturingTime !== undefined) updateData.manufacturing_time = updates.manufacturingTime;
+      if (updates.complexity !== undefined) updateData.complexity = updates.complexity;
+      if (updates.status !== undefined) updateData.status = updates.status;
+      if (updates.updatedBy !== undefined) updateData.updated_by = updates.updatedBy;
+      if (updates.tags !== undefined) updateData.tags = updates.tags;
+      if (updates.notes !== undefined) updateData.notes = updates.notes;
+      if (updates.variants !== undefined) updateData.variants = updates.variants;
+      if ((updates as any).materials !== undefined) updateData.materials = (updates as any).materials;
+      if ((updates as any).processes !== undefined) updateData.processes = (updates as any).processes;
 
       if (shouldRecalculate) {
         const mergedDesign = { ...existingDesign, ...updates };
@@ -289,13 +326,33 @@ export class DesignService {
           designData.totalCost = this.calculateTotalCost(designData);
           const now = new Date().toISOString();
           const payload = {
-            ...designData,
-            totalCost: this.calculateTotalCost(designData),
-            sizeCosts: SizeCostService.generateSizeCosts(designData as Design),
+            name: designData.name,
+            description: designData.description || null,
+            category: designData.category || "General",
+            subcategory: designData.subcategory || null,
+            image: designData.image || null,
+            images: designData.images || [],
+            material_cost: designData.materialCost || 0,
+            labor_cost: designData.laborCost || 0,
+            overhead_cost: designData.overheadCost || 0,
+            manufacturing_time: designData.manufacturingTime || 2,
+            total_cost: this.calculateTotalCost(designData),
+            size_costs: SizeCostService.generateSizeCosts(designData as Design),
+            complexity: designData.complexity || "medium",
+            status: designData.status || "active",
+            created_by: designData.createdBy || "system-import",
+            updated_by: designData.updatedBy || "system-import",
+            tags: designData.tags || [],
+            notes: designData.notes || null,
+            variants: designData.variants || [],
+            product_id: (designData as any).productId || null,
+            materials: designData.materials || [],
+            processes: designData.processes || [],
+            size_configurations: designData.sizeConfigurations || [],
+            size_ranges: designData.sizeRanges || [],
+            default_size_multipliers: designData.defaultSizeMultipliers || {},
             name_lower: (designData.name || "").trim().toLowerCase(),
             category_lower: (designData.category || "").trim().toLowerCase(),
-            createdAt: now,
-            updatedAt: now
           };
 
           let existingDesign = byProductId.get(product.id as string);
@@ -370,8 +427,8 @@ export class DesignService {
 
       const sizeCosts = SizeCostService.generateSizeCosts(design);
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).update({
-        sizeCosts,
-        updatedAt: new Date().toISOString()
+        size_costs: sizeCosts,
+        updated_at: new Date().toISOString()
       }).eq("id", designId);
       if (error) throw error;
       console.log(`Migrated design ${designId} to per-size costs`);
@@ -410,8 +467,8 @@ export class DesignService {
 
       const sizeCosts = { ...design.sizeCosts, [size]: updated };
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).update({
-        sizeCosts,
-        updatedAt: new Date().toISOString()
+        size_costs: sizeCosts,
+        updated_at: new Date().toISOString()
       }).eq("id", designId);
       if (error) throw error;
       return true;
@@ -428,10 +485,10 @@ export class DesignService {
     let skipped = 0;
 
     for (const row of (rows || [])) {
-      if (!row.sizeCosts) {
+      if (!row.size_costs && !row.sizeCosts) {
         const design = { ...row } as Design;
         const sizeCosts = SizeCostService.generateSizeCosts(design);
-        await getServiceSupabase().from(this.TABLE_NAME).update({ sizeCosts, updatedAt: new Date().toISOString() }).eq("id", row.id);
+        await getServiceSupabase().from(this.TABLE_NAME).update({ size_costs: sizeCosts, updated_at: new Date().toISOString() }).eq("id", row.id);
         migrated++;
       } else {
         skipped++;
