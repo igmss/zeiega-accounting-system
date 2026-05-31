@@ -32,10 +32,8 @@ export class VendorService {
     ): Promise<{ success: boolean; vendorId?: string; error?: string }> {
         try {
             const now = new Date().toISOString()
-            const vendorId = `VND-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
-            const { error } = await getServiceSupabase().from(TABLES.VENDORS).insert({
-                id: vendorId,
+            const { data: inserted, error } = await getServiceSupabase().from(TABLES.VENDORS).insert({
                 name: data.name,
                 contact_name: data.contact_name || null,
                 email: data.email || null,
@@ -47,11 +45,11 @@ export class VendorService {
                 status: data.status || "active",
                 created_at: now,
                 updated_at: now,
-            })
+            }).select("id").single()
             if (error) throw error
 
-            console.log(`✅ Created vendor ${data.name} (${vendorId})`)
-            return { success: true, vendorId }
+            console.log(`Created vendor ${data.name} (${inserted.id})`)
+            return { success: true, vendorId: inserted.id }
         } catch (error) {
             console.error("Error creating vendor:", error)
             return { success: false, error: error instanceof Error ? error.message : "Failed to create vendor" }
