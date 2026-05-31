@@ -182,24 +182,47 @@ export async function POST(request: Request) {
         const cogsAmount = woData.total_cost || woData.estimated_cost || 0
 
         if (cogsAmount > 0) {
+          const woMatCost = (woData.materials_issued || []).reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
+          const woOHCost = (woData.overhead_cost || 0)
+          const woLaborCost = (woData.labor_cost || 0)
+
+          const cogsLines: any[] = [
+            {
+              accountCode: "5301",
+              accountName: "Cost of Goods Sold",
+              debit: cogsAmount,
+              credit: 0,
+              description: `COGS for order ${orderId}`
+            },
+            {
+              accountCode: "1220",
+              accountName: "Finished Goods Inventory",
+              debit: 0,
+              credit: cogsAmount,
+              description: `Finished goods consumed for order ${orderId}`
+            }
+          ]
+
+          if (woOHCost > 0) {
+            cogsLines.push({
+              accountCode: "5009",
+              accountName: "Manufacturing OH - Applied",
+              debit: woOHCost,
+              credit: 0,
+              description: `Clear applied OH for order ${orderId}`
+            })
+            cogsLines.push({
+              accountCode: "5301",
+              accountName: "Cost of Goods Sold",
+              debit: 0,
+              credit: woOHCost,
+              description: `OH portion of COGS for order ${orderId}`
+            })
+          }
+
           await EnhancedAccountingService.createJournalEntry(
             JournalEntryType.SALES_COGS,
-            [
-              { 
-                accountCode: "5001",
-                accountName: "Cost of Goods Sold", 
-                debit: cogsAmount, 
-                credit: 0, 
-                description: `COGS for order ${orderId}` 
-              },
-              { 
-                accountCode: "1220",
-                accountName: "Finished Goods Inventory", 
-                debit: 0, 
-                credit: cogsAmount, 
-                description: `Inventory reduction for order ${orderId}` 
-              }
-            ],
+            cogsLines,
             invoiceId,
             `COGS for order ${orderId}`
           )
