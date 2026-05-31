@@ -3,6 +3,8 @@ import { DesignService } from "@/lib/services/design-service";
 import type { DesignFilter } from "@/lib/types/designs";
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/designs - Get all designs with optional filtering
 export async function GET(request: NextRequest) {
   const auth = await requireAuth()
