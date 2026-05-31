@@ -45,6 +45,7 @@ export function SalesOrdersList() {
       product_id: "",
       quantity: 1,
       unit_price: 0,
+      cost_price: 0,
       category: "",
       color: "",
       size: ""
@@ -224,6 +225,7 @@ export function SalesOrdersList() {
           product_id: "",
           quantity: 1,
           unit_price: 0,
+          cost_price: 0,
           category: "",
           color: "",
           size: ""
@@ -449,12 +451,12 @@ export function SalesOrdersList() {
                             <CommandItem key={d.id} value={d.name} onSelect={() => {
                               setNewManualOrder({
                                 ...newManualOrder,
-                                items: [{ ...newManualOrder.items[0], product_name: d.name, product_id: d.id, unit_price: d.totalCost || 0, category: d.category || "" }]
+                                items: [{ ...newManualOrder.items[0], product_name: d.name, product_id: d.id, cost_price: d.totalCost || 0, unit_price: 0, category: d.category || "" }]
                               })
                               setDesignSearchOpen(false)
                             }}>
                               <Check className={cn("mr-2 h-4 w-4", newManualOrder.items[0].product_id === d.id ? "opacity-100" : "opacity-0")} />
-                              <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · EGP {d.totalCost || 0}</div></div>
+                              <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · Cost: EGP {d.totalCost || 0}</div></div>
                             </CommandItem>
                           ))}
                         </CommandGroup>
@@ -471,15 +473,27 @@ export function SalesOrdersList() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>Unit Price (EGP)</Label>
-                <Input type="number" value={newManualOrder.items[0].unit_price} onChange={(e) => setNewManualOrder({ ...newManualOrder, items: [{ ...newManualOrder.items[0], unit_price: parseFloat(e.target.value) || 0 }] })} />
+                <Label>Cost Price (from Design)</Label>
+                <Input type="number" value={newManualOrder.items[0].cost_price} readOnly className="bg-muted" />
               </div>
               <div>
-                <Label>Total</Label>
+                <Label>Sale Price (EGP)</Label>
+                <Input type="number" min="0" value={newManualOrder.items[0].unit_price} onChange={(e) => setNewManualOrder({ ...newManualOrder, items: [{ ...newManualOrder.items[0], unit_price: parseFloat(e.target.value) || 0 }] })} />
+              </div>
+              <div>
+                <Label>Total (Qty × Sale Price)</Label>
                 <Input type="number" value={newManualOrder.items[0].quantity * newManualOrder.items[0].unit_price} readOnly />
               </div>
-              <div>
-                <Label>Payment Method</Label>
+            </div>
+            {newManualOrder.items[0].cost_price > 0 && newManualOrder.items[0].unit_price > 0 && (
+              <div className="text-sm flex gap-2 items-center">
+                <Badge variant={newManualOrder.items[0].unit_price >= newManualOrder.items[0].cost_price ? "default" : "destructive"}>
+                  Margin: EGP {formatCurrency(newManualOrder.items[0].unit_price - newManualOrder.items[0].cost_price)} ({Math.round(((newManualOrder.items[0].unit_price - newManualOrder.items[0].cost_price) / newManualOrder.items[0].unit_price) * 100)}%)
+                </Badge>
+              </div>
+            )}
+            <div>
+              <Label>Payment Method</Label>
                 <Select value={newManualOrder.payment_method} onValueChange={(v) => setNewManualOrder({...newManualOrder, payment_method: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
