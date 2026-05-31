@@ -320,7 +320,7 @@ export function SalesOrdersList() {
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
                   <TableCell>
                     {order.created_at
-                      ? ((order.created_at as any).toDate ? (order.created_at as any).toDate() : new Date(order.created_at)).toLocaleDateString()
+                      ? new Date(order.created_at).toLocaleDateString()
                       : 'N/A'
                     }
                   </TableCell>

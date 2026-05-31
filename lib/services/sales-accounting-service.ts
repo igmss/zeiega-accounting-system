@@ -242,7 +242,7 @@ export class SalesAccountingService {
                 const { data: invDoc } = await client
                     .from(TABLES.INVENTORY_ITEMS)
                     .select("*")
-                    .eq("id", sku)
+                    .eq("sku", sku)
                     .maybeSingle()
 
                 if (!invDoc) {

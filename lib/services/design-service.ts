@@ -23,7 +23,7 @@ export class DesignService {
       console.log("DesignService.getDesigns called with:", { filter, lastDocId, pageSize });
       console.log("Table name:", this.TABLE_NAME);
       
-      let query = getServiceSupabase().from(this.TABLE_NAME).select("*").order("createdAt", { ascending: false }).limit(pageSize);
+      let query = getServiceSupabase().from(this.TABLE_NAME).select("*").order("created_at", { ascending: false }).limit(pageSize);
 
       if (filter?.category) {
         query = query.eq("category", filter.category);
@@ -39,9 +39,9 @@ export class DesignService {
       }
 
       if (lastDocId) {
-        const { data: lastDoc } = await getServiceSupabase().from(this.TABLE_NAME).select("createdAt").eq("id", lastDocId).single();
+        const { data: lastDoc } = await getServiceSupabase().from(this.TABLE_NAME).select("created_at").eq("id", lastDocId).single();
         if (lastDoc) {
-          query = query.lt("createdAt", lastDoc.createdAt);
+          query = query.lt("created_at", lastDoc.created_at);
         }
       }
 
@@ -53,8 +53,8 @@ export class DesignService {
       const designs = (rows || []).map((row: any) => ({
         ...row,
         id: row.id,
-        createdAt: row.createdAt || new Date().toISOString(),
-        updatedAt: row.updatedAt || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || new Date().toISOString()
       })) as Design[];
 
       let filteredDesigns = designs;
@@ -89,8 +89,8 @@ export class DesignService {
       return {
         ...data,
         id: data.id,
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString()
+        createdAt: data.created_at || new Date().toISOString(),
+        updatedAt: data.updated_at || new Date().toISOString()
       } as Design;
     } catch (error) {
       console.error("Error fetching design:", error);

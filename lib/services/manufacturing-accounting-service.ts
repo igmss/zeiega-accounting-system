@@ -7,7 +7,7 @@ import { formatCurrency } from "@/lib/utils"
 
 export class ManufacturingAccountingService {
     static async createWorkOrder(salesOrderId: string) {
-        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+        const workOrderId = `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
         const workOrder: WorkOrder = {
             id: workOrderId,

@@ -9,27 +9,40 @@ function getDb(): ReturnType<typeof getFirestore> {
   return _db
 }
 
+let initAttempted = false
+
 function ensureInitialized() {
   if (getApps().length) return
+  if (initAttempted) return
+
   const requiredEnvVars = [
     'FIREBASE_PROJECT_ID',
     'FIREBASE_CLIENT_EMAIL',
     'FIREBASE_PRIVATE_KEY'
   ] as const
-  for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-      throw new Error(`Missing required environment variable: ${envVar}. Please check your .env.local file.`)
-    }
+
+  const missing = requiredEnvVars.filter(v => !process.env[v])
+  if (missing.length > 0) {
+    initAttempted = true
+    console.warn(`Firebase is not configured (missing: ${missing.join(', ')}). Skipping Firebase initialization.`)
+    return
   }
-  initializeApp({
-    credential: cert({
-      type: "service_account",
-      project_id: process.env.FIREBASE_PROJECT_ID!,
-      private_key: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-      client_email: process.env.FIREBASE_CLIENT_EMAIL!,
-    } as any),
-    projectId: process.env.FIREBASE_PROJECT_ID,
-  })
+
+  try {
+    initializeApp({
+      credential: cert({
+        type: "service_account",
+        project_id: process.env.FIREBASE_PROJECT_ID!,
+        private_key: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+        client_email: process.env.FIREBASE_CLIENT_EMAIL!,
+      } as any),
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    })
+    console.log("Firebase initialized (legacy mode)")
+  } catch (e) {
+    initAttempted = true
+    console.warn("Firebase initialization failed:", e)
+  }
 }
 
 export const db = new Proxy({} as ReturnType<typeof getFirestore>, {

@@ -66,48 +66,43 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
 export class UserStore {
   async findByEmail(email: string): Promise<User | null> {
     try {
+      const admin = getAdminSupabase()
+      const { data: authUsers, error: authError } = await admin.listUsers()
+
+      if (authError) {
+        console.error("Error listing users:", authError)
+        return null
+      }
+
+      const authUser = authUsers.users.find(
+        (u: any) => u.email?.toLowerCase() === email.toLowerCase()
+      )
+      if (!authUser) return null
+
       const client = getServiceSupabase()
-      const { data: profiles, error } = await client
+      const { data: profile, error: profileError } = await client
         .from("erp_user_profiles")
         .select("id, name, role, is_active, created_at, updated_at")
-        .eq("id", email) // Will iterate through auth.users
+        .eq("id", authUser.id)
         .maybeSingle()
 
-      if (error || !profiles) {
-        const admin = getAdminSupabase()
-        const { data: authUsers, error: authError } = await admin.listUsers()
+      if (profileError) {
+        console.error("Error fetching user profile:", profileError)
+      }
 
-        if (authError) {
-          console.error("Error listing users:", authError)
-          return null
+      if (!profile) {
+        return {
+          id: authUser.id,
+          email: authUser.email || email,
+          name: authUser.user_metadata?.name || "",
+          role: (authUser.user_metadata?.role as UserRole) || UserRole.VIEWER,
+          isActive: true,
+          createdAt: new Date(authUser.created_at || new Date()),
+          updatedAt: new Date(authUser.updated_at || new Date()),
         }
-
-        const authUser = authUsers.users.find(
-          (u: any) => u.email?.toLowerCase() === email.toLowerCase()
-        )
-        if (!authUser) return null
-
-        const profile = authUsers.users.find((u: any) => u.id === authUser.id)
-        if (!profile) return null
-
-        const { data: p } = await client
-          .from("erp_user_profiles")
-          .select("name, role, is_active, created_at, updated_at")
-          .eq("id", authUser.id)
-          .single()
-
-        return p ? this.toUser(authUser, p) : null
       }
 
-      return {
-        id: profiles.id,
-        email,
-        name: profiles.name,
-        role: profiles.role as UserRole,
-        isActive: profiles.is_active,
-        createdAt: new Date(profiles.created_at),
-        updatedAt: new Date(profiles.updated_at),
-      }
+      return this.toUser(authUser, profile)
     } catch (error) {
       console.error("Error finding user by email:", error)
       return null

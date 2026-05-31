@@ -120,14 +120,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // 5. Generate invoice (if not already generated)
+    // 5. Generate invoice (if not already generated for this SO)
     const invoiceId = `INV-${orderId.slice(-8)}`
 
     const { data: existingInvoice } = await serviceDb
       .from(TABLES.INVOICES)
       .select("*")
-      .eq("id", invoiceId)
-      .single()
+      .eq("sales_order_id", orderId)
+      .maybeSingle()
 
     if (!existingInvoice) {
       const customerId = (orderData as any).user_id || orderData.customer_id || "unknown"
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
 
       if (invoiceError) {
         console.error("Failed to upsert invoice:", invoiceError)
-        return NextResponse.json({ error: "Failed to create invoice" }, { status: 500 })
+        return NextResponse.json({ error: "Failed to create invoice", detail: invoiceError.message }, { status: 500 })
       }
 
       const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")

@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           unit_price: item.basePrice || item.adjustedPrice
         })) || [],
         status: mapOrderStatus(status),
-        created_at: orderData.createdAt ? new Date(orderData.createdAt) : now,
+        created_at: orderData.createdAt ? new Date(orderData.createdAt).toISOString() : now,
         total_amount: Number(orderData.total) || Number(orderData.subtotal) || 0,
         order_source: "web",
         updated_at: now

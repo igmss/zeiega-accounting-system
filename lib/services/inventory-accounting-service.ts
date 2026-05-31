@@ -17,18 +17,15 @@ export class InventoryAccountingService {
             if (!inventorySnapshot) return { updated, lowStockAlerts }
 
             for (const item of inventorySnapshot) {
-                if (item.qty_on_hand <= (item.reorder_point || 10)) {
-                    lowStockAlerts.push(`${item.sku}: ${item.qty_on_hand} units remaining`)
+                if (item.quantity_on_hand <= (item.reorder_level || 10)) {
+                    lowStockAlerts.push(`${item.sku}: ${item.quantity_on_hand} units remaining`)
                 }
 
-                const updatedValue = item.qty_on_hand * (item.unit_cost || 0)
+                const updatedValue = item.quantity_on_hand * (item.cost_per_unit || 0)
 
                 await getServiceSupabase()
                     .from(TABLES.INVENTORY_ITEMS)
-                    .update({
-                        total_value: updatedValue,
-                        last_updated: new Date().toISOString(),
-                    })
+                    .update({ updated_at: new Date().toISOString() })
                     .eq("id", item.id)
 
                 updated.push(item.sku)
@@ -45,37 +42,33 @@ export class InventoryAccountingService {
         quantity: number,
         type: "issue" | "receipt" | "return" | "adjustment",
     ) {
-        const { data: inventoryDoc, error } = await getServiceSupabase()
+        const { data: inventoryDoc } = await getServiceSupabase()
             .from(TABLES.INVENTORY_ITEMS)
             .select("*")
-            .eq("id", sku)
+            .eq("sku", sku)
             .single()
 
         if (inventoryDoc) {
-            const currentQty = inventoryDoc.qty_on_hand || 0
+            const currentQty = inventoryDoc.quantity_on_hand || 0
             const newQty = type === "issue" ? currentQty - quantity : currentQty + quantity
 
             await getServiceSupabase()
                 .from(TABLES.INVENTORY_ITEMS)
                 .update({
-                    qty_on_hand: Math.max(0, newQty),
-                    last_movement: new Date().toISOString(),
+                    quantity_on_hand: Math.max(0, newQty),
+                    updated_at: new Date().toISOString(),
                 })
-                .eq("id", sku)
+                .eq("sku", sku)
 
-            const movementId = `MOV-${Date.now()}`
             await getServiceSupabase()
                 .from(TABLES.INVENTORY_MOVEMENTS)
-                .upsert({
-                    id: movementId,
+                .insert({
+                    item_id: inventoryDoc.id,
                     sku,
                     type,
-                    quantity,
-                    previous_qty: currentQty,
-                    new_qty: Math.max(0, newQty),
-                    date: new Date().toISOString(),
-                    created_at: new Date().toISOString(),
-                }, { onConflict: "id" })
+                    qty: quantity,
+                    notes: `${type} of ${quantity} units (was ${currentQty}, now ${Math.max(0, newQty)})`,
+                })
         }
     }
 

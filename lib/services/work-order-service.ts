@@ -43,7 +43,7 @@ export class WorkOrderService {
 
       // Create work order with design integration
       const workOrder: WorkOrder = {
-        id: `WO-${salesOrderId.split("-").slice(-1)[0]}-${Date.now()}`,
+        id: `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         sales_order_id: salesOrderId,
         design_id: designId,
         design_name: design.name,
