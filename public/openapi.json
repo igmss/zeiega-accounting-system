@@ -386,7 +386,7 @@
       }
     },
 
-    "/api/inventory-items": {
+    "/api/inventory/items": {
       "get": {
         "tags": ["Inventory"],
         "summary": "Filter inventory items",
@@ -911,6 +911,22 @@
       }
     },
 
+    "/api/work-orders/background-job": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Background job for work order updates",
+        "responses": { "200": { "description": "Background job triggered" } }
+      }
+    },
+
+    "/api/work-orders/fix-costs": {
+      "post": {
+        "tags": ["Work Orders"],
+        "summary": "Fix work order costs",
+        "responses": { "200": { "description": "Costs fixed" } }
+      }
+    },
+
     "/api/designs": {
       "get": {
         "tags": ["Designs"],
@@ -997,6 +1013,14 @@
         "tags": ["Designs"],
         "summary": "Fix design totalCost calculations",
         "responses": { "200": { "description": "Fixed" } }
+      }
+    },
+
+    "/api/designs/migrate-size-costs": {
+      "post": {
+        "tags": ["Designs"],
+        "summary": "Migrate designs to per-size cost structure",
+        "responses": { "200": { "description": "Migrated" } }
       }
     },
 
@@ -1659,8 +1683,8 @@
         "tags": ["Reports"],
         "summary": "Simplified income statement",
         "parameters": [
-          { "name": "startDate", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "endDate", "in": "query", "schema": { "type": "string", "format": "date" } }
+          { "name": "from", "in": "query", "required": true, "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "required": true, "schema": { "type": "string", "format": "date" } }
         ],
         "responses": { "200": { "description": "Income statement" } }
       }
@@ -1737,7 +1761,10 @@
       "get": {
         "tags": ["Reports"],
         "summary": "Generate AR Aging Report",
-        "parameters": [{ "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }],
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
         "responses": { "200": { "description": "AR aging" } }
       }
     },
@@ -1777,6 +1804,10 @@
       "get": {
         "tags": ["Reports"],
         "summary": "Generate Inventory Valuation",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
         "responses": {
           "200": {
             "description": "Inventory valuation",
