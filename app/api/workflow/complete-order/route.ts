@@ -144,7 +144,7 @@ export async function POST(request: Request) {
         created_at: new Date().toISOString(),
       }
 
-      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).upsert(invoice, { onConflict: "id" })
+      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).insert(invoice)
 
       if (invoiceError) {
         console.error("Failed to upsert invoice:", invoiceError)
