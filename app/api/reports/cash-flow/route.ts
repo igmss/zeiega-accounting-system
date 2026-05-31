@@ -22,15 +22,13 @@ export async function GET(request: NextRequest) {
         const statement = await FinancialStatementsService.generateCashFlowStatement(start, end)
 
         // 2. Fetch live cash balances for beginning and ending
-        const beforeStart = new Date(start.getTime() - 1)
-        
         const cashAccountCodes = ["1101", "1102", "1103", "1104", "1105", "1106", "1107"]
         
         let beginningCash = 0
         let endingCash = 0
 
         for (const code of cashAccountCodes) {
-            beginningCash += await FinancialStatementsService.getAccountBalance(code, undefined, beforeStart)
+            beginningCash += await FinancialStatementsService.getAccountBalance(code, undefined, start)
             endingCash += await FinancialStatementsService.getAccountBalance(code, undefined, end)
         }
 
