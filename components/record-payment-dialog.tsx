@@ -17,7 +17,8 @@ import { toast } from "sonner"
 interface RecordPaymentDialogProps {
   invoice: {
     id: string
-    total_amount: number
+    amount?: number
+    total_amount?: number
     status: string
   }
 }
@@ -25,8 +26,9 @@ interface RecordPaymentDialogProps {
 export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
+  const invoiceAmount = invoice.total_amount ?? invoice.amount ?? 0
   const [paymentData, setPaymentData] = useState({
-    amount: invoice.total_amount.toString(),
+    amount: invoiceAmount.toString(),
     method: "",
     reference: "",
     notes: "",

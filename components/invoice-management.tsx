@@ -77,7 +77,7 @@ export function InvoiceManagement() {
       return <Badge variant="default">Paid</Badge>
     } else if (status === "partial") {
       return <Badge variant="secondary">Partial</Badge>
-    } else if (status === "overdue" || (status === "unpaid" && dueDate && new Date() > (dueDate?.toDate ? dueDate.toDate() : new Date(dueDate || new Date())))) {
+    } else if (status === "overdue" || (status === "unpaid" && dueDate && new Date() > new Date(dueDate || new Date()))) {
       return <Badge variant="destructive">Overdue</Badge>
     } else {
       return <Badge variant="outline">Unpaid</Badge>
@@ -92,7 +92,7 @@ export function InvoiceManagement() {
     .filter((inv) => inv.status === "unpaid" || inv.status === "partial" || inv.status === "overdue")
     .reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
   const overdueCount = invoices.filter(
-    (inv) => inv.status === "overdue" || (inv.status === "unpaid" && inv.due_date && new Date() > (inv.due_date?.toDate ? inv.due_date.toDate() : new Date(inv.due_date || new Date()))),
+    (inv) => inv.status === "overdue" || (inv.status === "unpaid" && inv.due_date && new Date() > new Date(inv.due_date || new Date())),
   ).length
 
   return (
@@ -228,14 +228,14 @@ export function InvoiceManagement() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className={new Date() > (invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())) ? "text-red-600 dark:text-red-400" : ""}>
-                      {(invoice.due_date?.toDate ? invoice.due_date.toDate() : new Date(invoice.due_date || new Date())).toLocaleDateString()}
+                    <div className={new Date() > new Date(invoice.due_date || new Date()) ? "text-red-600 dark:text-red-400" : ""}>
+                      {new Date(invoice.due_date || new Date()).toLocaleDateString()}
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(invoice.status, invoice.due_date)}</TableCell>
                   <TableCell>
                     {invoice.created_at
-                      ? (invoice.created_at?.toDate ? invoice.created_at.toDate() : new Date(invoice.created_at || new Date())).toLocaleDateString()
+                      ? new Date(invoice.created_at || new Date()).toLocaleDateString()
                       : 'N/A'
                     }
                   </TableCell>
