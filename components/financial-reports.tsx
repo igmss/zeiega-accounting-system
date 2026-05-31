@@ -20,6 +20,10 @@ import { COGMReport } from "./cogm-report"
 import { TrialBalanceReport } from "./trial-balance-report"
 import { GeneralLedgerReport } from "./general-ledger-report"
 import { VarianceReport } from "./variance-report"
+import { APAgingReport } from "./ap-aging-report"
+import { DepreciationReport } from "./depreciation-report"
+import { PartnerCapitalReport } from "./partner-capital-report"
+import { SalesByCustomerReport, MaterialConsumptionReport } from "./sales-material-reports"
 
 function getToday(): string {
   const d = new Date()
@@ -189,6 +193,13 @@ export function FinancialReports() {
             <TabsTrigger value="variance">Variance Analysis</TabsTrigger>
             <TabsTrigger value="income-statement">Income Statement</TabsTrigger>
           </TabsList>
+          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
+            <TabsTrigger value="ap-aging">AP Aging</TabsTrigger>
+            <TabsTrigger value="depreciation">Depreciation</TabsTrigger>
+            <TabsTrigger value="partner-capital">Partner Capital</TabsTrigger>
+            <TabsTrigger value="sales-by-customer">Sales/Customer</TabsTrigger>
+            <TabsTrigger value="material-consumption">Materials</TabsTrigger>
+          </TabsList>
         </div>
 
         <TabsContent value="profit-loss">
@@ -226,6 +237,21 @@ export function FinancialReports() {
         </TabsContent>
         <TabsContent value="income-statement">
           <ProfitLossReport key={`is-${refreshKey}`} dateRange={activeDateRange} />
+        </TabsContent>
+        <TabsContent value="ap-aging">
+          <APAgingReport />
+        </TabsContent>
+        <TabsContent value="depreciation">
+          <DepreciationReport />
+        </TabsContent>
+        <TabsContent value="partner-capital">
+          <PartnerCapitalReport />
+        </TabsContent>
+        <TabsContent value="sales-by-customer">
+          <SalesByCustomerReport />
+        </TabsContent>
+        <TabsContent value="material-consumption">
+          <MaterialConsumptionReport />
         </TabsContent>
       </Tabs>
     </div>
