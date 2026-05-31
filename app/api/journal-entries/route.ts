@@ -37,12 +37,42 @@ export async function GET(request: NextRequest) {
 
         if (error) throw error
 
-        const entries = (data || []).map((doc: Record<string, any>) => {
+        const rawEntries = (data || []).map((doc: Record<string, any>) => {
             return {
                 id: doc.id,
                 ...doc,
                 date: doc.date || null,
                 created_at: doc.created_at || null,
+            }
+        })
+
+        const entryIds = rawEntries.map(e => e.id)
+        const { data: lines } = entryIds.length > 0
+            ? await getServiceClient().from(TABLES.JOURNAL_ENTRY_LINES).select("*").in("journal_entry_id", entryIds)
+            : { data: [] }
+
+        const linesByEntry = new Map<string, any[]>()
+        for (const l of (lines || [])) {
+            const arr = linesByEntry.get(l.journal_entry_id) || []
+            arr.push(l)
+            linesByEntry.set(l.journal_entry_id, arr)
+        }
+
+        const entries = rawEntries.map((entry) => {
+            const entryLines = linesByEntry.get(entry.id) || []
+            const totalDebits = entryLines.reduce((s: number, l: any) => s + (l.debit || 0), 0)
+            const totalCredits = entryLines.reduce((s: number, l: any) => s + (l.credit || 0), 0)
+            return {
+                ...entry,
+                entries: entryLines.map((l: any) => ({
+                    account_id: l.account_code,
+                    account_name: l.account_name,
+                    description: l.description,
+                    debit: l.debit || 0,
+                    credit: l.credit || 0,
+                })),
+                total_debits: totalDebits,
+                total_credits: totalCredits,
             }
         })
 
