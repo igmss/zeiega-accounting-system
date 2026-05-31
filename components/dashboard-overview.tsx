@@ -145,9 +145,18 @@ export function DashboardOverview() {
     )
   }
 
-  if (!data) {
-    return <div>Error loading dashboard data</div>
+  if (!data && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <p className="text-lg text-muted-foreground mb-4">Error loading dashboard data</p>
+        <Button variant="outline" onClick={() => { setLoading(true); fetch("/api/dashboard").then(r => r.json()).then(d => { setData(d as DashboardData); setLoading(false); }).catch(() => setLoading(false)); }}>
+          Retry
+        </Button>
+      </div>
+    )
   }
+
+  const d = data!;
 
   return (
     <div className="space-y-6">
@@ -159,7 +168,7 @@ export function DashboardOverview() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(data.kpiData.revenue)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(d.kpiData.revenue)}</div>
             <p className="text-xs text-muted-foreground">
               <TrendingUp className="inline h-3 w-3 mr-1" />
               From paid invoices
@@ -173,9 +182,9 @@ export function DashboardOverview() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(data.kpiData.cogs)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(d.kpiData.cogs)}</div>
             <p className="text-xs text-muted-foreground">
-              {data.kpiData.revenue > 0 ? Math.round((data.kpiData.cogs / data.kpiData.revenue) * 100) : 0}% of revenue
+              {d.kpiData.revenue > 0 ? Math.round((d.kpiData.cogs / d.kpiData.revenue) * 100) : 0}% of revenue
             </p>
           </CardContent>
         </Card>
@@ -186,9 +195,9 @@ export function DashboardOverview() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(data.kpiData.profit)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(d.kpiData.profit)}</div>
             <p className="text-xs text-muted-foreground">
-              {data.kpiData.revenue > 0 ? Math.round((data.kpiData.profit / data.kpiData.revenue) * 100) : 0}% margin
+              {d.kpiData.revenue > 0 ? Math.round((d.kpiData.profit / d.kpiData.revenue) * 100) : 0}% margin
             </p>
           </CardContent>
         </Card>
@@ -199,8 +208,8 @@ export function DashboardOverview() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(data.kpiData.wipValue)}</div>
-            <p className="text-xs text-muted-foreground">{data.workOrders.length} active jobs</p>
+            <div className="text-2xl font-bold">{formatCurrency(d.kpiData.wipValue)}</div>
+            <p className="text-xs text-muted-foreground">{d.workOrders.length} active jobs</p>
           </CardContent>
         </Card>
       </div>
@@ -213,7 +222,7 @@ export function DashboardOverview() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.monthlyRevenue}>
+              <BarChart data={d.monthlyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
@@ -233,7 +242,7 @@ export function DashboardOverview() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={data.orderStatus}
+                  data={d.orderStatus}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -241,7 +250,7 @@ export function DashboardOverview() {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {data.orderStatus.map((entry, index) => (
+                  {d.orderStatus.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -249,7 +258,7 @@ export function DashboardOverview() {
               </PieChart>
             </ResponsiveContainer>
             <div className="flex flex-wrap gap-2 mt-4">
-              {data.orderStatus.map((status, index) => (
+              {d.orderStatus.map((status, index) => (
                 <div key={status?.name || `status-${index}`} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: status.color }} aria-hidden="true" />
                   <span className="text-sm">
@@ -273,8 +282,8 @@ export function DashboardOverview() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {data.recentOrders.length > 0 ? (
-                data.recentOrders.map((order, index) => (
+              {d.recentOrders.length > 0 ? (
+                d.recentOrders.map((order, index) => (
                   <div key={order?.id || `order-${index}`} className="flex items-center justify-between">
                     <div>
                       <div className="font-medium">{order.id}</div>
@@ -314,8 +323,8 @@ export function DashboardOverview() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {data.workOrders.length > 0 ? (
-                data.workOrders.map((wo, index) => (
+              {d.workOrders.length > 0 ? (
+                d.workOrders.map((wo, index) => (
                   <div key={wo?.id || `workorder-${index}`} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div>

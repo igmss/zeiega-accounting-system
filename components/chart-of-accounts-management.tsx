@@ -140,8 +140,8 @@ export function ChartOfAccountsManagement() {
 
   const filteredAccounts = accounts.filter(
     (account) =>
-      account.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      account.name.toLowerCase().includes(searchTerm.toLowerCase()),
+      account.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      account.name?.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const getAccountTypeBadge = (type: string, isActive: boolean = true) => {

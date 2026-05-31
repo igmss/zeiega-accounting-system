@@ -167,7 +167,7 @@ export function ExpensesManagement() {
                                 <div className="space-y-2">
                                     <Label>Amount</Label>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
+                                        <span className="absolute left-3 top-2.5 text-muted-foreground">EGP</span>
                                         <Input
                                             type="number"
                                             placeholder="0.00"
@@ -300,7 +300,7 @@ export function ExpensesManagement() {
                                                     <span className="text-xs text-muted-foreground">{expense.expenseAccount}</span>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="capitalize">{expense.paymentAccount?.replace(/_/g, " ").toLowerCase()}</TableCell>
+                                            <TableCell className="capitalize">{expense.paymentAccount?.replace(/_/g, " ")?.toLowerCase() || "-"}</TableCell>
                                             <TableCell className="text-right font-bold">{formatCurrency(expense.amount)}</TableCell>
                                         </TableRow>
                                     )

@@ -56,7 +56,7 @@ export function CreateInvoiceDialog() {
             unit_price: item.unit_price,
             total: item.qty * item.unit_price
           })),
-          due_date: invoiceData.due_date ? new Date(invoiceData.due_date).toISOString() : undefined
+          due_date: invoiceData.due_date && invoiceData.due_date.trim() !== "" ? new Date(invoiceData.due_date).toISOString() : undefined
         })
       })
 

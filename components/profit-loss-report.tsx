@@ -235,7 +235,7 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
                       <TableCell></TableCell>
                       <TableCell></TableCell>
                     </TableRow>
-                    {reportData.operating_expenses.onlineSalesCosts.items.map((item: any) => (
+                    {reportData.operating_expenses.onlineSalesCosts?.items?.map((item: any) => (
                       <TableRow key={item.code}>
                         <TableCell className="pl-12 text-sm">{item.name}</TableCell>
                         <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
@@ -270,7 +270,7 @@ export function ProfitLossReport({ dateRange }: ProfitLossReportProps) {
                       <TableCell></TableCell>
                       <TableCell></TableCell>
                     </TableRow>
-                    {reportData.other_income_expenses.items.map((item: any) => (
+                    {reportData.other_income_expenses.items?.map((item: any) => (
                       <TableRow key={item.code}>
                         <TableCell className="pl-6">{item.name}</TableCell>
                         <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>

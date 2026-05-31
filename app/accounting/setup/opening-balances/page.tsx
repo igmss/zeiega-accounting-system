@@ -84,7 +84,7 @@ export default function OpeningBalancesPage() {
             if (response.ok) {
                 // success
                 alert("Opening balances recorded successfully!")
-                router.push('/dashboard')
+                router.push('/')
             } else {
                 alert("Failed to record opening balances.")
             }

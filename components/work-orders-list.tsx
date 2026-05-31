@@ -172,14 +172,14 @@ export function WorkOrdersList() {
         body: JSON.stringify({
           id: workOrderId,
           status: "in_progress",
-          started_at: new Date()
+          started_at: new Date().toISOString()
         })
       })
 
       if (response.ok) {
         setWorkOrders((prev) =>
           prev.map((wo) =>
-            wo.id === workOrderId ? { ...wo, status: "in_progress" as const, started_at: new Date() } : wo,
+            wo.id === workOrderId ? { ...wo, status: "in_progress" as const, started_at: new Date().toISOString() } : wo,
           ),
         )
       } else {

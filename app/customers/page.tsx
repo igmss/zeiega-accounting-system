@@ -200,7 +200,7 @@ export default function CustomersPage() {
                 {customers.filter(c => (c.type || "individual") === "business").length}
               </div>
               <p className="text-xs text-muted-foreground">
-                {Math.round((customers.filter(c => (c.type || "individual") === "business").length / customers.length) * 100)}% of total
+                {customers.length > 0 ? Math.round((customers.filter(c => (c.type || "individual") === "business").length / customers.length) * 100) : 0}% of total
               </p>
             </CardContent>
           </Card>

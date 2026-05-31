@@ -86,8 +86,8 @@ export function SalesOrdersList() {
     if (searchTerm) {
       filtered = filtered.filter(
         (order) =>
-          order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          order.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          order.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          order.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           order.website_order_id?.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     }
@@ -306,14 +306,11 @@ export function SalesOrdersList() {
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
-                      {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                      {(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {order.items
-                        .map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`)
-                        .join(", ")
-                        .slice(0, 30)}
-                      {order.items.map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`).join(", ").length > 30 ? "..." : ""}
+                      {(order.items || []).map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`).join(", ").slice(0, 30)}
+                      {(order.items || []).map((item: any) => `${item.qty || item.quantity}x ${item.name || item.sku}`).join(", ").length > 30 ? "..." : ""}
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{formatCurrency(order.total_amount ?? order.total ?? 0)}</TableCell>

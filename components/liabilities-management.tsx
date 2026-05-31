@@ -296,7 +296,7 @@ export function LiabilitiesManagement() {
                             </TableHeader>
                             <TableBody>
                                 {filtered.map((l, i) => (
-                                    <TableRow key={i}>
+                                    <TableRow key={l.id || i}>
                                         <TableCell>{new Date(l.date).toLocaleDateString()}</TableCell>
                                         <TableCell>{l.description}</TableCell>
                                         <TableCell>
