@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       {
         accountCode: "1110", // Accounts Receivable
         accountName: "Accounts Receivable",
-        debit: (amount || total_amount || 0),
+        debit: (total_amount || (amount || 0) + (tax_amount || 0) || 0),
         credit: 0,
         description: `Invoice ${invoiceId} to ${customer_name || 'Customer'}`
       },
