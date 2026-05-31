@@ -503,7 +503,6 @@ export function SalesOrdersList() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
             <div>
               <Label htmlFor="notes">Notes</Label>
