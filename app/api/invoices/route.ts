@@ -99,14 +99,10 @@ export async function POST(request: Request) {
     const invoice = {
       customer_id,
       customer_name,
-      items: items || [],
       amount: amount || 0,
-      tax_amount: tax_amount || 0,
-      total_amount: total_amount || 0,
-      cost_of_goods_sold: cost_of_goods_sold || 0,
-      paid_amount: 0,
+      sales_order_id: body.sales_order_id || null,
       due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      created_at: new Date().toISOString(),
+      notes: body.notes || null,
       status: "unpaid"
     }
 

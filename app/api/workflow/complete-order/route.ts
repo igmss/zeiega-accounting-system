@@ -139,13 +139,9 @@ export async function POST(request: Request) {
         customer_id: customerId,
         customer_name: customerName,
         amount: totalAmount,
-        total: totalAmount,
-        tax_amount: 0,
-        total_amount: totalAmount,
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         status: "unpaid",
         created_at: new Date().toISOString(),
-        items: orderData.items || []
       }
 
       const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).upsert(invoice, { onConflict: "id" })
