@@ -153,3 +153,7 @@ t-secret-123*
 h origin main
 .vercel
 .env*.local
+
+dev_output.txt
+dev_error.txt
+
