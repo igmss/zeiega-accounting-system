@@ -116,8 +116,6 @@ export class OrderItemDesignService {
             complexity: "medium",
             image: null,
             source: "default"
-            overheadCost: 0,
-            quantity
           });
           
           warnings.push(`Unmatched design for item: ${item.name} (SKU/ID: ${item.productId})`);
