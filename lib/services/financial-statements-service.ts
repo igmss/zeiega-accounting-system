@@ -131,15 +131,13 @@ export class FinancialStatementsService {
         const items: StatementLineItem[] = []
 
         for (const account of accounts) {
-            if (!account.parentCode) {
-                const balance = await this.getAccountBalance(account.code, startDate, endDate)
-                if (balance !== 0) {
-                    items.push({
-                        code: account.code,
-                        name: account.name,
-                        amount: balance,
-                    })
-                }
+            const balance = await this.getAccountBalance(account.code, startDate, endDate)
+            if (balance !== 0) {
+                items.push({
+                    code: account.code,
+                    name: account.name,
+                    amount: balance,
+                })
             }
         }
 
@@ -276,7 +274,13 @@ export class FinancialStatementsService {
         const totalLiabilities = currentLiabilitiesTotal + longTermLiabilitiesTotal
 
         const equityItems = await this.getAccountBalancesByType(AccountType.EQUITY, undefined, asOfDate)
-        const equityTotal = equityItems.reduce((sum, item) => sum + item.amount, 0)
+
+        const fiscalYearStart = new Date(asOfDate.getFullYear(), 0, 1)
+        const incomeStmt = await this.generateIncomeStatement(fiscalYearStart, asOfDate)
+        const currentYearNetIncome = incomeStmt.netIncome
+
+        let equityTotal = equityItems.reduce((sum, item) => sum + item.amount, 0)
+        equityTotal += currentYearNetIncome
 
         const totalLiabilitiesAndEquity = totalLiabilities + equityTotal
         const balanceCheckFailed = Math.abs(totalAssets - totalLiabilitiesAndEquity) > 0.01

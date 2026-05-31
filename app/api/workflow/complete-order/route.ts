@@ -116,6 +116,26 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString()
         }).eq("id", workOrderDoc.id)
         console.log(`WO ${workOrderDoc.id} marked completed`)
+
+        const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
+
+        const woMatCost = (workOrderDoc.materials_issued || []).reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
+        const woOHCost = (workOrderDoc.overhead_cost || 0)
+        const woLaborCost = (workOrderDoc.labor_cost || 0)
+
+        if (woMatCost > 0 || woOHCost > 0 || woLaborCost > 0) {
+          const wipToFgLines: any[] = [
+            { accountCode: "1220", accountName: "Finished Goods Inventory", debit: woMatCost + woLaborCost + woOHCost, credit: 0, description: `Transfer from WIP for order ${orderId}` },
+          ]
+          if (woMatCost > 0) wipToFgLines.push({ accountCode: "1710", accountName: "WIP - Materials", debit: 0, credit: woMatCost, description: `Materials transferred to FG` })
+          if (woLaborCost > 0) wipToFgLines.push({ accountCode: "1711", accountName: "WIP - Labor", debit: 0, credit: woLaborCost, description: `Labor transferred to FG` })
+          if (woOHCost > 0) wipToFgLines.push({ accountCode: "1712", accountName: "WIP - Overhead", debit: 0, credit: woOHCost, description: `Overhead transferred to FG` })
+
+          await EnhancedAccountingService.createJournalEntry(
+            JournalEntryType.WIP_TO_FINISHED_GOODS, wipToFgLines, `WIP-FG-${orderId}`,
+            `WIP to FG for order ${orderId}`, null
+          )
+        }
       }
     }
 
@@ -148,8 +168,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Failed to create invoice", detail: invoiceError.message }, { status: 500 })
       }
 
-      const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
-      
       await EnhancedAccountingService.createJournalEntry(
         JournalEntryType.SALES_INVOICE,
         [
@@ -182,47 +200,24 @@ export async function POST(request: Request) {
         const cogsAmount = woData.total_cost || woData.estimated_cost || 0
 
         if (cogsAmount > 0) {
-          const woMatCost = (woData.materials_issued || []).reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
-          const woOHCost = (woData.overhead_cost || 0)
-          const woLaborCost = (woData.labor_cost || 0)
-
-          const cogsLines: any[] = [
-            {
-              accountCode: "5301",
-              accountName: "Cost of Goods Sold",
-              debit: cogsAmount,
-              credit: 0,
-              description: `COGS for order ${orderId}`
-            },
-            {
-              accountCode: "1220",
-              accountName: "Finished Goods Inventory",
-              debit: 0,
-              credit: cogsAmount,
-              description: `Finished goods consumed for order ${orderId}`
-            }
-          ]
-
-          if (woOHCost > 0) {
-            cogsLines.push({
-              accountCode: "5009",
-              accountName: "Manufacturing OH - Applied",
-              debit: woOHCost,
-              credit: 0,
-              description: `Clear applied OH for order ${orderId}`
-            })
-            cogsLines.push({
-              accountCode: "5301",
-              accountName: "Cost of Goods Sold",
-              debit: 0,
-              credit: woOHCost,
-              description: `OH portion of COGS for order ${orderId}`
-            })
-          }
-
           await EnhancedAccountingService.createJournalEntry(
             JournalEntryType.SALES_COGS,
-            cogsLines,
+            [
+              {
+                accountCode: "5301",
+                accountName: "Cost of Goods Sold",
+                debit: cogsAmount,
+                credit: 0,
+                description: `COGS for order ${orderId}`
+              },
+              {
+                accountCode: "1220",
+                accountName: "Finished Goods Inventory",
+                debit: 0,
+                credit: cogsAmount,
+                description: `Finished goods consumed for order ${orderId}`
+              }
+            ],
             invoiceId,
             `COGS for order ${orderId}`
           )
