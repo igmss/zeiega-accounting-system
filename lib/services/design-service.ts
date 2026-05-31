@@ -51,10 +51,30 @@ export class DesignService {
       if (error) throw error;
 
       const designs = (rows || []).map((row: any) => ({
-        ...row,
         id: row.id,
+        name: row.name || "",
+        description: row.description || "",
+        category: row.category || "",
+        subcategory: row.subcategory || "",
+        image: row.image || "",
+        images: row.images || [],
+        materialCost: row.material_cost || 0,
+        laborCost: row.labor_cost || 0,
+        overheadCost: row.overhead_cost || 0,
+        totalCost: row.total_cost || 0,
+        manufacturingTime: row.manufacturing_time || 0,
+        complexity: row.complexity || "medium",
+        status: row.status || "active",
+        materials: row.materials || [],
+        processes: row.processes || [],
+        variants: row.variants || [],
+        sizeCosts: row.size_costs || {},
+        tags: row.tags || [],
+        notes: row.notes || "",
+        createdBy: row.created_by || "",
+        updatedBy: row.updated_by || "",
         createdAt: row.created_at || new Date().toISOString(),
-        updatedAt: row.updated_at || new Date().toISOString()
+        updatedAt: row.updated_at || new Date().toISOString(),
       })) as Design[];
 
       let filteredDesigns = designs;
@@ -87,10 +107,30 @@ export class DesignService {
         return null;
       }
       return {
-        ...data,
         id: data.id,
+        name: data.name || "",
+        description: data.description || "",
+        category: data.category || "",
+        subcategory: data.subcategory || "",
+        image: data.image || "",
+        images: data.images || [],
+        materialCost: data.material_cost || 0,
+        laborCost: data.labor_cost || 0,
+        overheadCost: data.overhead_cost || 0,
+        totalCost: data.total_cost || 0,
+        manufacturingTime: data.manufacturing_time || 0,
+        complexity: data.complexity || "medium",
+        status: data.status || "active",
+        materials: data.materials || [],
+        processes: data.processes || [],
+        variants: data.variants || [],
+        sizeCosts: data.size_costs || {},
+        tags: data.tags || [],
+        notes: data.notes || "",
+        createdBy: data.created_by || "",
+        updatedBy: data.updated_by || "",
         createdAt: data.created_at || new Date().toISOString(),
-        updatedAt: data.updated_at || new Date().toISOString()
+        updatedAt: data.updated_at || new Date().toISOString(),
       } as Design;
     } catch (error) {
       console.error("Error fetching design:", error);

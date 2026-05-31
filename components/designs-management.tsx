@@ -524,8 +524,21 @@ function DesignDialog({
 
   useEffect(() => {
     if (design) {
-      setFormData(design);
-    } else {
+      setFormData({
+        name: design.name || "",
+        description: design.description || "",
+        category: design.category || "",
+        subcategory: design.subcategory || "",
+        materialCost: design.materialCost || 0,
+        laborCost: design.laborCost || 0,
+        overheadCost: design.overheadCost || 0,
+        manufacturingTime: design.manufacturingTime || 0,
+        complexity: design.complexity || "medium",
+        status: design.status || "active",
+        materials: design.materials || [],
+        processes: design.processes || [],
+        variants: design.variants || [],
+      });
       setFormData({
         name: "",
         description: "",
