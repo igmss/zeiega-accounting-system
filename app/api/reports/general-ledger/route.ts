@@ -31,6 +31,18 @@ export async function GET(request: NextRequest) {
 
         if (error) throw error
 
+        const entryIds = (journalEntries || []).map((e: any) => e.id)
+        const { data: allLines } = entryIds.length > 0
+            ? await getServiceClient().from(TABLES.JOURNAL_ENTRY_LINES).select("*").in("journal_entry_id", entryIds)
+            : { data: [] }
+
+        const linesByEntry = new Map<string, any[]>()
+        for (const l of (allLines || [])) {
+            const arr = linesByEntry.get(l.journal_entry_id) || []
+            arr.push(l)
+            linesByEntry.set(l.journal_entry_id, arr)
+        }
+
         const ledger: {
             [accountCode: string]: {
                 code: string
@@ -65,7 +77,7 @@ export async function GET(request: NextRequest) {
         }
 
         journalEntries.forEach((entry: any) => {
-            const lines = entry.entries || entry.lines || []
+            const lines = linesByEntry.get(entry.id) || []
             const entryDate = typeof entry.date === 'string'
                 ? entry.date.split("T")[0]
                 : entry.date
@@ -73,7 +85,7 @@ export async function GET(request: NextRequest) {
             if (entryDate < fromDate || entryDate > toDate) return
 
             lines.forEach((line: any) => {
-                const accountCode = line.account_id || line.accountCode || ""
+                const accountCode = line.account_code || line.accountCode || ""
 
                 if (!ledger[accountCode]) return
 

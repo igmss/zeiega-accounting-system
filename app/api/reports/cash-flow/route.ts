@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
             operating: {
                 net_income: statement.operating.netIncome,
                 depreciation: statement.operating.depreciation,
+                non_cash_oh: statement.operating.nonCashOH,
                 ar_change: statement.operating.arAdjustment,
                 inventory_change: statement.operating.inventoryAdjustment,
                 ap_change: statement.operating.apAdjustment,

@@ -429,13 +429,16 @@ export class FinancialStatementsService {
             await delta("1351") + await delta("1352") +
             await delta("1353") + await delta("1354") + await delta("1491")
 
+        const nonCashOH = -await delta("5009")
+
         const arDelta = await delta(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE)
         const inventoryDelta = await delta(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS) +
                                await delta(ACCOUNT_CODES.INVENTORY_WIP) +
-                               await delta(ACCOUNT_CODES.RAW_MATERIALS_FABRIC)
+                               await delta(ACCOUNT_CODES.RAW_MATERIALS_FABRIC) +
+                               await delta("1710") + await delta("1711") + await delta("1712")
         const apDelta = await delta(ACCOUNT_CODES.ACCOUNTS_PAYABLE)
 
-        const cashFromOperations = netIncome + depDelta - arDelta - inventoryDelta + apDelta
+        const cashFromOperations = netIncome + depDelta + nonCashOH - arDelta - inventoryDelta + apDelta
 
         const equipmentDelta = await delta(ACCOUNT_CODES.PRODUCTION_EQUIPMENT)
         const cashFromInvesting = -equipmentDelta
@@ -461,6 +464,7 @@ export class FinancialStatementsService {
             operating: {
                 netIncome,
                 depreciation: depDelta,
+                nonCashOH,
                 arAdjustment: -arDelta,
                 inventoryAdjustment: -inventoryDelta,
                 apAdjustment: apDelta,
