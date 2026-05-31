@@ -218,7 +218,6 @@ export function SalesOrdersList() {
       setNewManualOrder({
         customer_name: "",
         customer_email: "",
-        payment_method: "manual",
         items: [{
           product_name: "",
           product_id: "",
