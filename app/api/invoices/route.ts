@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       sales_order_id: body.sales_order_id || null,
       due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       notes: body.notes || null,
-      status: "unpaid"
+      status: "pending"
     }
 
     // 1. Record Revenue and AR (BUG-3)
@@ -204,11 +204,16 @@ export async function POST(request: Request) {
     }
 
     // Save invoice to database
-    await getServiceClient()
+    const { data: inserted, error: insertError } = await getServiceClient()
       .from(TABLES.INVOICES)
       .insert(invoice)
+      .select()
+      .single()
+
+    if (insertError) throw insertError
 
     return NextResponse.json({
+      id: inserted?.id || invoiceId,
       ...invoice,
       revenueJournalEntryId: revenueResult.entryId,
       cogsJournalEntryId: cogsEntryId

@@ -7,15 +7,11 @@ export async function GET(req: NextRequest) {
   if (!auth.authenticated) return auth.response
   try {
     const { searchParams } = new URL(req.url)
-    const fiscalYear = Number(searchParams.get("fiscalYear") || new Date().getFullYear())
+    const fiscalYear = searchParams.get("fiscalYear")
+      ? Number(searchParams.get("fiscalYear"))
+      : undefined
 
-    const configs: any[] = []
-    const bases = ["DLH", "MH", "DL_COST", "UNITS", "MATERIAL_COST"] as const
-    for (const base of bases) {
-      const config = await OverheadService.getActivePOHR(fiscalYear, base)
-      if (config) configs.push(config)
-    }
-
+    const configs = await OverheadService.getOverheadConfigs(fiscalYear)
     return NextResponse.json({ configs })
   } catch (error) {
     return NextResponse.json({ error: "Failed to fetch configs" }, { status: 500 })

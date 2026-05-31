@@ -617,16 +617,25 @@ export class WorkOrderService {
     try {
       const now = new Date().toISOString()
       const workOrder = {
-        ...workOrderData,
-        created_at: now,
-        updated_at: now,
+        sales_order_id: workOrderData.sales_order_id || null,
+        design_id: workOrderData.design_id || null,
+        design_name: workOrderData.design_name || null,
+        raw_materials_used: workOrderData.raw_materials_used || [],
+        materials_issued: workOrderData.materials_issued || [],
+        labor_hours: workOrderData.labor_hours || 0,
+        labor_cost: workOrderData.labor_cost || 0,
+        overhead_cost: workOrderData.overhead_cost || 0,
+        total_cost: workOrderData.total_cost || 0,
+        estimated_cost: workOrderData.estimated_cost || 0,
         status: workOrderData.status || "pending",
         completionPercentage: workOrderData.completionPercentage || 0,
-        total_cost: 0,
-        estimated_cost: 0,
-        labor_cost: 0,
-        materials_issued: [],
-        notes: workOrderData.notes || `Basic work order created without automatic cost calculation - manual cost entry required`
+        assigned_worker: workOrderData.assigned_worker || null,
+        start_time: workOrderData.start_time || null,
+        estimated_completion: workOrderData.estimated_completion || null,
+        completed_at: workOrderData.completed_at || null,
+        notes: workOrderData.notes || null,
+        created_at: now,
+        updated_at: now,
       }
 
       const { data: inserted, error } = await getServiceSupabase()
