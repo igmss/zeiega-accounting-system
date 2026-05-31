@@ -82,6 +82,14 @@ export async function POST(request: Request) {
           { status: 400 }
         )
       }
+
+      const totalMaterialCost = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
+      const { data: currentWO } = await serviceDb.from(TABLES.WORK_ORDERS).select("total_cost").eq("id", workOrderId).single()
+      await serviceDb.from(TABLES.WORK_ORDERS).update({
+        total_cost: (currentWO?.total_cost || 0) + totalMaterialCost,
+        materials_issued: accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost })),
+        updated_at: new Date().toISOString()
+      }).eq("id", workOrderId)
     }
     
     for (const inv of inventoryRefs) {
