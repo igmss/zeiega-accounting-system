@@ -52,10 +52,9 @@ export async function GET(request: NextRequest) {
             financing: {
                 loan_proceeds: statement.financing.loansAdjustment > 0 ? statement.financing.loansAdjustment : 0,
                 loan_repayments: statement.financing.loansAdjustment < 0 ? Math.abs(statement.financing.loansAdjustment) : 0,
-                owner_drawings: statement.financing.equityAdjustment < 0 ? Math.abs(statement.financing.equityAdjustment) : 0,
                 net_cash: statement.financing.total
             },
-            net_change_in_cash: statement.netCashFlow,
+            net_change_in_cash: endingCash - beginningCash,
             beginning_cash: beginningCash,
             ending_cash: endingCash
         })

@@ -459,7 +459,7 @@ export class FinancialStatementsService {
             await delta(ACCOUNT_CODES.DRAWINGS_IBRAHIM) +
             await delta(ACCOUNT_CODES.DRAWINGS_FATHY)
 
-        const cashFromFinancing = loansDelta + capitalDelta - drawingsDelta
+        const cashFromFinancing = loansDelta
 
         const cashDelta = await delta(ACCOUNT_CODES.CASH_ON_HAND) + await delta(ACCOUNT_CODES.BANK_MAIN)
         const netCashFlow = cashFromOperations + cashFromInvesting + cashFromFinancing
@@ -482,7 +482,6 @@ export class FinancialStatementsService {
             },
             financing: {
                 loansAdjustment: loansDelta,
-                equityAdjustment: capitalDelta - drawingsDelta,
                 total: cashFromFinancing
             },
             netCashFlow,
