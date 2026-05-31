@@ -28,16 +28,16 @@ export async function GET() {
 
     const partnerData: any[] = []
 
-    for (const [key, p] of Object.entries(partners)) {
-      const openingBal = await getBal(p.code, new Date(yearStart.getTime() - 86400000))
-      const closingBal = await getBal(p.code, now)
-      const drawingsCode = p.code.replace("301", "302")
+    for (const [, p] of Object.entries(partners)) { const partner = p as any
+      const openingBal = await getBal(partner.code, new Date(yearStart.getTime() - 86400000))
+      const closingBal = await getBal(partner.code, now)
+      const drawingsCode = partner.code.replace("301", "302")
       const drawings = await getBal(drawingsCode, now)
-      const profitShare = netIncome * (p.share / 100)
+      const profitShare = netIncome * (partner.share / 100)
 
       partnerData.push({
-        partner: p.name,
-        share_percent: p.share,
+        partner: partner.name,
+        share_percent: partner.share,
         opening_balance: Math.round(openingBal),
         profit_share: Math.round(profitShare),
         drawings: Math.round(Math.abs(drawings)),
