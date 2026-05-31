@@ -648,7 +648,8 @@ export class WorkOrderService {
 
       return { success: true, workOrderId: (inserted as any)?.id || (workOrder as any).id }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : "Failed to create work order" }
+      const msg = error instanceof Error ? error.message : String(error)
+      return { success: false, error: msg || "Failed to create work order" }
     }
   }
 }
