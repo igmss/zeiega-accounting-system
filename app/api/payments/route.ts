@@ -95,7 +95,8 @@ export async function POST(request: Request) {
     }
 
     const invoiceData = invoiceDoc as any
-    const remainingBalance = (invoiceData.total_amount || 0) - (invoiceData.paid_amount || 0)
+    const invoiceTotal = invoiceData.total_amount || invoiceData.amount || 0
+    const remainingBalance = invoiceTotal - (invoiceData.paid_amount || 0)
 
     if (remainingBalance <= 0) {
       return NextResponse.json({ error: "Invoice is already fully paid" }, { status: 400 })
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
 
     // Update invoice and create payment record
     const newPaidAmount = (invoiceData.paid_amount || 0) + amount
-    const isFullyPaid = newPaidAmount >= (invoiceData.total_amount || 0) - 0.01
+    const isFullyPaid = newPaidAmount >= invoiceTotal - 0.01
 
     await getServiceClient()
       .from(TABLES.INVOICES)
