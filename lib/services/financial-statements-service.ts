@@ -435,7 +435,7 @@ export class FinancialStatementsService {
             await delta("1351") + await delta("1352") +
             await delta("1353") + await delta("1354") + await delta("1491")
 
-        const nonCashOH = -await delta("5009")
+        const nonCashOH = await delta("5009")
 
         const arDelta = await delta(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE)
         const inventoryDelta = await delta(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS) +
