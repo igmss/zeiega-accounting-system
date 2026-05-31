@@ -160,10 +160,18 @@ export async function POST(request: Request) {
       })
       .eq("id", invoice_id)
 
+    // Map payment method to valid DB values
+    const methodMap: Record<string, string> = {
+      cash: "cash", bank: "bank_transfer", transfer: "bank_transfer",
+      card: "card", credit_card: "card", check: "check",
+      mobile: "mobile_payment", mobile_payment: "mobile_payment",
+    }
+    const dbMethod = methodMap[payment_method?.toLowerCase()] || "cash"
+
     const payment = {
       invoice_id,
       amount,
-      method: payment_method || "cash",
+      method: dbMethod,
       notes: `Ref: ${reference_number || "N/A"}. JE: ${jeResult.entryId}`,
     }
 
