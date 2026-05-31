@@ -62,19 +62,20 @@ export function DashboardOverview() {
           { name: "Invoiced", value: workOrderStatus?.invoiced || 0, color: "#6b7280" },
         ]
 
-        const recentOrdersData = recentOrders?.slice(0, 4).map((order: any) => ({
+        const recentOrdersData = Array.isArray(recentOrders) ? recentOrders.slice(0, 4).map((order: any) => ({
           id: order.id,
           customer: order.customerName,
           amount: order.total,
           status: order.status,
-        })) || []
+        })) : []
 
-        const activeWorkOrders = workOrderStatus?.slice(0, 3).map((wo: any) => ({
+        const woActive = workOrderStatus?.active || []
+        const activeWorkOrders = Array.isArray(woActive) ? woActive.slice(0, 3).map((wo: any) => ({
           id: wo.id,
           salesOrder: wo.salesOrderId,
           status: wo.status,
-          completion: wo.status === "completed" ? 100 : wo.completionPercentage ?? 0,
-        })) || []
+          completion: wo.status === "completed" ? 100 : 0,
+        })) : []
 
         setData({
           kpiData: kpiData || {
