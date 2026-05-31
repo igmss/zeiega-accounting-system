@@ -44,3 +44,10 @@ ALTER TABLE public.designs
   ADD COLUMN IF NOT EXISTS default_size_multipliers jsonb DEFAULT '{}';
 
 CREATE INDEX IF NOT EXISTS idx_designs_product_id ON public.designs (product_id);
+
+-- Extend vendors table with tracking fields
+ALTER TABLE public.vendors
+  ADD COLUMN IF NOT EXISTS rating          numeric(3,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_orders    integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_amount    numeric(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_order_date timestamptz;

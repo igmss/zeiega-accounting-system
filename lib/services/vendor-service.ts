@@ -28,25 +28,29 @@ export interface VendorFilter {
 export class VendorService {
 
     static async createVendor(
-        data: Omit<Vendor, "id" | "created_at" | "updated_at" | "total_orders" | "total_amount">
+        data: Omit<Vendor, "id" | "created_at" | "updated_at" | "total_orders" | "total_amount" | "last_order_date" | "rating">
     ): Promise<{ success: boolean; vendorId?: string; error?: string }> {
         try {
             const now = new Date().toISOString()
-            const vendorId = `VND-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
+            const vendorId = `VND-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
-            const vendor: Vendor = {
-                ...data,
+            const { error } = await getServiceSupabase().from(TABLES.VENDORS).insert({
                 id: vendorId,
-                total_orders: 0,
-                total_amount: 0,
+                name: data.name,
+                contact_name: data.contact_name || null,
+                email: data.email || null,
+                phone: data.phone || null,
+                address: data.address || null,
+                payment_terms: data.payment_terms || null,
+                lead_time_days: data.lead_time_days || null,
+                notes: data.notes || null,
+                status: data.status || "active",
                 created_at: now,
                 updated_at: now,
-            }
-
-            const { error } = await getServiceSupabase().from(TABLES.VENDORS).insert(vendor)
+            })
             if (error) throw error
 
-            console.log(`✅ Created vendor ${vendor.name} (${vendorId})`)
+            console.log(`✅ Created vendor ${data.name} (${vendorId})`)
             return { success: true, vendorId }
         } catch (error) {
             console.error("Error creating vendor:", error)
