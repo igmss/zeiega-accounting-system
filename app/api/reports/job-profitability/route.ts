@@ -14,10 +14,7 @@ export async function GET(request: Request) {
     const to = searchParams.get('to')
 
     if (!from || !to) {
-      return NextResponse.json(
-        { error: "Date range is required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Date range is required" }, { status: 400 })
     }
 
     const fromDate = new Date(from)
@@ -33,30 +30,41 @@ export async function GET(request: Request) {
 
     if (woError) throw woError
 
-    const { data: salesOrders, error: soError } = await getServiceClient()
-      .from(TABLES.SALES_ORDERS)
-      .select("*")
+    const soIds = [...new Set((workOrders || []).map((wo: any) => wo.sales_order_id).filter(Boolean))]
+    const { data: salesOrders } = soIds.length > 0
+      ? await getServiceClient().from(TABLES.SALES_ORDERS).select("*").in("id", soIds as string[])
+      : { data: [] }
 
-    if (soError) throw soError
+    const { data: invoices } = soIds.length > 0
+      ? await getServiceClient().from(TABLES.INVOICES).select("*").in("sales_order_id", soIds as string[])
+      : { data: [] }
 
-    const jobData = workOrders.map((wo: any) => {
-      const salesOrder = salesOrders.find((so: any) => so.id === wo.sales_order_id)
+    const revenueBySO = new Map<string, number>()
+    for (const inv of (invoices || [])) {
+      const amt = inv.total_amount || inv.amount || 0
+      revenueBySO.set(inv.sales_order_id, (revenueBySO.get(inv.sales_order_id) || 0) + amt)
+    }
 
-      const materialCost = wo.raw_materials_used?.reduce((sum: number, mat: any) =>
-        sum + (mat.qty * mat.cost), 0) || 0
+    const jobData = (workOrders || []).map((wo: any) => {
+      const matIssued = Array.isArray(wo.materials_issued) ? wo.materials_issued : []
+      const materialCost = matIssued.reduce((sum: number, m: any) =>
+        sum + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
 
-      const laborCost = wo.labor_cost || wo.laborCost || 0
+      const laborCost = wo.labor_cost || 0
       const overheadCost = wo.overhead_cost || 0
       const totalCost = materialCost + laborCost + overheadCost
 
-      const revenue = salesOrder?.total || 0
+      const salesOrder = (salesOrders || []).find((so: any) => so.id === wo.sales_order_id)
+      const revenue = revenueBySO.get(wo.sales_order_id)
+        || (salesOrder?.total_amount || salesOrder?.total || 0)
+
       const grossProfit = revenue - totalCost
       const marginPercent = revenue > 0 ? (grossProfit / revenue) * 100 : 0
 
       return {
         work_order_id: wo.id,
         sales_order_id: wo.sales_order_id,
-        customer_name: wo.customer_name,
+        customer_name: salesOrder?.customer_name || wo.customer_name || "",
         revenue: Math.round(revenue),
         material_cost: Math.round(materialCost),
         labor_cost: Math.round(laborCost),
@@ -68,54 +76,26 @@ export async function GET(request: Request) {
       }
     })
 
-    if (jobData.length === 0) {
-      return NextResponse.json({
-        jobData: [],
-        chartData: [],
-        summary: {
-          totalRevenue: 0,
-          totalCost: 0,
-          totalProfit: 0,
-          averageMargin: 0,
-          jobCount: 0,
-          completedJobs: 0,
-          inProgressJobs: 0,
-        }
-      })
-    }
-
-    const totalRevenue = jobData.reduce((sum: any, job: any) => sum + job.revenue, 0)
-    const totalCost = jobData.reduce((sum: any, job: any) => sum + job.total_cost, 0)
+    const totalRevenue = jobData.reduce((s: number, j: any) => s + j.revenue, 0)
+    const totalCost = jobData.reduce((s: number, j: any) => s + j.total_cost, 0)
     const totalProfit = totalRevenue - totalCost
-    const averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
+    const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
 
-    const chartData = jobData.map((job: any) => ({
-      job: job.work_order_id,
-      revenue: job.revenue,
-      cost: job.total_cost,
-      profit: job.gross_profit,
-    }))
-
-    const reportData = {
-      jobData,
-      chartData,
+    return NextResponse.json({
+      jobData: jobData.length > 0 ? jobData : [],
+      chartData: jobData.map((j: any) => ({ job: j.work_order_id, revenue: j.revenue, cost: j.total_cost, profit: j.gross_profit })),
       summary: {
         totalRevenue: Math.round(totalRevenue),
         totalCost: Math.round(totalCost),
         totalProfit: Math.round(totalProfit),
-        averageMargin: Math.round(averageMargin * 10) / 10,
+        averageMargin: Math.round(avgMargin * 10) / 10,
         jobCount: jobData.length,
-        completedJobs: jobData.filter((job: any) => job.status === 'completed').length,
-        inProgressJobs: jobData.filter((job: any) => job.status === 'in_progress').length,
+        completedJobs: jobData.filter((j: any) => j.status === 'completed').length,
+        inProgressJobs: jobData.filter((j: any) => j.status === 'in_progress').length,
       }
-    }
-
-    return NextResponse.json(reportData)
+    })
   } catch (error) {
     console.error("Error generating job profitability report:", error)
-    return NextResponse.json(
-      { error: "Failed to generate job profitability report" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to generate job profitability report" }, { status: 500 })
   }
 }

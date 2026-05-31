@@ -27,64 +27,39 @@ export async function GET(request: NextRequest) {
 
         if (error) throw error
 
+        const entryIds = (journalEntries || []).map((e: any) => e.id)
+        const { data: allLines } = entryIds.length > 0
+            ? await getServiceClient().from(TABLES.JOURNAL_ENTRY_LINES).select("*").in("journal_entry_id", entryIds)
+            : { data: [] }
+
+        const linesByEntry = new Map<string, any[]>()
+        for (const l of (allLines || [])) {
+            const arr = linesByEntry.get(l.journal_entry_id) || []
+            arr.push(l)
+            linesByEntry.set(l.journal_entry_id, arr)
+        }
+
         let rawMaterialsPurchases = 0
         let directLabor = 0
-        let factoryRent = 0
-        let factoryUtilities = 0
-        let depreciation = 0
-        let maintenance = 0
-        let indirectLabor = 0
-        let wipMaterials = 0
-        let wipLabor = 0
-        let wipOverhead = 0
+        let overheadApplied = 0
+        let factoryOH = 0
 
-        journalEntries.forEach((entry: any) => {
-            const lines = entry.entries || entry.lines || []
+        for (const entry of (journalEntries || [])) {
+            const lines = linesByEntry.get(entry.id) || []
+            for (const line of lines) {
+                const code = line.account_code
+                const d = line.debit || 0
+                const c = line.credit || 0
+                const net = d - c
 
-            lines.forEach((line: any) => {
-                const accountCode = line.account_id || line.accountCode || ""
-                const debit = line.debit || 0
-                const credit = line.credit || 0
+                if (code === "1201" && d > 0 && c === 0) rawMaterialsPurchases += net
+                if (code === "5002" || code === "5003") directLabor += net
+                if (code === "5009") overheadApplied += c - d
+                if (code >= "5004" && code <= "5008") factoryOH += net
+            }
+        }
 
-                switch (accountCode) {
-                    case "5001":
-                        rawMaterialsPurchases += debit - credit
-                        break
-                    case "5002":
-                        directLabor += debit - credit
-                        break
-                    case "5003":
-                        directLabor += debit - credit
-                        break
-                    case "5004":
-                        indirectLabor += debit - credit
-                        break
-                    case "5005":
-                        factoryRent += debit - credit
-                        break
-                    case "5006":
-                        factoryUtilities += debit - credit
-                        break
-                    case "5007":
-                        maintenance += debit - credit
-                        break
-                    case "5008":
-                        depreciation += debit - credit
-                        break
-                    case "5101":
-                        wipMaterials += debit - credit
-                        break
-                    case "5102":
-                        wipLabor += debit - credit
-                        break
-                    case "5103":
-                        wipOverhead += debit - credit
-                        break
-                }
-            })
-        })
-
-        const rmAccounts = ["1201", "1202", "1203"]
+        const rmAccounts = ["1201", "1202"]
         const wipAccounts = ["1210", "1710", "1711", "1712"]
 
         const beforePeriod = new Date(start.getTime() - 1)
@@ -96,14 +71,14 @@ export async function GET(request: NextRequest) {
             Promise.all(wipAccounts.map(code => FinancialStatementsService.getAccountBalance(code, undefined, end))),
         ])
 
-        const beginningRawMaterials = begRM.reduce((sum: number, val: number) => sum + val, 0)
-        const beginningWIP = begWIP.reduce((sum: number, val: number) => sum + val, 0)
-        const endingRawMaterials = endRM.reduce((sum: number, val: number) => sum + val, 0)
-        const endingWIP = endWIP.reduce((sum: number, val: number) => sum + val, 0)
+        const beginningRawMaterials = begRM.reduce((s: number, v: number) => s + v, 0)
+        const beginningWIP = begWIP.reduce((s: number, v: number) => s + v, 0)
+        const endingRawMaterials = endRM.reduce((s: number, v: number) => s + v, 0)
+        const endingWIP = endWIP.reduce((s: number, v: number) => s + v, 0)
 
         const totalMaterialsAvailable = beginningRawMaterials + rawMaterialsPurchases
         const materialsUsed = totalMaterialsAvailable - endingRawMaterials
-        const totalOverhead = factoryRent + factoryUtilities + depreciation + maintenance + indirectLabor
+        const totalOverhead = overheadApplied + factoryOH
         const totalManufacturingCosts = materialsUsed + directLabor + totalOverhead
         const costOfGoodsManufactured = totalManufacturingCosts + beginningWIP - endingWIP
 
@@ -118,11 +93,8 @@ export async function GET(request: NextRequest) {
             },
             direct_labor: directLabor,
             manufacturing_overhead: {
-                factory_rent: factoryRent,
-                utilities: factoryUtilities,
-                depreciation: depreciation,
-                maintenance: maintenance,
-                indirect_labor: indirectLabor,
+                applied_oh: overheadApplied,
+                factory_oh: factoryOH,
                 total: totalOverhead
             },
             total_manufacturing_costs: totalManufacturingCosts,
