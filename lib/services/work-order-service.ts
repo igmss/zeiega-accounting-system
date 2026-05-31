@@ -628,7 +628,7 @@ export class WorkOrderService {
         total_cost: workOrderData.total_cost || 0,
         estimated_cost: workOrderData.estimated_cost || 0,
         status: workOrderData.status || "pending",
-        completionPercentage: workOrderData.completionPercentage || 0,
+        completionpercentage: workOrderData.completionPercentage || workOrderData.completionpercentage || 0,
         assigned_worker: workOrderData.assigned_worker || null,
         start_time: workOrderData.start_time || null,
         estimated_completion: workOrderData.estimated_completion || null,
