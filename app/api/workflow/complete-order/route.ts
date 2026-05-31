@@ -10,6 +10,7 @@ export async function POST(request: Request) {
   try {
     const { orderId } = await request.json()
     const serviceDb = getServiceClient()
+    const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
     if (!orderId) {
       return NextResponse.json(
@@ -116,8 +117,6 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString()
         }).eq("id", workOrderDoc.id)
         console.log(`WO ${workOrderDoc.id} marked completed`)
-
-        const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
         const woMatCost = (workOrderDoc.materials_issued || []).reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
         const woOHCost = (workOrderDoc.overhead_cost || 0)
