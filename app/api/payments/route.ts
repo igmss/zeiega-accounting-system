@@ -161,23 +161,17 @@ export async function POST(request: Request) {
       .eq("id", invoice_id)
 
     const payment = {
-      id: paymentId,
       invoice_id,
-      customer_name: invoiceData.customer_name || "",
       amount,
-      payment_method,
-      method: payment_method,
-      reference_number: reference_number || "",
-      reference: reference_number || "",
-      date: date || new Date().toISOString(),
-      journal_entry_id: jeResult.entryId,
-      created_at: new Date().toISOString()
+      method: payment_method || "cash",
+      notes: `Ref: ${reference_number || "N/A"}. JE: ${jeResult.entryId}`,
     }
 
     const { error: paymentError } = await getServiceClient()
       .from(TABLES.PAYMENTS)
       .insert(payment)
       .select()
+      .single()
 
     if (paymentError) {
       console.error("Failed to insert payment after journal entry creation:", paymentError)
