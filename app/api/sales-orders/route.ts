@@ -243,11 +243,20 @@ export async function PUT(request: Request) {
           .eq("id", orderId)
 
         if (orderData) {
+          const normalizedItems = (orderData.items || []).map((item: any) => ({
+            productId: item.productId || item.sku || item.product_id || "",
+            name: item.name || item.product_name || "",
+            quantity: item.quantity || item.qty || 1,
+            size: item.size || "",
+            unit_price: item.unit_price || item.basePrice || 0,
+            ...item
+          }))
+
           console.log(`Creating work order for ${orderSource} order ${orderId} with automatic cost calculation...`);
 
           const workOrderResult = await OrderItemDesignService.createWorkOrderWithAutoCosts(
             orderId,
-            orderData.items || [],
+            normalizedItems,
             {
               customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
               customer_email: (orderData as any).user_id || (orderData as any).customer_email || "unknown_user",
@@ -264,7 +273,7 @@ export async function PUT(request: Request) {
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
-              completionpercentage: 0,
+              completionPercentage: 0,
               raw_materials_used: [],
               materials_issued: [],
               labor_hours: 0,
@@ -272,6 +281,7 @@ export async function PUT(request: Request) {
               overhead_cost: 0,
               total_cost: 0,
               estimated_cost: 0,
+              items: normalizedItems,
               notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost failed: ${workOrderResult.error})`,
             };
 

@@ -50,11 +50,22 @@ export class OrderItemDesignService {
             console.warn(`Failed to get material requirements for design ${design.id}, using stored materialCost fallback:`, error);
           }
           
-          const sizeSpecificCosts = SizeCostService.calculateSizeSpecificCosts(
-            design, 
-            size, 
-            quantity
-          );
+          let sizeSpecificCosts;
+          try {
+            sizeSpecificCosts = SizeCostService.calculateSizeSpecificCosts(
+              design, 
+              size, 
+              quantity
+            );
+          } catch (sizeError) {
+            console.warn(`Size cost calculation failed for ${design.name}, using design defaults:`, sizeError);
+            sizeSpecificCosts = {
+              materialCost: design.materialCost || 0,
+              laborCost: design.laborCost || 0,
+              overheadCost: design.overheadCost || 0,
+              totalCost: design.totalCost || 0,
+            };
+          }
           
           let finalMaterialCost = sizeSpecificCosts.materialCost;
           let finalEstimatedCost = sizeSpecificCosts.totalCost;
@@ -98,6 +109,13 @@ export class OrderItemDesignService {
             estimatedCost: defaultCost,
             materialCost: 0,
             laborCost: 0,
+            overheadCost: 0,
+            quantity,
+            size: item.size || "M",
+            manufacturingTime: 0,
+            complexity: "medium",
+            image: null,
+            source: "default"
             overheadCost: 0,
             quantity
           });

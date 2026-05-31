@@ -24,7 +24,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
   const handleSaveCosts = async () => {
     setSaving(true)
     try {
-      const currentRate = workOrder.labor_hours > 0 ? (workOrder.labor_cost / workOrder.labor_hours) : 50
+      const currentRate = workOrder.labor_hours > 0 && workOrder.labor_cost ? (workOrder.labor_cost / workOrder.labor_hours) : 50
       const newLaborCost = Number(laborHours) * currentRate
 
       const response = await fetch('/api/work-orders/update-materials', {
