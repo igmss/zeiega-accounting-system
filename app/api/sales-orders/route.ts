@@ -219,6 +219,17 @@ export async function PUT(request: Request) {
           if (webOrderDoc) {
             orderData = webOrderDoc
             orderSource = "web"
+          } else {
+            const { data: soDoc } = await getServiceClient()
+              .from(TABLES.SALES_ORDERS)
+              .select("*")
+              .eq("id", orderId)
+              .single()
+
+            if (soDoc) {
+              orderData = soDoc
+              orderSource = "manual"
+            }
           }
         }
 
