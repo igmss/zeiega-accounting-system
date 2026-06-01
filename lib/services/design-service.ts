@@ -518,7 +518,7 @@ export class DesignService {
         overheadCost: costs.overheadCost ?? current.overheadCost,
         totalCost: 0
       };
-      updated.totalCost = updated.materialCost + (updated.laborCostPerHour * updated.manufacturingTime) + updated.overheadCost;
+      updated.totalCost = updated.materialCost + updated.laborCostPerHour + updated.overheadCost;
 
       const sizeCosts = { ...design.sizeCosts, [size]: updated };
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).update({

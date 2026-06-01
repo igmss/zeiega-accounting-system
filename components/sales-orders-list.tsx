@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,7 +28,7 @@ export function SalesOrdersList() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
-  const inFlightOrderIds = useRef<Set<string>>(new Set())
+  const [inFlightOrderIds, setInFlightOrderIds] = useState<Set<string>>(new Set())
   const [customers, setCustomers] = useState<any[]>([])
   const [designs, setDesigns] = useState<any[]>([])
   const [custSearchOpen, setCustSearchOpen] = useState(false)
@@ -124,7 +124,7 @@ export function SalesOrdersList() {
   }
 
   const handleStartProduction = async (orderId: string) => {
-    inFlightOrderIds.current.add(orderId)
+    setInFlightOrderIds(prev => new Set(prev).add(orderId))
     try {
       const response = await fetch('/api/sales-orders', {
         method: 'PUT',
@@ -136,74 +136,34 @@ export function SalesOrdersList() {
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "producing" as const } : order)),
         )
-
-        const order = orders.find(o => o.id === orderId)
-        const items = (order?.items || []).map((item: any) => ({
-          productId: item.sku || item.product_id || "",
-          name: item.name || item.product_name || "",
-          quantity: item.qty || item.quantity || 1,
-          size: item.size || "M",
-          unit_price: item.unit_price || 0,
-        }))
-
-        const woResponse = await fetch('/api/work-orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sales_order_id: orderId,
-            items,
-            customer_name: order?.customer_name || null,
-            customer_email: order?.customer_email || null,
-            customer_phone: order?.customer_phone || null,
-            customer_address: order?.customer_address || null,
-            total_amount: order?.total || order?.total_amount || 0,
-            order_status: order?.status || null,
-          })
-        })
-
-        if (woResponse.ok) {
-          const woData = await woResponse.json()
-          toast.success(`Work order ${woData.workOrderId} created`)
-        }
+        toast.success("Production started — work order created")
       } else {
         toast.error("Failed to start production")
       }
     } catch (error) {
       toast.error("Network error — failed to update order status")
     } finally {
-      inFlightOrderIds.current.delete(orderId)
+      setInFlightOrderIds(prev => {
+        const next = new Set(prev)
+        next.delete(orderId)
+        return next
+      })
     }
   }
 
   const handleCompleteOrder = async (orderId: string) => {
-    inFlightOrderIds.current.add(orderId)
+    setInFlightOrderIds(prev => new Set(prev).add(orderId))
     try {
-      const order = orders.find(o => o.id === orderId)
-      const linkedWoId = order?.work_order_id || order?.linked_work_order_id
-
-      if (linkedWoId) {
-        await fetch('/api/work-orders/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workOrderId: linkedWoId })
-        })
-      }
-
       const response = await fetch('/api/workflow/complete-order', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orderId: orderId
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
       })
 
       if (response.ok) {
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "completed" as const } : order)),
         )
-
         toast.success('Order completed!')
       } else {
         console.error('Failed to complete order')
@@ -213,7 +173,11 @@ export function SalesOrdersList() {
       console.error('Error completing order:', error)
       toast.error('Failed to complete order')
     } finally {
-      inFlightOrderIds.current.delete(orderId)
+      setInFlightOrderIds(prev => {
+        const next = new Set(prev)
+        next.delete(orderId)
+        return next
+      })
     }
   }
 
@@ -345,7 +309,7 @@ export function SalesOrdersList() {
                 <>
                   {filteredOrders.map((order) => (
                 <TableRow key={order.id}>
-                  <TableCell className="font-medium">{order.id}</TableCell>
+                  <TableCell className="font-medium">{order.website_order_id || order.id?.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{order.customer_name}</div>
@@ -391,7 +355,7 @@ export function SalesOrdersList() {
                         <Button
                           size="sm"
                           onClick={() => handleStartProduction(order.id)}
-                          disabled={inFlightOrderIds.current.has(order.id)}
+                          disabled={inFlightOrderIds.has(order.id)}
                           aria-label="Start production"
                         >
                           <Play className="h-4 w-4" />
@@ -402,7 +366,7 @@ export function SalesOrdersList() {
                         <Button
                           size="sm"
                           onClick={() => handleCompleteOrder(order.id)}
-                          disabled={inFlightOrderIds.current.has(order.id)}
+                          disabled={inFlightOrderIds.has(order.id)}
                           aria-label="Complete order"
                         >
                           <CheckCircle className="h-4 w-4" />
@@ -511,14 +475,14 @@ export function SalesOrdersList() {
                                   {designs.filter(d => d.name?.toLowerCase().includes(designSearch.toLowerCase()) || d.category?.toLowerCase().includes(designSearch.toLowerCase())).slice(0, 20).map(d => (
                                     <CommandItem key={d.id} value={d.name} onSelect={() => {
                                       const newItems = [...newManualOrder.items]
-                                      newItems[index] = { ...newItems[index], product_name: d.name, product_id: d.id, cost_price: d.totalCost || 0, unit_price: newItems[index].unit_price || 0, category: d.category || "" }
+                                      newItems[index] = { ...newItems[index], product_name: d.name, product_id: d.id, cost_price: d.total_cost || d.totalCost || 0, unit_price: newItems[index].unit_price || 0, category: d.category || "" }
                                       setNewManualOrder({ ...newManualOrder, items: newItems })
                                       const newOpen = [...designSearchOpenByIndex]
                                       newOpen[index] = false
                                       setDesignSearchOpenByIndex(newOpen)
                                     }}>
                                       <Check className={cn("mr-2 h-4 w-4", item.product_id === d.id ? "opacity-100" : "opacity-0")} />
-                                      <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · Cost: EGP {d.totalCost || 0}</div></div>
+                                      <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · Cost: EGP {d.total_cost || d.totalCost || 0}</div></div>
                                     </CommandItem>
                                   ))}
                                 </CommandGroup>
@@ -556,7 +520,7 @@ export function SalesOrdersList() {
                     </div>
                     {item.cost_price > 0 && item.unit_price > 0 && (
                       <Badge variant={item.unit_price >= item.cost_price ? "default" : "destructive"} className="text-xs">
-                        Margin: EGP {formatCurrency(item.unit_price - item.cost_price)} ({Math.round(((item.unit_price - item.cost_price) / item.unit_price) * 100)}%)
+                        Margin: EGP {formatCurrency(item.unit_price - item.cost_price)} ({Math.round(((item.unit_price - item.cost_price) / item.unit_price) * 100) || 0}%)
                       </Badge>
                     )}
                   </div>

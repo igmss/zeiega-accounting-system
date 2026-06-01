@@ -68,6 +68,8 @@ export async function PUT(request: NextRequest) {
         let result
         if (action === "activate") {
             result = await BOMService.activateBOM(id)
+        } else if (action === "archive") {
+            result = await BOMService.updateBOM(id, { status: "archived" })
         } else {
             result = await BOMService.updateBOM(id, updates)
         }

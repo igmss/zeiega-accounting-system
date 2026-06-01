@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Eye, CheckCircle, Archive, Trash2, Box } from "lucide-react"
+import { Search, Eye, CheckCircle, Archive, Trash2, Box, Plus } from "lucide-react"
 import { useState, useEffect } from "react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
@@ -51,6 +51,19 @@ export default function BOMPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedBOM, setSelectedBOM] = useState<BOM | null>(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [designs, setDesigns] = useState<any[]>([])
+  const [inventoryItems, setInventoryItems] = useState<any[]>([])
+  const [newBOM, setNewBOM] = useState({
+    design_id: "",
+    name: "",
+    items: [{ material_id: "", material_name: "", quantity: 1, unit: "m", unit_cost: 0, waste_factor: 0 }] as Array<Omit<BOMItem, "total_cost"> & { waste_factor_str?: string }>,
+    labor_hours: 0,
+    labor_rate: 50,
+    overhead_percentage: 15,
+    notes: ""
+  })
+  const [creating, setCreating] = useState(false)
 
   const fetchBOMs = async () => {
     try {
@@ -81,7 +94,8 @@ export default function BOMPage() {
 
   const handleAction = async (id: string, action: string) => {
     try {
-      const response = await fetch('/api/bom', {
+      const url = action === "delete" ? `/api/bom?id=${id}` : '/api/bom'
+      const response = await fetch(url, {
         method: action === "delete" ? 'DELETE' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: action === "delete" ? undefined : JSON.stringify({ id, action })
@@ -130,6 +144,16 @@ export default function BOMPage() {
             <h1 className="text-3xl font-bold">BOM Management</h1>
             <p className="text-muted-foreground">Bills of Materials for all designs</p>
           </div>
+          <Button onClick={async () => {
+            setIsCreateOpen(true)
+            if (designs.length === 0) {
+              fetch("/api/designs").then(r => r.json()).then(d => setDesigns(d.data || d || [])).catch(() => {})
+              fetch("/api/inventory/items").then(r => r.json()).then(d => setInventoryItems(d.data || d || [])).catch(() => {})
+            }
+          }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create BOM
+          </Button>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -228,13 +252,13 @@ export default function BOMPage() {
                                 {selectedBOM && (
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
-                                      <div><Label className="text-xs text-muted-foreground">Design</Label><p className="font-medium">{bom.design_name}</p></div>
-                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>{getStatusBadge(bom.status)}</div></div>
-                                      <div><Label className="text-xs text-muted-foreground">Labor</Label><p>{bom.labor_hours}h @ {formatCurrency(bom.labor_rate)}/hr = {formatCurrency(bom.total_labor_cost)}</p></div>
-                                      <div><Label className="text-xs text-muted-foreground">Overhead</Label><p>{bom.overhead_percentage}% = {formatCurrency(bom.total_overhead_cost)}</p></div>
+                                      <div><Label className="text-xs text-muted-foreground">Design</Label><p className="font-medium">{selectedBOM.design_name}</p></div>
+                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>{getStatusBadge(selectedBOM.status)}</div></div>
+                                      <div><Label className="text-xs text-muted-foreground">Labor</Label><p>{selectedBOM.labor_hours}h @ {formatCurrency(selectedBOM.labor_rate)}/hr = {formatCurrency(selectedBOM.total_labor_cost)}</p></div>
+                                      <div><Label className="text-xs text-muted-foreground">Overhead</Label><p>{selectedBOM.overhead_percentage}% = {formatCurrency(selectedBOM.total_overhead_cost)}</p></div>
                                     </div>
                                     <div>
-                                      <Label className="text-xs text-muted-foreground mb-2 block">Materials ({bom.items?.length || 0})</Label>
+                                      <Label className="text-xs text-muted-foreground mb-2 block">Materials ({selectedBOM.items?.length || 0})</Label>
                                       <div className="rounded-md border">
                                         <Table>
                                           <TableHeader>
@@ -247,7 +271,7 @@ export default function BOMPage() {
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
-                                            {(bom.items || []).map((item, i) => (
+                                            {(selectedBOM.items || []).map((item, i) => (
                                               <TableRow key={i}>
                                                 <TableCell>{item.material_name || item.material_id}</TableCell>
                                                 <TableCell>{item.quantity} {item.unit}</TableCell>
@@ -261,11 +285,11 @@ export default function BOMPage() {
                                       </div>
                                     </div>
                                     <div className="grid grid-cols-3 gap-4">
-                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Materials</div><div className="font-bold">{formatCurrency(bom.total_material_cost)}</div></div>
-                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Labor</div><div className="font-bold">{formatCurrency(bom.total_labor_cost)}</div></div>
-                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Total</div><div className="font-bold">{formatCurrency(bom.total_cost)}</div></div>
+                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Materials</div><div className="font-bold">{formatCurrency(selectedBOM.total_material_cost)}</div></div>
+                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Labor</div><div className="font-bold">{formatCurrency(selectedBOM.total_labor_cost)}</div></div>
+                                      <div className="text-center p-3 bg-muted rounded"><div className="text-sm text-muted-foreground">Total</div><div className="font-bold">{formatCurrency(selectedBOM.total_cost)}</div></div>
                                     </div>
-                                    {bom.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm">{bom.notes}</p></div>}
+                                    {selectedBOM.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm">{selectedBOM.notes}</p></div>}
                                   </div>
                                 )}
                               </DialogContent>
@@ -289,6 +313,101 @@ export default function BOMPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create New BOM</DialogTitle>
+              <DialogDescription>Link a design and define materials, labor, and overhead.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Design</Label>
+                <Select value={newBOM.design_id} onValueChange={(v) => setNewBOM({...newBOM, design_id: v})}>
+                  <SelectTrigger><SelectValue placeholder="Select a design..." /></SelectTrigger>
+                  <SelectContent>
+                    {designs.map((d: any) => (
+                      <SelectItem key={d.id} value={d.id}>{d.name} ({d.category || "—"})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="bom-name">BOM Name</Label>
+                <Input id="bom-name" value={newBOM.name} onChange={(e) => setNewBOM({...newBOM, name: e.target.value})} placeholder="e.g. Standard BOM v1" />
+              </div>
+              <div>
+                <Label className="mb-2 block">Materials</Label>
+                {newBOM.items.map((item, idx) => (
+                  <div key={idx} className="border rounded p-3 mb-2 space-y-2">
+                    <div className="flex gap-2">
+                      <Select value={item.material_id} onValueChange={(v) => {
+                        const inv = inventoryItems.find((i: any) => i.id === v)
+                        const newItems = [...newBOM.items]
+                        newItems[idx] = { ...newItems[idx], material_id: v, material_name: inv?.name || "", unit: inv?.unit || "pcs", unit_cost: inv?.cost_per_unit || 0 }
+                        setNewBOM({...newBOM, items: newItems})
+                      }}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Pick material..." /></SelectTrigger>
+                        <SelectContent>
+                          {inventoryItems.map((inv: any) => (
+                            <SelectItem key={inv.id} value={inv.id}>{inv.name} ({inv.sku})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input type="number" min="0.01" step="0.1" value={item.quantity} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], quantity: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-20" placeholder="Qty" />
+                      <Input type="number" min="0" step="0.01" value={item.unit_cost} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], unit_cost: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-24" placeholder="Cost" />
+                      <Input type="number" min="0" max="1" step="0.05" value={item.waste_factor} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], waste_factor: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-20" placeholder="Waste" />
+                      {newBOM.items.length > 1 && (
+                        <Button variant="ghost" size="sm" onClick={() => setNewBOM({...newBOM, items: newBOM.items.filter((_, i) => i !== idx)})} className="text-red-500 h-9 px-2">✕</Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <Button size="sm" variant="outline" onClick={() => setNewBOM({...newBOM, items: [...newBOM.items, { material_id: "", material_name: "", quantity: 1, unit: "m", unit_cost: 0, waste_factor: 0 }]})}><Plus className="h-3 w-3 mr-1" /> Add Material</Button>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><Label>Labor Hours</Label><Input type="number" min="0" step="0.5" value={newBOM.labor_hours} onChange={(e) => setNewBOM({...newBOM, labor_hours: parseFloat(e.target.value) || 0})} /></div>
+                <div><Label>Labor Rate (EGP/hr)</Label><Input type="number" min="0" value={newBOM.labor_rate} onChange={(e) => setNewBOM({...newBOM, labor_rate: parseFloat(e.target.value) || 0})} /></div>
+                <div><Label>Overhead %</Label><Input type="number" min="0" max="100" value={newBOM.overhead_percentage} onChange={(e) => setNewBOM({...newBOM, overhead_percentage: parseFloat(e.target.value) || 0})} /></div>
+              </div>
+              <div><Label htmlFor="bom-notes">Notes</Label><Input id="bom-notes" value={newBOM.notes} onChange={(e) => setNewBOM({...newBOM, notes: e.target.value})} /></div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+                <Button disabled={creating || !newBOM.design_id || !newBOM.name || newBOM.items.length === 0 || !newBOM.items[0].material_id} onClick={async () => {
+                  setCreating(true)
+                  try {
+                    const res = await fetch('/api/bom', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        design_id: newBOM.design_id,
+                        name: newBOM.name,
+                        items: newBOM.items.map(i => ({ material_id: i.material_id, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost, waste_factor: i.waste_factor, notes: "" })),
+                        labor_hours: newBOM.labor_hours,
+                        labor_rate: newBOM.labor_rate,
+                        overhead_percentage: newBOM.overhead_percentage,
+                        notes: newBOM.notes
+                      })
+                    })
+                    if (res.ok) {
+                      toast.success("BOM created")
+                      setIsCreateOpen(false)
+                      setNewBOM({ design_id: "", name: "", items: [{ material_id: "", material_name: "", quantity: 1, unit: "m", unit_cost: 0, waste_factor: 0 }], labor_hours: 0, labor_rate: 50, overhead_percentage: 15, notes: "" })
+                      fetchBOMs()
+                    } else {
+                      const err = await res.json()
+                      toast.error(err.error || "Failed to create BOM")
+                    }
+                  } catch {
+                    toast.error("Network error")
+                  } finally {
+                    setCreating(false)
+                  }
+                }}>{creating ? "Creating..." : "Create BOM"}</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )

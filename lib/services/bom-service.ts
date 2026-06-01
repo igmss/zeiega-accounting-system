@@ -134,7 +134,7 @@ export class BOMService {
                 .eq("design_id", designId)
                 .eq("status", "active")
                 .limit(1)
-                .single()
+                .maybeSingle()
 
             if (error || !data) return null
             return data as BOM

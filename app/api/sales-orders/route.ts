@@ -141,8 +141,9 @@ export async function POST(request: Request) {
       const accountingSalesOrder = {
         id: salesOrderId,
         website_order_id: salesOrderId,
-        customer_id: orderData.customer_email || "manual_user",
+        customer_id: null,
         customer_name: orderData.customer_name || "Manual Customer",
+        customer_email: orderData.customer_email || null,
         items: orderData.items?.map((item: any) => ({
           sku: item.product_id,
           name: item.product_name || item.product_id,
