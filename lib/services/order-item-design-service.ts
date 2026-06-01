@@ -321,8 +321,12 @@ export class OrderItemDesignService {
       }
 
       const workOrderId = `WO-${salesOrderId.split("-").slice(-1)[0]}-${Date.now()}`;
+      const now = new Date().toISOString()
+      const year = new Date().getFullYear()
+      const random = Math.random().toString(36).slice(2, 6).toUpperCase()
       const workOrder = {
         id: workOrderId,
+        wo_number: `WO-${year}-${random}`,
         sales_order_id: salesOrderId,
         raw_materials_used: [],
         materials_issued: [],

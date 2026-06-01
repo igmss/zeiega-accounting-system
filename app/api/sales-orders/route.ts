@@ -271,6 +271,7 @@ export async function PUT(request: Request) {
             console.error(`❌ Failed to create work order: ${workOrderResult.error}`);
 
             const basicWorkOrder = {
+              wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
               sales_order_id: orderId,
               status: "pending",
               completion_percentage: 0,

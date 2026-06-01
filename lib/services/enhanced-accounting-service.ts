@@ -738,21 +738,21 @@ export class EnhancedAccountingService {
                 .select("*")
 
             const statusCounts: Record<string, number> = {
-                pending: 0, in_progress: 0, completed: 0, invoiced: 0,
+                pending: 0, in_progress: 0, completed: 0, cancelled: 0,
             }
             const active: any[] = []
 
             for (const wo of (workOrders || [])) {
                 statusCounts[wo.status] = (statusCounts[wo.status] || 0) + 1
-                if (wo.status !== "completed") {
-                    active.push({ id: wo.id, salesOrderId: wo.sales_order_id, status: wo.status })
+                if (wo.status !== "completed" && wo.status !== "cancelled") {
+                    active.push({ id: wo.id, wo_number: wo.wo_number, salesOrderId: wo.sales_order_id, status: wo.status })
                 }
             }
 
             return { ...statusCounts, active: active.slice(0, 10) }
         } catch (error) {
             console.error("Error getting work order status:", error)
-            return { pending: 0, in_progress: 0, completed: 0, invoiced: 0, active: [] }
+            return { pending: 0, in_progress: 0, completed: 0, cancelled: 0, active: [] }
         }
     }
     /**

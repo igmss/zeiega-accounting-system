@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
+import { FileText, PackageOpen } from "lucide-react"
 
 interface WorkOrderDetailsProps {
   workOrder: any
@@ -57,6 +58,80 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
     }
   }
 
+  const [issuingMaterials, setIssuingMaterials] = useState(false)
+  const [creatingInvoice, setCreatingInvoice] = useState(false)
+
+  const materialsIssued = workOrder.materials_issued && Array.isArray(workOrder.materials_issued) && workOrder.materials_issued.length > 0
+
+  const handleIssueMaterials = async () => {
+    const materials = workOrder.raw_materials_used || []
+    if (materials.length === 0) {
+      toast.error("No materials to issue. Materials must be allocated first.")
+      return
+    }
+
+    setIssuingMaterials(true)
+    try {
+      const response = await fetch('/api/work-orders/issue-materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workOrderId: workOrder.id,
+          materials
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast.success(`Materials issued successfully — ${data.materialsIssued} items processed`)
+        router.refresh()
+      } else {
+        toast.error(data.error || "Failed to issue materials")
+      }
+    } catch (error) {
+      console.error("Error issuing materials:", error)
+      toast.error("An error occurred while issuing materials")
+    } finally {
+      setIssuingMaterials(false)
+    }
+  }
+
+  const handleCreateInvoice = async () => {
+    setCreatingInvoice(true)
+    try {
+      const invoiceData: Record<string, any> = {
+        amount: workOrder.total_cost || totalCost,
+        customer_name: workOrder.customer_name || "Unknown Customer",
+        sales_order_id: workOrder.sales_order_id || null,
+      }
+
+      if (workOrder.customer_id) {
+        invoiceData.customer_id = workOrder.customer_id
+      }
+
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoiceData)
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast.success(`Invoice created successfully (ID: ${data.id})`)
+        router.push(`/invoices`)
+      } else {
+        toast.error(data.error || "Failed to create invoice")
+      }
+    } catch (error) {
+      console.error("Error creating invoice:", error)
+      toast.error("An error occurred while creating the invoice")
+    } finally {
+      setCreatingInvoice(false)
+    }
+  }
+
   const totalMaterialCost = (workOrder.raw_materials_used || []).reduce(
     (sum: number, material: any) => sum + material.qty * material.cost,
     0,
@@ -76,8 +151,8 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Work Order ID:</span>
-              <span className="font-medium">{workOrder.id}</span>
+              <span className="text-muted-foreground">Work Order:</span>
+              <span className="font-medium">{workOrder.wo_number || workOrder.id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sales Order:</span>
@@ -146,6 +221,36 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
           </CardContent>
         </Card>
       </div>
+
+      {(workOrder.status === "completed" || (workOrder.status === "in_progress" && !materialsIssued)) && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardHeader>
+            <CardTitle className="text-lg">Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {workOrder.status === "completed" && (
+              <Button
+                onClick={handleCreateInvoice}
+                disabled={creatingInvoice}
+                variant="default"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                {creatingInvoice ? "Creating Invoice..." : "Create Invoice"}
+              </Button>
+            )}
+            {workOrder.status === "in_progress" && !materialsIssued && (
+              <Button
+                onClick={handleIssueMaterials}
+                disabled={issuingMaterials}
+                variant="outline"
+              >
+                <PackageOpen className="h-4 w-4 mr-2" />
+                {issuingMaterials ? "Issuing Materials..." : "Issue Materials"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Order Items */}
       {workOrder.items && workOrder.items.length > 0 && (

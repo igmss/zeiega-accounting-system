@@ -42,6 +42,7 @@ export interface SalesOrder {
 
 export interface WorkOrder {
   id: string
+  wo_number?: string | null
   sales_order_id: string
   design_id?: string
   design_name?: string

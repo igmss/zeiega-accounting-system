@@ -36,6 +36,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
 import { hasPermission, UserRole } from "@/lib/auth/user-model"
+import { Breadcrumbs } from "@/components/breadcrumbs"
 
 interface NavItem {
   name: string
@@ -68,6 +69,7 @@ const navigation: NavItem[] = [
   { name: "Reports", href: "/reports", icon: BarChart3, permission: "reports:view", section: "Reports" },
   { name: "Opening Balances", href: "/accounting/setup/opening-balances", icon: Settings, permission: "accounting:*", section: "System" },
   { name: "Year-End Close", href: "/year-end-close", icon: Lock, permission: "accounting:*", section: "System" },
+  { name: "Users", href: "/users", icon: Users, permission: "admin", section: "System" },
   { name: "Background Jobs", href: "/background-jobs", icon: Activity, permission: "admin", section: "System" },
 ]
 
@@ -104,13 +106,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-card-foreground">TEL U ASEGH — Manufacturing ERP</h1>
             <div className="flex items-center gap-4">
-              <Button variant="outline" size="sm">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
+              <Link href="/settings">
+                <Button variant="outline" size="sm">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Settings
+                </Button>
+              </Link>
             </div>
           </div>
         </header>
+
+        <Breadcrumbs />
 
         <main className="p-4 md:p-6">{children}</main>
       </div>

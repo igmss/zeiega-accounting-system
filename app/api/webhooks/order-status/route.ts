@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
             }
 
             const workOrder = {
+              wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
               sales_order_id: orderId,
               status: "pending",
               completion_percentage: 0,

@@ -24,4 +24,6 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   variance: "Variance Analysis",
   overhead: "Overhead Configuration",
   "year-end-close": "Year-End Close",
+  users: "Users",
+  settings: "Settings",
 }

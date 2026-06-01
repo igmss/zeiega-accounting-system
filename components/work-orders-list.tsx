@@ -315,7 +315,7 @@ export function WorkOrdersList() {
                 <>
               {(Array.isArray(workOrders) ? workOrders : []).map((workOrder) => (
                 <TableRow key={workOrder.id}>
-                  <TableCell className="font-medium">{workOrder.id}</TableCell>
+                  <TableCell className="font-medium">{workOrder.wo_number || workOrder.id}</TableCell>
                   <TableCell>{workOrder.sales_order_id}</TableCell>
                   <TableCell>
                     <div>

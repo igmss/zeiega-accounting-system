@@ -4,6 +4,12 @@ import { OrderItemDesignService } from "./order-item-design-service";
 import type { WorkOrder } from "../types";
 import { formatCurrency } from "@/lib/utils"
 
+function generateWorkOrderNumber(): string {
+  const year = new Date().getFullYear()
+  const random = Math.random().toString(36).slice(2, 6).toUpperCase()
+  return `WO-${year}-${random}`
+}
+
 export class WorkOrderService {
   /**
    * Create a work order with design-based cost calculation
@@ -44,6 +50,7 @@ export class WorkOrderService {
       // Create work order with design integration
       const workOrder: WorkOrder = {
         id: `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        wo_number: generateWorkOrderNumber(),
         sales_order_id: salesOrderId,
         design_id: designId,
         design_name: design.name,
@@ -504,6 +511,7 @@ export class WorkOrderService {
     try {
       const now = new Date().toISOString()
       const workOrder = {
+        wo_number: generateWorkOrderNumber(),
         sales_order_id: workOrderData.sales_order_id || null,
         design_id: workOrderData.design_id || null,
         design_name: workOrderData.design_name || null,

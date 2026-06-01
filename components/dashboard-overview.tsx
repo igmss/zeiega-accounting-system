@@ -3,8 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DollarSign, Package, TrendingUp, Clock, AlertCircle, CheckCircle, Wrench } from "lucide-react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+import { DollarSign, Package, TrendingUp, Clock, AlertCircle, CheckCircle, Wrench, RefreshCw } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { formatCurrency } from "@/lib/utils"
 import Link from "next/link"
 import { useEffect, useState } from "react"
@@ -43,63 +43,62 @@ interface DashboardData {
 export function DashboardOverview() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const loadDashboardData = async () => {
+    try {
+      const response = await fetch('/api/dashboard')
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard data')
+      }
+      const apiData = await response.json()
+
+      const { kpiData, monthlyRevenue, recentOrders, inventoryAlerts, workOrderStatus } = apiData
+
+      const orderStatusData = [
+        { name: "Pending", value: workOrderStatus?.pending || 0, color: "#f97316" },
+        { name: "In Progress", value: workOrderStatus?.in_progress || 0, color: "#164e63" },
+        { name: "Completed", value: workOrderStatus?.completed || 0, color: "#10b981" },
+        { name: "Cancelled", value: workOrderStatus?.cancelled || 0, color: "#ef4444" },
+      ]
+
+      const recentOrdersData = Array.isArray(recentOrders) ? recentOrders.slice(0, 4).map((order: any) => ({
+        id: order.id,
+        customer: order.customerName,
+        amount: order.total,
+        status: order.status,
+      })) : []
+
+      const woActive = workOrderStatus?.active || []
+      const activeWorkOrders = Array.isArray(woActive) ? woActive.slice(0, 3).map((wo: any) => ({
+        id: wo.wo_number || wo.id,
+        salesOrder: wo.salesOrderId,
+        status: wo.status,
+        completion: wo.completionPercentage ?? wo.completion_percentage ?? (wo.status === "completed" ? 100 : 0),
+      })) : []
+
+      setData({
+        kpiData: kpiData || {
+          revenue: 0,
+          cogs: 0,
+          profit: 0,
+          wipValue: 0,
+        },
+        monthlyRevenue: monthlyRevenue || [],
+        orderStatus: orderStatusData,
+        recentOrders: recentOrdersData,
+        workOrders: activeWorkOrders,
+      })
+    } catch (error) {
+      console.error("Error loading dashboard data:", error)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    async function loadDashboardData() {
-      try {
-        const response = await fetch('/api/dashboard')
-        if (!response.ok) {
-          throw new Error('Failed to fetch dashboard data')
-        }
-        const apiData = await response.json()
-
-        const { kpiData, monthlyRevenue, recentOrders, inventoryAlerts, workOrderStatus } = apiData
-
-        const orderStatusData = [
-          { name: "Pending", value: workOrderStatus?.pending || 0, color: "#f97316" },
-          { name: "In Production", value: workOrderStatus?.in_progress || 0, color: "#164e63" },
-          { name: "Completed", value: workOrderStatus?.completed || 0, color: "#10b981" },
-          { name: "Invoiced", value: workOrderStatus?.invoiced || 0, color: "#6b7280" },
-        ]
-
-        const recentOrdersData = Array.isArray(recentOrders) ? recentOrders.slice(0, 4).map((order: any) => ({
-          id: order.id,
-          customer: order.customerName,
-          amount: order.total,
-          status: order.status,
-        })) : []
-
-        const woActive = workOrderStatus?.active || []
-        const activeWorkOrders = Array.isArray(woActive) ? woActive.slice(0, 3).map((wo: any) => ({
-          id: wo.id,
-          salesOrder: wo.salesOrderId,
-          status: wo.status,
-          completion: wo.completionPercentage ?? wo.completion_percentage ?? (wo.status === "completed" ? 100 : 0),
-        })) : []
-
-        setData({
-          kpiData: kpiData || {
-            revenue: 0,
-            cogs: 0,
-            profit: 0,
-            wipValue: 0,
-          },
-          monthlyRevenue: monthlyRevenue || [],
-          orderStatus: orderStatusData,
-          recentOrders: recentOrdersData,
-          workOrders: activeWorkOrders,
-        })
-      } catch (error) {
-        console.error("Error loading dashboard data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     loadDashboardData()
-
-    const interval = setInterval(loadDashboardData, 30000)
-    return () => clearInterval(interval)
   }, [])
 
   if (loading) {
@@ -136,6 +135,22 @@ export function DashboardOverview() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">Overview of your manufacturing operations</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => { setRefreshing(true); loadDashboardData() }}
+          disabled={refreshing}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -205,6 +220,7 @@ export function DashboardOverview() {
                 <Tooltip formatter={(value) => [formatCurrency(Number(value)), ""]} />
                 <Bar dataKey="revenue" fill="var(--color-chart-3)" name="Revenue" />
                 <Bar dataKey="cogs" fill="var(--color-chart-1)" name="COGS" />
+                <Legend />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
