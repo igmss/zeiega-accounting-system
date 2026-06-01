@@ -170,7 +170,7 @@ export class InventoryAccountingService {
 
         let contraAccountId = "5301"
         if (isOpeningBalance) {
-            contraAccountId = "3001"
+            contraAccountId = "3100"
         } else if (actualAdjustment < 0) {
             contraAccountId = "6207"
         } else if (actualAdjustment > 0) {

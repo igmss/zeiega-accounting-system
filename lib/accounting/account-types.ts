@@ -895,6 +895,18 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         isCashFlowTracked: false,
         description: "Social insurance and other deductions",
     },
+    "2190": {
+        code: "2190",
+        name: "Suspense / Clearing Account",
+        nameAr: "حساب معلق / تسوية",
+        type: AccountType.LIABILITY,
+        subType: AccountSubType.TAX_PAYABLE,
+        normalBalance: "credit",
+        isActive: true,
+        isSystemAccount: true,
+        isCashFlowTracked: false,
+        description: "Temporary clearing account for opening balance differences and unmatched entries",
+    },
 
     // Loans (2201-2210)
     "2201": {
@@ -1920,6 +1932,7 @@ export const ACCOUNT_CODES = {
     RETENTION_PAYABLE: "2117",
     CONTRACT_LIABILITY_OVERBILLING: "2118",
     STATUTORY_PAYABLE: "2160",
+    SUSPENSE_CLEARING: "2190",
     WAGES_PAYABLE_PRODUCTION: "2120",
     TAX_PAYABLE: "2130",
     ACCRUED_EXPENSES: "2140",

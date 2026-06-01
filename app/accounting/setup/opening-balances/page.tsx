@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { formatCurrency } from "@/lib/utils"
-// import { toast } from "sonner" // Assuming UseToast or similar exists, but I'll use basic alert if not sure
+import { toast } from "sonner"
 
 export default function OpeningBalancesPage() {
     const router = useRouter()
@@ -43,7 +44,7 @@ export default function OpeningBalancesPage() {
             fathy: 0
         },
         rebalancingEnabled: false,
-        loans: [] as any[], // Can add more inputs for Loans
+        loans: [] as any[],
         liabilities: {
             accountsPayable: 0,
             accruedExpenses: 0
@@ -57,12 +58,17 @@ export default function OpeningBalancesPage() {
         setFormData({ ...formData, bankAccounts: newBanks })
     }
 
-    // Add loan helper
     const addLoan = () => {
         setFormData({
             ...formData,
             loans: [...formData.loans, { id: Date.now(), name: "Loan Provider", accountId: "2201", amount: 0 }]
         })
+    }
+
+    const removeLoan = (index: number) => {
+        const newLoans = [...formData.loans]
+        newLoans.splice(index, 1)
+        setFormData({ ...formData, loans: newLoans })
     }
 
     const updateLoan = (index: number, field: string, val: string) => {
@@ -81,16 +87,21 @@ export default function OpeningBalancesPage() {
                 body: JSON.stringify(formData)
             })
 
+            const data = await response.json()
+
             if (response.ok) {
-                // success
-                alert("Opening balances recorded successfully!")
+                toast.success("Opening balances recorded successfully!")
                 router.push('/')
             } else {
-                alert("Failed to record opening balances.")
+                const hint = data.hint ? `\n\n${data.hint}` : ""
+                toast.error(data.error || "Failed to record opening balances.", {
+                    description: data.hint || undefined,
+                    duration: 8000,
+                })
             }
         } catch (error) {
             console.error(error)
-            alert("Error submitting form")
+            toast.error("Error submitting form. Check console for details.")
         } finally {
             setLoading(false)
         }
@@ -150,12 +161,12 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6">
                 <CardHeader>
-                    <CardTitle>2. Cash & Bank</CardTitle>
+                    <CardTitle>2. Cash & Bank (OB-01)</CardTitle>
                     <CardDescription>Enter your liquid funds.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="space-y-2">
-                        <Label>Cash on Hand (Safe)</Label>
+                        <Label>Cash on Hand (1101)</Label>
                         <Input
                             type="number"
                             value={formData.cashOnHand}
@@ -199,7 +210,7 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6">
                 <CardHeader>
-                    <CardTitle>4. Inventory</CardTitle>
+                    <CardTitle>4. Inventory (OB-02)</CardTitle>
                     <CardDescription>Value of stock on hand.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -232,12 +243,12 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6">
                 <CardHeader>
-                    <CardTitle>5. Fixed Assets</CardTitle>
+                    <CardTitle>5. Fixed Assets (OB-03)</CardTitle>
                     <CardDescription>Value of physical equipment and furniture.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label>Production Machinery (1301)</Label>
+                        <Label>Sewing Machines (1301)</Label>
                         <Input
                             type="number"
                             value={formData.fixedAssets.machinery}
@@ -245,7 +256,7 @@ export default function OpeningBalancesPage() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Production Equipment (1302)</Label>
+                        <Label>Production Equipment (1303)</Label>
                         <Input
                             type="number"
                             value={formData.fixedAssets.equipment}
@@ -253,7 +264,7 @@ export default function OpeningBalancesPage() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Office Equipment (1303)</Label>
+                        <Label>Office Equipment (1304)</Label>
                         <Input
                             type="number"
                             value={formData.fixedAssets.office}
@@ -261,7 +272,7 @@ export default function OpeningBalancesPage() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Furniture & Fixtures (1304)</Label>
+                        <Label>Furniture & Fixtures (1306)</Label>
                         <Input
                             type="number"
                             value={formData.fixedAssets.furniture}
@@ -269,7 +280,7 @@ export default function OpeningBalancesPage() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Vehicles (1305)</Label>
+                        <Label>Vehicles (1307)</Label>
                         <Input
                             type="number"
                             value={formData.fixedAssets.vehicles}
@@ -281,7 +292,7 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6">
                 <CardHeader>
-                    <CardTitle>6. Digital Assets</CardTitle>
+                    <CardTitle>6. Digital Assets (OB-03)</CardTitle>
                     <CardDescription>Value of websites, software, and IP.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -322,23 +333,22 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6 border-blue-200 bg-blue-50/30">
                 <CardHeader>
-                    <CardTitle>7. Partner Capital Contributions</CardTitle>
+                    <CardTitle>7. Partner Capital Contributions (OB-05)</CardTitle>
                     <CardDescription>Enter the initial equity or asset contributions from each partner.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
-                            <Label>Ahmed Capital (Capital + Machines)</Label>
+                            <Label>Ahmed Capital (3011) — Target: 60%</Label>
                             <Input
                                 type="number"
                                 value={formData.partnerCapital.ahmed}
                                 onChange={(e) => setFormData({ ...formData, partnerCapital: { ...formData.partnerCapital, ahmed: parseFloat(e.target.value) || 0 } })}
                                 className="border-blue-300"
                             />
-                            <p className="text-[10px] text-muted-foreground">Incl. OB-01 Machine Contribution</p>
                         </div>
                         <div className="space-y-2">
-                            <Label>Ibrahim Capital (Cash)</Label>
+                            <Label>Ibrahim Capital (3012) — Target: 25%</Label>
                             <Input
                                 type="number"
                                 value={formData.partnerCapital.ibrahim}
@@ -347,7 +357,7 @@ export default function OpeningBalancesPage() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>Fathy Capital (Cash)</Label>
+                            <Label>Fathy Capital (3013) — Target: 15%</Label>
                             <Input
                                 type="number"
                                 value={formData.partnerCapital.fathy}
@@ -368,7 +378,7 @@ export default function OpeningBalancesPage() {
                                 Generate Capital Rebalancing Entry (OB-06)
                             </Label>
                             <p className="text-sm text-muted-foreground">
-                                Align accounts to 60/ Ahmed, 25% Ibrahim, 15% Fathy structure.
+                                Adjust partner accounts to 60% Ahmed, 25% Ibrahim, 15% Fathy structure.
                             </p>
                         </div>
                     </div>
@@ -377,7 +387,7 @@ export default function OpeningBalancesPage() {
 
             <Card className="mb-6">
                 <CardHeader>
-                    <CardTitle>8. Loans & Liabilities</CardTitle>
+                    <CardTitle>8. Loans & Liabilities (OB-04)</CardTitle>
                     <CardDescription>Money you owe to lenders and vendors.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -404,20 +414,28 @@ export default function OpeningBalancesPage() {
                     {formData.loans.map((loan, i) => (
                         <div key={loan.id} className="flex gap-2 items-end mb-2">
                             <div className="space-y-1 flex-1">
-                                <Label>Lender Name</Label>
+                                <Label className="text-xs">Lender Name</Label>
                                 <Input
                                     value={loan.name}
                                     onChange={(e) => updateLoan(i, 'name', e.target.value)}
                                 />
                             </div>
                             <div className="space-y-1 w-32">
-                                <Label>Amount</Label>
+                                <Label className="text-xs">Amount</Label>
                                 <Input
                                     type="number"
                                     value={loan.amount}
                                     onChange={(e) => updateLoan(i, 'amount', e.target.value)}
                                 />
                             </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeLoan(i)}
+                                className="text-red-500 hover:text-red-700 mb-0.5"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
                         </div>
                     ))}
                     <Button variant="outline" onClick={addLoan} size="sm">
@@ -457,13 +475,18 @@ export default function OpeningBalancesPage() {
 
                     {Math.abs(projectedEquity - totalPartnerCapital) > 1 && (
                         <p className="text-xs text-red-500 mt-2">
-                            Warning: Your entered assets and liabilities do not match your partner capital contributions. 
-                            The system will record the difference in {projectedEquity - totalPartnerCapital > 0 ? "Retained Earnings" : "Suspense"}.
+                            Warning: Assets minus liabilities (EGP {formatCurrency(projectedEquity)}) do not match
+                            partner capital (EGP {formatCurrency(totalPartnerCapital)}). 
+                            The journal entry will be rejected unless debits equal credits.
+                            {projectedEquity > totalPartnerCapital
+                                ? " Add more liabilities or reduce partner capital."
+                                : " Add more partner capital or reduce liabilities."}
                         </p>
                     )}
                     
                     <p className="text-xs text-muted-foreground mt-2">
-                        Note: This form will record specific opening journal entries (OB-01 to OB-06) based on your inputs.
+                        Creates a single opening journal entry with OB-01 through OB-06 line descriptions.
+                        All entries must balance (total debits = total credits).
                     </p>
                 </CardContent>
             </Card>
