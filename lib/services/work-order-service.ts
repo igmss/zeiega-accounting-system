@@ -366,7 +366,7 @@ export class WorkOrderService {
 
       if (!snapshot) return [];
 
-      const workOrders = snapshot.map((doc: any) => {
+      const workOrders: WorkOrder[] = snapshot.map((doc: any) => {
         const wo = {
           ...doc,
           created_at: doc.created_at || new Date().toISOString(),
