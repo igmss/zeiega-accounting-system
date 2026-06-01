@@ -158,6 +158,52 @@ export async function PUT(request: Request) {
         } else {
           console.log(`[DEBUG:PUT:SKIP] no materials to auto-issue — design_id=${wo.design_id || 'none'}, raw_materials_used=${wo.raw_materials_used ? JSON.stringify(wo.raw_materials_used).substring(0, 100) : 'none'}, items=${JSON.stringify(wo.items).substring(0, 100)}`)
         }
+        console.log(`[DEBUG:PUT:END] WO ${id} — material issue done`)
+
+        // Auto-apply labor and overhead from WO costs (set during creation from design)
+        const woLaborCost = wo.labor_cost || 0
+        const woOverheadCost = wo.overhead_cost || 0
+
+        if (woLaborCost > 0) {
+          const { data: existingLaborJE } = await serviceDb.from(TABLES.JOURNAL_ENTRIES)
+            .select("id")
+            .eq("reference_id", id)
+            .eq("type", "LABOR_APPLIED")
+            .maybeSingle()
+
+          if (!existingLaborJE) {
+            console.log(`[DEBUG:PUT:LABOR] auto-applying labor_cost=${woLaborCost} for WO ${id}`)
+            const laborResult = await EnhancedAccountingService.recordLaborApplied(id, Math.max(1, woLaborCost / 50), 50)
+            if (laborResult.success) {
+              console.log(`[DEBUG:PUT:LABOR] OK, entryId=${laborResult.entryId}`)
+            } else {
+              console.error(`[DEBUG:PUT:LABOR] FAILED: ${laborResult.error}`)
+            }
+          } else {
+            console.log(`[DEBUG:PUT:LABOR] already applied, skipping`)
+          }
+        }
+
+        if (woOverheadCost > 0) {
+          const { data: existingOHJE } = await serviceDb.from(TABLES.JOURNAL_ENTRIES)
+            .select("id")
+            .eq("reference_id", id)
+            .eq("type", "OVERHEAD_APPLIED")
+            .maybeSingle()
+
+          if (!existingOHJE) {
+            console.log(`[DEBUG:PUT:OH] auto-applying overhead_cost=${woOverheadCost} for WO ${id}`)
+            const ohResult = await EnhancedAccountingService.recordOverheadApplied(id, woOverheadCost)
+            if (ohResult.success) {
+              console.log(`[DEBUG:PUT:OH] OK, entryId=${ohResult.entryId}`)
+            } else {
+              console.error(`[DEBUG:PUT:OH] FAILED: ${ohResult.error}`)
+            }
+          } else {
+            console.log(`[DEBUG:PUT:OH] already applied, skipping`)
+          }
+        }
+
         console.log(`[DEBUG:PUT:END] WO ${id} — done`)
       } catch (innerErr) {
         console.error("[DEBUG:PUT:ERROR]", innerErr)
