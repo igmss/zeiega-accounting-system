@@ -269,16 +269,28 @@ export class BOMService {
                 return { success: false, error: "BOM not found" }
             }
 
+            const qty = Number(quantity) || 0
             const requirements: MaterialRequirement[] = []
             let totalCost = 0
 
             for (const item of bom.items) {
-                const { data: invData } = await getServiceSupabase().from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", item.material_id).single()
-                const availableQty = invData ? ((invData as any).quantity_on_hand || 0) : 0
+                const itemQty = Number(item.quantity) || 0
+                const wf = Number(item.waste_factor) || 0
+                const storedUnitCost = Number(item.unit_cost) || 0
 
-                const quantityNeeded = item.quantity * quantity
-                const quantityWithWaste = quantityNeeded * (1 + item.waste_factor)
-                const itemCost = quantityWithWaste * item.unit_cost
+                const { data: invData } = await getServiceSupabase()
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .select("quantity_on_hand, cost_per_unit")
+                    .eq("id", item.material_id)
+                    .maybeSingle()
+
+                const availableQty = Number(invData?.quantity_on_hand) || 0
+                const liveUnitCost = Number(invData?.cost_per_unit) || 0
+                const unitCost = liveUnitCost > 0 ? liveUnitCost : storedUnitCost
+
+                const quantityNeeded = itemQty * qty
+                const quantityWithWaste = quantityNeeded * (1 + wf)
+                const itemCost = isNaN(quantityWithWaste * unitCost) ? 0 : quantityWithWaste * unitCost
                 const shortage = Math.max(0, quantityWithWaste - availableQty)
 
                 requirements.push({
@@ -287,7 +299,7 @@ export class BOMService {
                     quantity_needed: quantityNeeded,
                     quantity_with_waste: quantityWithWaste,
                     unit: item.unit,
-                    unit_cost: item.unit_cost,
+                    unit_cost: unitCost,
                     total_cost: itemCost,
                     available_quantity: availableQty,
                     shortage
@@ -296,8 +308,11 @@ export class BOMService {
                 totalCost += itemCost
             }
 
-            const laborCost = bom.labor_hours * quantity * bom.labor_rate
-            const overheadCost = (totalCost + laborCost) * (bom.overhead_percentage / 100)
+            const laborHours = Number(bom.labor_hours) || 0
+            const laborRate = Number(bom.labor_rate) || 0
+            const laborCost = laborHours * qty * laborRate
+            const overheadPct = Number(bom.overhead_percentage) || 0
+            const overheadCost = (totalCost + laborCost) * (overheadPct / 100)
             totalCost = totalCost + laborCost + overheadCost
 
             return { success: true, requirements, totalCost }

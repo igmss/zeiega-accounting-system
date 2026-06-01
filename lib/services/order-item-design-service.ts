@@ -45,6 +45,10 @@ export class OrderItemDesignService {
           const size = item.size || 'M';
           
           let actualMaterialCost = 0;
+          let bomLaborCost = 0;
+          let bomOverheadCost = 0;
+          let bomTotalCost = 0;
+          let usedBOM = false;
           try {
             const activeBOM = await BOMService.getActiveBOMForDesign(design.id);
             
@@ -53,6 +57,11 @@ export class OrderItemDesignService {
               const bomRequirements = await BOMService.calculateMaterialRequirements(activeBOM.id, quantity);
               if (bomRequirements.success && bomRequirements.requirements) {
                 actualMaterialCost = bomRequirements.requirements.reduce((sum, req) => sum + req.total_cost, 0);
+                bomLaborCost = (activeBOM.labor_hours || 0) * quantity * (activeBOM.labor_rate || 0);
+                bomOverheadCost = (actualMaterialCost + bomLaborCost) * ((activeBOM.overhead_percentage || 0) / 100);
+                bomTotalCost = actualMaterialCost + bomLaborCost + bomOverheadCost;
+                usedBOM = true;
+                console.log(`[DEBUG:COST:BOM] material=${actualMaterialCost}, labor=${bomLaborCost}, overhead=${bomOverheadCost}, total=${bomTotalCost}`);
               }
             } else {
               const materialRequirements = await DesignService.getMaterialRequirements(design.id, quantity);
@@ -81,17 +90,29 @@ export class OrderItemDesignService {
             };
           }
           
-          let finalMaterialCost = sizeSpecificCosts.materialCost;
-          let finalEstimatedCost = sizeSpecificCosts.totalCost;
+          let finalMaterialCost: number;
+          let finalEstimatedCost: number;
+          let finalLaborCost: number;
+          let finalOverheadCost: number;
           
-          if (actualMaterialCost > 0) {
+          if (usedBOM) {
             finalMaterialCost = actualMaterialCost;
-            finalEstimatedCost = finalMaterialCost + sizeSpecificCosts.laborCost + sizeSpecificCosts.overheadCost;
-            console.log(`[DEBUG:COST] sizeSpecificCosts.totalCost=${sizeSpecificCosts.totalCost}, materialCost=${sizeSpecificCosts.materialCost}, laborCost=${sizeSpecificCosts.laborCost}, overheadCost=${sizeSpecificCosts.overheadCost}`);
-            console.log(`[DEBUG:COST] actualMaterialCost=${actualMaterialCost}, finalMaterialCost=${finalMaterialCost}, finalEstimatedCost=${finalEstimatedCost}`);
-            console.log(`Using actual inventory material cost ${formatCurrency(finalMaterialCost)} instead of size-multiplied estimate ${formatCurrency(sizeSpecificCosts.materialCost)}`);
+            finalLaborCost = bomLaborCost;
+            finalOverheadCost = bomOverheadCost;
+            finalEstimatedCost = bomTotalCost;
+            console.log(`[DEBUG:COST:BOM] BOM overrides — material=${finalMaterialCost}, labor=${finalLaborCost}, overhead=${finalOverheadCost}, total=${finalEstimatedCost}`);
+          } else if (actualMaterialCost > 0) {
+            finalMaterialCost = actualMaterialCost;
+            finalLaborCost = sizeSpecificCosts.laborCost;
+            finalOverheadCost = sizeSpecificCosts.overheadCost;
+            finalEstimatedCost = finalMaterialCost + finalLaborCost + finalOverheadCost;
+            console.log(`[DEBUG:COST:INV] inventory overrides material, design labor/OH — material=${finalMaterialCost}, labor=${finalLaborCost}, overhead=${finalOverheadCost}, total=${finalEstimatedCost}`);
           } else {
-            console.log(`[DEBUG:COST] actualMaterialCost=${actualMaterialCost} (not > 0), using size cost: totalCost=${sizeSpecificCosts.totalCost}`);
+            finalMaterialCost = sizeSpecificCosts.materialCost;
+            finalLaborCost = sizeSpecificCosts.laborCost;
+            finalOverheadCost = sizeSpecificCosts.overheadCost;
+            finalEstimatedCost = sizeSpecificCosts.totalCost;
+            console.log(`[DEBUG:COST:DESIGN] design-only — material=${finalMaterialCost}, labor=${finalLaborCost}, overhead=${finalOverheadCost}, total=${finalEstimatedCost}`);
           }
           
           itemCosts.push({
@@ -101,13 +122,13 @@ export class OrderItemDesignService {
             image: design.image || design.images?.[0] || item.image || null,
             estimatedCost: finalEstimatedCost,
             materialCost: finalMaterialCost,
-            laborCost: sizeSpecificCosts.laborCost,
-            overheadCost: sizeSpecificCosts.overheadCost,
+            laborCost: finalLaborCost,
+            overheadCost: finalOverheadCost,
             quantity,
             size: size,
             manufacturingTime: sizeSpecificCosts.manufacturingTime,
             complexity: sizeSpecificCosts.complexity,
-            source: sizeSpecificCosts.source
+            source: usedBOM ? 'bom' : (actualMaterialCost > 0 ? 'inventory' : sizeSpecificCosts.source || 'design')
           });
           
           totalEstimatedCost += finalEstimatedCost;
