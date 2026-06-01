@@ -53,3 +53,45 @@ export async function POST(request: NextRequest) {
         return createErrorResponse(error instanceof Error ? error.message : "Failed to create vendor")
     }
 }
+
+// PUT /api/vendors - Update a vendor
+export async function PUT(request: NextRequest) {
+    const auth = await requirePermission("vendors:create")
+    if (!auth.authorized) return auth.response
+    try {
+        const body = await request.json()
+        if (!body.id) return createErrorResponse("Vendor ID is required", 400)
+
+        const { id, ...updates } = body
+        const result = await VendorService.updateVendor(id, updates)
+
+        if (result.success) {
+            return createSuccessResponse({ success: true })
+        } else {
+            return createErrorResponse(result.error || "Failed to update vendor", 400)
+        }
+    } catch (error) {
+        return createErrorResponse(error instanceof Error ? error.message : "Failed to update vendor")
+    }
+}
+
+// DELETE /api/vendors - Deactivate a vendor
+export async function DELETE(request: NextRequest) {
+    const auth = await requirePermission("vendors:create")
+    if (!auth.authorized) return auth.response
+    try {
+        const { searchParams } = new URL(request.url)
+        const id = searchParams.get("id")
+        if (!id) return createErrorResponse("Vendor ID is required", 400)
+
+        const result = await VendorService.deactivateVendor(id)
+
+        if (result.success) {
+            return createSuccessResponse({ success: true })
+        } else {
+            return createErrorResponse(result.error || "Failed to deactivate vendor", 400)
+        }
+    } catch (error) {
+        return createErrorResponse(error instanceof Error ? error.message : "Failed to deactivate vendor")
+    }
+}

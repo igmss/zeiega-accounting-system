@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
         const boms = await BOMService.getAllBOMs({ designId, status, limit })
 
-        return createSuccessResponse(boms, 200, { count: boms.length })
+            return createSuccessResponse(boms, 200, { count: boms.length })
     } catch (error) {
         return createErrorResponse(error instanceof Error ? error.message : "Failed to fetch BOMs")
     }
@@ -52,5 +52,53 @@ export async function POST(request: NextRequest) {
         }
     } catch (error) {
         return createErrorResponse(error instanceof Error ? error.message : "Failed to create BOM")
+    }
+}
+
+// PUT /api/bom - Update or activate a BOM
+export async function PUT(request: NextRequest) {
+    const auth = await requirePermission("bom:create")
+    if (!auth.authorized) return auth.response
+    try {
+        const body = await request.json()
+        const { id, action, ...updates } = body
+
+        if (!id) return createErrorResponse("BOM ID is required", 400)
+
+        let result
+        if (action === "activate") {
+            result = await BOMService.activateBOM(id)
+        } else {
+            result = await BOMService.updateBOM(id, updates)
+        }
+
+        if (result.success) {
+            return createSuccessResponse({ success: true })
+        } else {
+            return createErrorResponse(result.error || "Failed to update BOM", 400)
+        }
+    } catch (error) {
+        return createErrorResponse(error instanceof Error ? error.message : "Failed to update BOM")
+    }
+}
+
+// DELETE /api/bom - Delete a BOM
+export async function DELETE(request: NextRequest) {
+    const auth = await requirePermission("bom:create")
+    if (!auth.authorized) return auth.response
+    try {
+        const { searchParams } = new URL(request.url)
+        const id = searchParams.get("id")
+        if (!id) return createErrorResponse("BOM ID is required", 400)
+
+        const result = await BOMService.deleteBOM(id)
+
+        if (result.success) {
+            return createSuccessResponse({ success: true })
+        } else {
+            return createErrorResponse(result.error || "Failed to delete BOM", 400)
+        }
+    } catch (error) {
+        return createErrorResponse(error instanceof Error ? error.message : "Failed to delete BOM")
     }
 }

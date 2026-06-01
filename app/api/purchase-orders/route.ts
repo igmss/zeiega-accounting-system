@@ -15,11 +15,14 @@ export async function GET(request: NextRequest) {
 
         const purchaseOrders = await PurchaseOrderService.getAllPurchaseOrders({ vendorId, status, limit })
 
-        return createSuccessResponse(purchaseOrders, 200, { count: purchaseOrders.length })
+            return createSuccessResponse(purchaseOrders, 200, { count: purchaseOrders.length })
     } catch (error) {
         return createErrorResponse(error instanceof Error ? error.message : "Failed to fetch purchase orders")
     }
 }
+
+// GET /api/purchase-orders/[id] - handled inline via ?id query
+// (single PO lookup uses the GET above with searchParams)
 
 // POST /api/purchase-orders - Create a new purchase order
 export async function POST(request: NextRequest) {
@@ -51,5 +54,42 @@ export async function POST(request: NextRequest) {
         }
     } catch (error) {
         return createErrorResponse(error instanceof Error ? error.message : "Failed to create purchase order")
+    }
+}
+
+// PUT /api/purchase-orders - Update status (send/confirm/cancel)
+export async function PUT(request: NextRequest) {
+    const auth = await requirePermission("purchase-orders:create")
+    if (!auth.authorized) return auth.response
+    try {
+        const body = await request.json()
+        const { id, action } = body
+
+        if (!id || !action) {
+            return createErrorResponse("id and action are required", 400)
+        }
+
+        let result
+        switch (action) {
+            case "send":
+                result = await PurchaseOrderService.sendPurchaseOrder(id)
+                break
+            case "confirm":
+                result = await PurchaseOrderService.confirmPurchaseOrder(id)
+                break
+            case "cancel":
+                result = await PurchaseOrderService.cancelPurchaseOrder(id, body.reason)
+                break
+            default:
+                return createErrorResponse(`Unknown action: ${action}`, 400)
+        }
+
+        if (result.success) {
+            return createSuccessResponse({ success: true })
+        } else {
+            return createErrorResponse(result.error || "Failed to update purchase order", 400)
+        }
+    } catch (error) {
+        return createErrorResponse(error instanceof Error ? error.message : "Failed to update purchase order")
     }
 }

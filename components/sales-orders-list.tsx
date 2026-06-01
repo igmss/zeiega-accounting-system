@@ -149,7 +149,16 @@ export function SalesOrdersList() {
         const woResponse = await fetch('/api/work-orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sales_order_id: orderId, items })
+          body: JSON.stringify({
+            sales_order_id: orderId,
+            items,
+            customer_name: order?.customer_name || null,
+            customer_email: order?.customer_email || null,
+            customer_phone: order?.customer_phone || null,
+            customer_address: order?.customer_address || null,
+            total_amount: order?.total || order?.total_amount || 0,
+            order_status: order?.status || null,
+          })
         })
 
         if (woResponse.ok) {

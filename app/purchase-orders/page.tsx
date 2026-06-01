@@ -5,35 +5,70 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Plus, Eye } from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Search, Plus, Eye, Send, CheckCircle, XCircle, Truck, ChevronsUpDown, Check } from "lucide-react"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useState, useEffect } from "react"
 import { formatCurrency } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
+interface POItem {
+  material_id: string
+  material_name: string
+  quantity: number
+  unit: string
+  unit_cost: number
+  total_cost: number
+  received_quantity?: number
+}
+
+interface PurchaseOrder {
+  id: string
+  vendor_id: string
+  vendor_name: string
+  items: POItem[]
+  subtotal: number
+  tax_amount: number
+  shipping_cost: number
+  total_amount: number
+  expected_delivery?: string
+  shipping_address?: string
+  notes?: string
+  status: "draft" | "sent" | "confirmed" | "partial" | "received" | "cancelled"
+  created_at: string
+}
+
 export default function PurchaseOrdersPage() {
-  const [orders, setOrders] = useState<any[]>([])
+  const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   useEffect(() => {
-    async function fetchOrders() {
-      try {
-        const response = await fetch('/api/purchase-orders')
-        if (response.ok) {
-          const result = await response.json()
-          setOrders(result.data || [])
-        }
-      } catch (error) {
-        console.error("Error loading purchase orders:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
     fetchOrders()
   }, [])
+
+  async function fetchOrders() {
+    try {
+      const response = await fetch('/api/purchase-orders')
+      if (response.ok) {
+        const result = await response.json()
+        setOrders(result.data || [])
+      }
+    } catch (error) {
+      console.error("Error loading POs:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filteredOrders = orders.filter(order => {
     const matchesSearch = searchTerm === "" ||
@@ -43,12 +78,46 @@ export default function PurchaseOrdersPage() {
     return matchesSearch && matchesStatus
   })
 
+  const handleAction = async (id: string, action: string) => {
+    try {
+      const response = await fetch('/api/purchase-orders', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action })
+      })
+      if (response.ok) {
+        toast.success(`PO ${action} successful`)
+        fetchOrders()
+      } else {
+        const err = await response.json()
+        toast.error(err.error || `Failed to ${action} PO`)
+      }
+    } catch {
+      toast.error(`Failed to ${action} PO`)
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      draft: "secondary",
+      sent: "outline",
+      confirmed: "default",
+      partial: "default",
+      received: "default",
+      cancelled: "destructive",
+    }
+    return <Badge variant={variants[status] || "outline"}>{status}</Badge>
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="space-y-6">
-          <h1 className="text-3xl font-bold">Purchase Orders</h1>
-          <div className="animate-pulse h-32 bg-muted rounded" />
+        <div className="space-y-6"><h1 className="text-3xl font-bold">Purchase Orders</h1>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}><CardContent className="p-6"><div className="animate-pulse"><div className="h-4 bg-muted rounded w-3/4 mb-2" /><div className="h-8 bg-muted rounded w-1/2" /></div></CardContent></Card>
+            ))}
+          </div>
         </div>
       </DashboardLayout>
     )
@@ -62,10 +131,51 @@ export default function PurchaseOrdersPage() {
             <h1 className="text-3xl font-bold">Purchase Orders</h1>
             <p className="text-muted-foreground">Manage supplier purchase orders</p>
           </div>
-          <Button onClick={() => toast.info("Purchase order creation form coming soon")}>
-            <Plus className="h-4 w-4 mr-2" />
-            New PO
-          </Button>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="h-4 w-4 mr-2" />New PO</Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Create Purchase Order</DialogTitle>
+                <DialogDescription>Select a vendor and add line items</DialogDescription>
+              </DialogHeader>
+              <POForm onClose={() => setIsCreateOpen(false)} onCreated={() => { setIsCreateOpen(false); fetchOrders() }} />
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total POs</CardTitle>
+            </CardHeader>
+            <CardContent><div className="text-2xl font-bold">{orders.length}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{orders.filter(o => ["sent", "confirmed", "partial"].includes(o.status)).length}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Received</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{orders.filter(o => o.status === "received").length}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + o.total_amount, 0))}</div>
+            </CardContent>
+          </Card>
         </div>
 
         <Card>
@@ -77,21 +187,16 @@ export default function PurchaseOrdersPage() {
             <div className="flex flex-col sm:flex-row gap-4 mb-4">
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search orders..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                />
+                <Input placeholder="Search orders..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-8" />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-48">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Filter" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="ordered">Ordered</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="sent">Sent</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
                   <SelectItem value="received">Received</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
@@ -114,31 +219,76 @@ export default function PurchaseOrdersPage() {
                 <TableBody>
                   {filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        No purchase orders found
-                      </TableCell>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No purchase orders found</TableCell>
                     </TableRow>
                   ) : (
                     filteredOrders.map((order) => (
                       <TableRow key={order.id}>
-                        <TableCell className="font-medium">{order.id}</TableCell>
-                        <TableCell>{order.vendor_name || "—"}</TableCell>
+                        <TableCell className="font-medium">{order.id?.slice(0, 8)}</TableCell>
+                        <TableCell>{order.vendor_name}</TableCell>
                         <TableCell>{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</TableCell>
-                        <TableCell>{formatCurrency(order.total_amount || order.total || 0)}</TableCell>
-                        <TableCell>
-                          <Badge variant={
-                            order.status === "received" ? "default" :
-                            order.status === "ordered" ? "secondary" :
-                            order.status === "cancelled" ? "destructive" : "outline"
-                          }>
-                            {order.status}
-                          </Badge>
-                        </TableCell>
+                        <TableCell>{formatCurrency(order.total_amount || 0)}</TableCell>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell>{order.created_at ? new Date(order.created_at).toLocaleDateString() : "—"}</TableCell>
                         <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => toast.info("Purchase order details coming soon")}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)}><Eye className="h-4 w-4" /></Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+                                <DialogHeader><DialogTitle>PO {order.id?.slice(0, 8)}</DialogTitle></DialogHeader>
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div><Label className="text-xs text-muted-foreground">Vendor</Label><p className="font-medium">{order.vendor_name}</p></div>
+                                    <div><Label className="text-xs text-muted-foreground">Status</Label><div>{getStatusBadge(order.status)}</div></div>
+                                    <div><Label className="text-xs text-muted-foreground">Expected Delivery</Label><p>{order.expected_delivery || "—"}</p></div>
+                                    <div><Label className="text-xs text-muted-foreground">Total</Label><p className="font-medium">{formatCurrency(order.total_amount || 0)}</p></div>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground mb-2 block">Line Items</Label>
+                                    <div className="rounded-md border">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>Material</TableHead>
+                                            <TableHead>Qty</TableHead>
+                                            <TableHead>Unit Cost</TableHead>
+                                            <TableHead>Total</TableHead>
+                                            <TableHead>Received</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {(order.items || []).map((item, i) => (
+                                            <TableRow key={i}>
+                                              <TableCell>{item.material_name || item.material_id}</TableCell>
+                                              <TableCell>{item.quantity} {item.unit}</TableCell>
+                                              <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
+                                              <TableCell>{formatCurrency(item.total_cost)}</TableCell>
+                                              <TableCell>{item.received_quantity || 0}</TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                  {order.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm">{order.notes}</p></div>}
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            {order.status === "draft" && (
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "send")} title="Send"><Send className="h-4 w-4" /></Button>
+                            )}
+                            {order.status === "sent" && (
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "confirm")} title="Confirm"><CheckCircle className="h-4 w-4" /></Button>
+                            )}
+                            {(order.status === "draft" || order.status === "sent") && (
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "cancel")} title="Cancel"><XCircle className="h-4 w-4 text-red-500" /></Button>
+                            )}
+                            {(order.status === "confirmed" || order.status === "partial") && (
+                              <Button size="sm" variant="outline" onClick={() => toast.info("Goods receipt coming soon")} title="Receive"><Truck className="h-4 w-4" /></Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -150,5 +300,165 @@ export default function PurchaseOrdersPage() {
         </Card>
       </div>
     </DashboardLayout>
+  )
+}
+
+function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [vendors, setVendors] = useState<any[]>([])
+  const [vendorOpen, setVendorOpen] = useState(false)
+  const [vendorSearch, setVendorSearch] = useState("")
+  const [formData, setFormData] = useState({
+    vendor_id: "",
+    vendor_name: "",
+    items: [{ material_name: "", quantity: 1, unit: "pcs", unit_cost: 0 }],
+    expected_delivery: "",
+    shipping_address: "",
+    notes: ""
+  })
+
+  useEffect(() => {
+    fetch('/api/vendors').then(r => r.json()).then(d => setVendors(d.data || [])).catch(() => {})
+  }, [])
+
+  const total = formData.items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.vendor_id || formData.items.length === 0) {
+      toast.error("Vendor and at least one item required")
+      return
+    }
+    try {
+      const response = await fetch('/api/purchase-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendor_id: formData.vendor_id,
+          items: formData.items.map(i => ({ material_id: i.material_name, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
+          expected_delivery: formData.expected_delivery || undefined,
+          shipping_address: formData.shipping_address || undefined,
+          notes: formData.notes || undefined
+        })
+      })
+      if (response.ok) {
+        toast.success("Purchase order created")
+        onCreated()
+      } else {
+        const err = await response.json()
+        toast.error(err.error || "Failed to create PO")
+      }
+    } catch {
+      toast.error("Failed to create PO")
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <Label>Vendor *</Label>
+        <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+              {formData.vendor_name || "Select vendor..."}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[400px] p-0">
+            <Command>
+              <CommandInput placeholder="Search vendors..." value={vendorSearch} onValueChange={setVendorSearch} />
+              <CommandList>
+                <CommandEmpty>No vendors found.</CommandEmpty>
+                <CommandGroup>
+                  {vendors.filter(v => v.name?.toLowerCase().includes(vendorSearch.toLowerCase())).slice(0, 20).map(v => (
+                    <CommandItem key={v.id} value={v.name} onSelect={() => {
+                      setFormData({ ...formData, vendor_id: v.id, vendor_name: v.name })
+                      setVendorOpen(false)
+                    }}>
+                      <Check className={cn("mr-2 h-4 w-4", formData.vendor_id === v.id ? "opacity-100" : "opacity-0")} />
+                      <div><div className="font-medium">{v.name}</div><div className="text-xs text-muted-foreground">{v.payment_terms || ""}</div></div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2"><Label>Line Items</Label></div>
+        {formData.items.map((item, idx) => (
+          <div key={idx} className="border rounded-lg p-3 mb-2 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Item {idx + 1}</span>
+              {formData.items.length > 1 && (
+                <Button type="button" variant="ghost" size="sm" className="text-red-500 h-6"
+                  onClick={() => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) })}>
+                  Remove
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <Label className="text-xs">Material</Label>
+                <Input value={item.material_name} onChange={(e) => {
+                  const items = [...formData.items]; items[idx].material_name = e.target.value
+                  setFormData({ ...formData, items })
+                }} required />
+              </div>
+              <div>
+                <Label className="text-xs">Qty</Label>
+                <Input type="number" min="1" value={item.quantity} onChange={(e) => {
+                  const items = [...formData.items]; items[idx].quantity = parseInt(e.target.value) || 1
+                  setFormData({ ...formData, items })
+                }} />
+              </div>
+              <div>
+                <Label className="text-xs">Unit</Label>
+                <Input value={item.unit} onChange={(e) => {
+                  const items = [...formData.items]; items[idx].unit = e.target.value
+                  setFormData({ ...formData, items })
+                }} />
+              </div>
+              <div>
+                <Label className="text-xs">Unit Cost</Label>
+                <Input type="number" min="0" value={item.unit_cost} onChange={(e) => {
+                  const items = [...formData.items]; items[idx].unit_cost = parseFloat(e.target.value) || 0
+                  setFormData({ ...formData, items })
+                }} />
+              </div>
+            </div>
+            <div className="text-xs text-right text-muted-foreground">Line total: {formatCurrency(item.quantity * item.unit_cost)}</div>
+          </div>
+        ))}
+        <Button type="button" size="sm" variant="outline" onClick={() =>
+          setFormData({ ...formData, items: [...formData.items, { material_name: "", quantity: 1, unit: "pcs", unit_cost: 0 }] })
+        }>
+          <Plus className="h-3 w-3 mr-1" /> Add Item
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label>Expected Delivery</Label>
+          <Input type="date" value={formData.expected_delivery} onChange={(e) => setFormData({ ...formData, expected_delivery: e.target.value })} />
+        </div>
+        <div>
+          <Label>Shipping Address</Label>
+          <Input value={formData.shipping_address} onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })} />
+        </div>
+      </div>
+      <div>
+        <Label>Notes</Label>
+        <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="font-medium">Total: {formatCurrency(total)}</span>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+        <Button type="submit">Create PO</Button>
+      </div>
+    </form>
   )
 }
