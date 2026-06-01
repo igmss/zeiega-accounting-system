@@ -28,7 +28,7 @@ export function AddInventoryDialog() {
     supplier: "",
     location: "",
     description: "",
-    paymentSource: "",
+    paymentSource: "cash",
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,11 +41,17 @@ export function AddInventoryDialog() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...formData,
-          quantity_on_hand: parseFloat(formData.quantity),
-          cost_per_unit: parseFloat(formData.cost_per_unit),
-          reorder_level: parseFloat(formData.reorder_level),
-          paymentSource: formData.paymentSource,
+          sku: formData.sku,
+          name: formData.name,
+          type: formData.type,
+          unit: formData.unit,
+          quantity_on_hand: parseFloat(formData.quantity) || 0,
+          cost_per_unit: parseFloat(formData.cost_per_unit) || 0,
+          reorder_level: parseFloat(formData.reorder_level) || 0,
+          supplier: formData.supplier || null,
+          location: formData.location || null,
+          description: formData.description || null,
+          paymentSource: formData.paymentSource || "cash",
         }),
       })
 
@@ -65,7 +71,7 @@ export function AddInventoryDialog() {
         supplier: "",
         location: "",
         description: "",
-        paymentSource: "",
+        paymentSource: "cash",
       })
       setIsOpen(false)
       
