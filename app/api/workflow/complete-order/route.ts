@@ -10,7 +10,6 @@ export async function POST(request: Request) {
   try {
     const { orderId } = await request.json()
     const serviceDb = getServiceClient()
-    const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
     if (!orderId) {
       return NextResponse.json(
@@ -19,7 +18,6 @@ export async function POST(request: Request) {
       )
     }
 
-    let orderData: any = null
     let orderSource: string | null = null
 
     const { data: manualOrder } = await serviceDb
@@ -29,7 +27,6 @@ export async function POST(request: Request) {
       .single()
 
     if (manualOrder) {
-      orderData = manualOrder
       orderSource = "manual_orders"
     } else {
       const { data: webOrder } = await serviceDb
@@ -39,7 +36,6 @@ export async function POST(request: Request) {
         .single()
 
       if (webOrder) {
-        orderData = webOrder
         orderSource = "orders"
       } else {
         const { data: salesOrder } = await serviceDb
@@ -49,20 +45,19 @@ export async function POST(request: Request) {
           .single()
 
         if (salesOrder) {
-          orderData = salesOrder
           orderSource = "acc_sales_orders"
         }
       }
     }
 
-    if (!orderData || !orderSource) {
+    if (!orderSource) {
       return NextResponse.json(
         { error: "Order not found" },
         { status: 404 }
       )
     }
 
-    // 1. Update order status to completed in the source collection
+    // Update order status in the source collection
     if (orderSource === "manual_orders") {
       await serviceDb.from(TABLES.MANUAL_ORDERS).update({
         status: "completed",
@@ -75,7 +70,7 @@ export async function POST(request: Request) {
       }).eq("id", orderId)
     }
 
-    // 2. Update accounting sales order status (create if doesn't exist)
+    // Sync to accounting sales orders
     const { data: salesOrderDoc } = await serviceDb
       .from(TABLES.SALES_ORDERS)
       .select("*")
@@ -87,153 +82,31 @@ export async function POST(request: Request) {
         status: "completed",
         updated_at: new Date().toISOString()
       }).eq("id", orderId)
-    } else {
-      await serviceDb.from(TABLES.SALES_ORDERS).upsert({
-        id: orderId,
-        website_order_id: orderId,
-        customer_id: (orderData as any).user_id || orderData.customer_id || "unknown",
-        customer_name: (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer",
-        items: orderData.items || [],
-        status: "completed",
-        total_amount: orderData.total || orderData.total_amount || 0,
-        order_source: orderSource === "orders" ? "web" : "manual",
-        created_at: orderData.created_at ? new Date(orderData.created_at).toISOString() : new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: "id" })
     }
 
-    // 3. Complete work order
+    // Mark associated work orders as completed (no journal entries here —
+    // the /api/work-orders/complete endpoint is the single authoritative handler)
     const { data: workOrders } = await serviceDb
       .from(TABLES.WORK_ORDERS)
       .select("*")
       .eq("sales_order_id", orderId)
 
     if (workOrders && workOrders.length > 0) {
-      const workOrderDoc = workOrders[0]
-      if (workOrderDoc.status !== "completed") {
-        await serviceDb.from(TABLES.WORK_ORDERS).update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }).eq("id", workOrderDoc.id)
-        console.log(`WO ${workOrderDoc.id} marked completed`)
-
-        const woMatCost = (workOrderDoc.materials_issued || []).reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
-        const woOHCost = (workOrderDoc.overhead_cost || 0)
-        const woLaborCost = (workOrderDoc.labor_cost || 0)
-
-        if (woMatCost > 0 || woOHCost > 0 || woLaborCost > 0) {
-          const wipToFgLines: any[] = [
-            { accountCode: "1220", accountName: "Finished Goods Inventory", debit: woMatCost + woLaborCost + woOHCost, credit: 0, description: `Transfer from WIP for order ${orderId}` },
-          ]
-          if (woMatCost > 0) wipToFgLines.push({ accountCode: "1710", accountName: "WIP - Materials", debit: 0, credit: woMatCost, description: `Materials transferred to FG` })
-          if (woLaborCost > 0) wipToFgLines.push({ accountCode: "1711", accountName: "WIP - Labor", debit: 0, credit: woLaborCost, description: `Labor transferred to FG` })
-          if (woOHCost > 0) wipToFgLines.push({ accountCode: "1712", accountName: "WIP - Overhead", debit: 0, credit: woOHCost, description: `Overhead transferred to FG` })
-
-          await EnhancedAccountingService.createJournalEntry(
-            JournalEntryType.WIP_TO_FINISHED_GOODS, wipToFgLines, `WIP-FG-${orderId}`,
-            `WIP to FG for order ${orderId}`, null
-          )
+      for (const wo of workOrders) {
+        if (wo.status !== "completed") {
+          await serviceDb.from(TABLES.WORK_ORDERS).update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }).eq("id", wo.id)
         }
-      }
-    }
-
-    // 5. Generate invoice (if not already generated for this SO)
-    const invoiceId = `INV-${orderId.slice(-8)}`
-
-    const { data: existingInvoice } = await serviceDb
-      .from(TABLES.INVOICES)
-      .select("*")
-      .eq("sales_order_id", orderId)
-      .maybeSingle()
-
-    if (!existingInvoice) {
-      const customerId = (orderData as any).user_id || orderData.customer_id || "unknown"
-      const customerName = (orderData as any).shipping_address?.fullName || orderData.customer_name || "Unknown Customer"
-      const totalAmount = orderData.total || orderData.total_amount || 0
-
-      const { error: invoiceError } = await serviceDb.from(TABLES.INVOICES).insert({
-        sales_order_id: orderId,
-        customer_id: customerId,
-        customer_name: customerName,
-        amount: totalAmount,
-        total_amount: totalAmount,
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        status: "pending",
-      })
-
-      if (invoiceError) {
-        console.error("Failed to upsert invoice:", invoiceError)
-        return NextResponse.json({ error: "Failed to create invoice", detail: invoiceError.message }, { status: 500 })
-      }
-
-      await EnhancedAccountingService.createJournalEntry(
-        JournalEntryType.SALES_INVOICE,
-        [
-          { 
-            accountCode: "1110",
-            accountName: "Accounts Receivable", 
-            debit: totalAmount, 
-            credit: 0, 
-            description: `Invoice ${invoiceId}` 
-          },
-          { 
-            accountCode: "4001",
-            accountName: "Sales Revenue", 
-            debit: 0, 
-            credit: totalAmount, 
-            description: `Sales revenue ${invoiceId}` 
-          }
-        ],
-        invoiceId,
-        `Invoice ${invoiceId}`
-      )
-
-      const { data: woSnapshot } = await serviceDb
-        .from(TABLES.WORK_ORDERS)
-        .select("*")
-        .eq("sales_order_id", orderId)
-
-      if (woSnapshot && woSnapshot.length > 0) {
-        const woData = woSnapshot[0]
-        const cogsAmount = woData.total_cost || woData.estimated_cost || 0
-
-        if (cogsAmount > 0) {
-          await EnhancedAccountingService.createJournalEntry(
-            JournalEntryType.SALES_COGS,
-            [
-              {
-                accountCode: "5301",
-                accountName: "Cost of Goods Sold",
-                debit: cogsAmount,
-                credit: 0,
-                description: `COGS for order ${orderId}`
-              },
-              {
-                accountCode: "1220",
-                accountName: "Finished Goods Inventory",
-                debit: 0,
-                credit: cogsAmount,
-                description: `Finished goods consumed for order ${orderId}`
-              }
-            ],
-            invoiceId,
-            `COGS for order ${orderId}`
-          )
-          console.log(`✅ COGS journal entry created for order ${orderId}: EGP ${cogsAmount}`)
-        } else {
-          console.warn(`⚠️ No cost information found for work order associated with order ${orderId}`)
-        }
-      } else {
-        console.warn(`⚠️ No work order found for order ${orderId}. Skipping COGS journal entry.`)
       }
     }
 
     return NextResponse.json({
       success: true,
       orderId,
-      invoiceId,
-      message: "Order completed and invoice generated successfully"
+      message: "Order status updated to completed"
     })
 
   } catch (error) {

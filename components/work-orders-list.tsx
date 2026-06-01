@@ -198,26 +198,11 @@ export function WorkOrdersList() {
       })
 
       if (response.ok) {
-        const workOrder = (Array.isArray(workOrders) ? workOrders : []).find(wo => wo.id === workOrderId)
-        if (workOrder && workOrder.sales_order_id) {
-          const completeResponse = await fetch('/api/workflow/complete-order', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              orderId: workOrder.sales_order_id
-            })
-          })
-
-          if (completeResponse.ok) {
-            const result = await completeResponse.json()
-            console.log('Order completed:', result)
-            toast.success('Work order completed and WIP transferred to Finished Goods!')
-          } else {
-            console.error('Failed to complete order workflow')
-            toast.warning('Work order completed but failed to trigger billing/revenue workflow')
-          }
+        const result = await response.json()
+        if (result.invoiceId) {
+          toast.success(`Work order completed — invoice ${result.invoiceId.slice(0, 8)} created!`)
+        } else {
+          toast.success('Work order completed and WIP transferred to Finished Goods!')
         }
 
         const workOrdersResponse = await fetch('/api/work-orders')

@@ -142,7 +142,8 @@ export class ManufacturingAccountingService {
                 .single()
 
             if (woDoc) {
-                matCost = woDoc.material_cost || 0
+                const matIssued = Array.isArray(woDoc.materials_issued) ? woDoc.materials_issued : []
+                matCost = matIssued.reduce((s: number, m: any) => s + ((m.totalCost || m.quantity * m.unitCost) || 0), 0)
                 labCost = woDoc.labor_cost || 0
                 ohCost = woDoc.overhead_cost || 0
             }

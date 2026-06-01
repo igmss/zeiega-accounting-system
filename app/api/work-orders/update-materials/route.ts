@@ -96,28 +96,14 @@ export async function POST(request: Request) {
       const { data: prevByRef } = await serviceDb
         .from(TABLES.JOURNAL_ENTRIES)
         .select("*")
-        .eq("reference_doc", workOrderId)
+        .eq("reference_id", workOrderId)
         .in("type", jeTypesToDelete)
-      
-      const { data: prevByLink } = await serviceDb
-        .from(TABLES.JOURNAL_ENTRIES)
-        .select("*")
-        .eq("linked_doc", workOrderId)
-        .in("type", jeTypesToDelete)
-      
+
       const entriesToVoid: any[] = []
       const uniqueIds = new Set<string>()
-      
+
       if (prevByRef) {
         for (const doc of prevByRef) {
-          if (!uniqueIds.has(doc.id)) {
-            uniqueIds.add(doc.id)
-            entriesToVoid.push(doc)
-          }
-        }
-      }
-      if (prevByLink) {
-        for (const doc of prevByLink) {
           if (!uniqueIds.has(doc.id)) {
             uniqueIds.add(doc.id)
             entriesToVoid.push(doc)

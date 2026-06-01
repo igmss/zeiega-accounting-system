@@ -101,7 +101,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
     setCreatingInvoice(true)
     try {
       const invoiceData: Record<string, any> = {
-        amount: workOrder.total_cost || totalCost,
+        amount: workOrder.total_amount || totalOrderValue,
         customer_name: workOrder.customer_name || "Unknown Customer",
         sales_order_id: workOrder.sales_order_id || null,
       }
