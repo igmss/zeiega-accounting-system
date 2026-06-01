@@ -156,7 +156,7 @@ export function WorkOrderDetails({ workOrder }: WorkOrderDetailsProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sales Order:</span>
-              <span className="font-medium">{workOrder.sales_order_id}</span>
+              <span className="font-medium">{workOrder.sales_order_id ? workOrder.sales_order_id.slice(0, 8) : "—"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Order Status:</span>

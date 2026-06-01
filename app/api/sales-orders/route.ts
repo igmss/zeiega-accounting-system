@@ -284,6 +284,11 @@ export async function PUT(request: Request) {
               total_cost: 0,
               estimated_cost: 0,
               items: normalizedItems,
+              customer_name: (orderData as any).shipping_address?.fullName || (orderData as any).customer_name || "Unknown Customer",
+              customer_email: (orderData as any).user_id || (orderData as any).customer_email || null,
+              customer_phone: (orderData as any).shipping_address?.phone || (orderData as any).customer_phone || null,
+              customer_address: (orderData as any).shipping_address?.street ? `${(orderData as any).shipping_address.street}, ${(orderData as any).shipping_address.city}` : (orderData as any).customer_address || null,
+              total_amount: orderData.total || (orderData as any).total_amount || 0,
               notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost failed: ${workOrderResult.error})`,
             };
 
