@@ -73,7 +73,11 @@ export class OrderItemDesignService {
           if (actualMaterialCost > 0) {
             finalMaterialCost = actualMaterialCost;
             finalEstimatedCost = finalMaterialCost + sizeSpecificCosts.laborCost + sizeSpecificCosts.overheadCost;
+            console.log(`[DEBUG:COST] sizeSpecificCosts.totalCost=${sizeSpecificCosts.totalCost}, materialCost=${sizeSpecificCosts.materialCost}, laborCost=${sizeSpecificCosts.laborCost}, overheadCost=${sizeSpecificCosts.overheadCost}`);
+            console.log(`[DEBUG:COST] actualMaterialCost=${actualMaterialCost}, finalMaterialCost=${finalMaterialCost}, finalEstimatedCost=${finalEstimatedCost}`);
             console.log(`Using actual inventory material cost ${formatCurrency(finalMaterialCost)} instead of size-multiplied estimate ${formatCurrency(sizeSpecificCosts.materialCost)}`);
+          } else {
+            console.log(`[DEBUG:COST] actualMaterialCost=${actualMaterialCost} (not > 0), using size cost: totalCost=${sizeSpecificCosts.totalCost}`);
           }
           
           itemCosts.push({
@@ -324,16 +328,25 @@ export class OrderItemDesignService {
       const now = new Date().toISOString()
       const year = new Date().getFullYear()
       const random = Math.random().toString(36).slice(2, 6).toUpperCase()
+
+      const firstMatch = costCalculation.itemCosts[0] || {}
+      const designId = firstMatch.designId || undefined
+      const materialCost = costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.materialCost || 0), 0)
+      const laborCost = costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.laborCost || 0), 0)
+      const overheadCost = costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.overheadCost || 0), 0)
+
       const workOrder = {
         id: workOrderId,
         wo_number: `WO-${year}-${random}`,
         sales_order_id: salesOrderId,
+        design_id: designId,
+        design_name: firstMatch.designName || undefined,
         raw_materials_used: [],
         materials_issued: [],
-        labor_hours: costCalculation.itemCosts.reduce((sum, item) => 
-          sum + (item.laborCost / 50), 0),
-        labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
-        overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
+        labor_hours: laborCost / 50,
+        labor_cost: laborCost,
+        overhead_cost: overheadCost,
+        material_cost: materialCost,
         total_cost: 0,
         estimated_cost: costCalculation.totalEstimatedCost,
         status: "pending",
