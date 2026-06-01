@@ -219,6 +219,7 @@ export class WorkOrderMaterialService {
         .from(TABLES.WORK_ORDERS)
         .update({
           status: "completed",
+          completion_percentage: 100,
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           total_cost: totalCost,

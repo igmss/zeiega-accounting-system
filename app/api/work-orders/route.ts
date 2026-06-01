@@ -160,6 +160,7 @@ export async function PUT(request: Request) {
                   })
                 }
               }
+              await serviceDb.from(TABLES.WORK_ORDERS).update({ completion_percentage: 30 }).eq("id", id)
             } else {
               console.error(`[DEBUG:PUT:ACC] FAILED to create material issue JE: ${accResult.error}`)
             }
@@ -186,6 +187,7 @@ export async function PUT(request: Request) {
             console.log(`[DEBUG:PUT:LABOR] auto-applying labor_cost=${woLaborCost} for WO ${id}`)
             const laborResult = await EnhancedAccountingService.recordLaborApplied(id, Math.max(1, woLaborCost / 50), 50)
             if (laborResult.success) {
+              await serviceDb.from(TABLES.WORK_ORDERS).update({ completion_percentage: 60 }).eq("id", id)
               console.log(`[DEBUG:PUT:LABOR] OK, entryId=${laborResult.entryId}`)
             } else {
               console.error(`[DEBUG:PUT:LABOR] FAILED: ${laborResult.error}`)
@@ -206,6 +208,7 @@ export async function PUT(request: Request) {
             console.log(`[DEBUG:PUT:OH] auto-applying overhead_cost=${woOverheadCost} for WO ${id}`)
             const ohResult = await EnhancedAccountingService.recordOverheadApplied(id, woOverheadCost)
             if (ohResult.success) {
+              await serviceDb.from(TABLES.WORK_ORDERS).update({ completion_percentage: 90 }).eq("id", id)
               console.log(`[DEBUG:PUT:OH] OK, entryId=${ohResult.entryId}`)
             } else {
               console.error(`[DEBUG:PUT:OH] FAILED: ${ohResult.error}`)
