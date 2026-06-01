@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
+import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service";
+import { getServiceClient, TABLES } from "@/lib/supabase";
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
 // GET /api/work-orders - Get all work orders with design information
@@ -8,22 +10,10 @@ export async function GET() {
   const auth = await requireAuth()
   if (!auth.authenticated) return auth.response
   try {
-    console.log("Fetching work orders with design information...");
-
     const workOrders = await WorkOrderService.getAllWorkOrdersWithDesigns();
-
-    return NextResponse.json({
-      success: true,
-      data: workOrders,
-      count: workOrders.length
-    });
-
+    return NextResponse.json({ success: true, data: workOrders, count: workOrders.length });
   } catch (error) {
-    console.error("Error fetching work orders:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch work orders" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: "Failed to fetch work orders" }, { status: 500 });
   }
 }
 
@@ -34,104 +24,30 @@ export async function POST(request: NextRequest) {
   try {
     const workOrderData = await request.json();
 
-    console.log("Creating work order with data:", workOrderData);
-
-    // If order items are provided, use automatic cost calculation
     if (workOrderData.items && workOrderData.items.length > 0) {
-      console.log("Using automatic cost calculation from order items...");
-
       const result = await OrderItemDesignService.createWorkOrderWithAutoCosts(
-        workOrderData.sales_order_id,
-        workOrderData.items,
-        workOrderData
+        workOrderData.sales_order_id, workOrderData.items, workOrderData
       );
-
-      if (result.success) {
-        return NextResponse.json({
-          success: true,
-          workOrderId: result.workOrderId,
-          totalEstimatedCost: result.totalEstimatedCost,
-          itemCosts: result.itemCosts,
-          message: "Work order created with automatic cost calculation from designs"
-        });
-      } else {
-        console.warn(`Auto cost calculation failed: ${result.error}, falling back to manual creation`);
-      }
+      if (result.success) return NextResponse.json({ success: true, workOrderId: result.workOrderId, totalEstimatedCost: result.totalEstimatedCost, itemCosts: result.itemCosts });
     }
 
-    // If design_id is provided, use design-based creation
     if (workOrderData.design_id) {
       const result = await WorkOrderService.createWorkOrderWithDesign(
-        workOrderData.sales_order_id,
-        workOrderData.design_id,
-        workOrderData.quantity || 1,
-        workOrderData
+        workOrderData.sales_order_id, workOrderData.design_id, workOrderData.quantity || 1, workOrderData
       );
-
-      if (result.success) {
-        return NextResponse.json({
-          success: true,
-          workOrderId: result.workOrderId,
-          estimatedCost: result.estimatedCost,
-          message: "Work order created with design-based cost calculation"
-        });
-      } else {
-        return NextResponse.json(
-          { success: false, error: result.error },
-          { status: 400 }
-        );
-      }
+      if (result.success) return NextResponse.json({ success: true, workOrderId: result.workOrderId, estimatedCost: result.estimatedCost });
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Fallback: Try automatic cost calculation even without items
-    console.log("Attempting automatic cost calculation as fallback...");
-
-    // If we have items, try automatic cost calculation
-    if (workOrderData.items && workOrderData.items.length > 0) {
-      const result = await OrderItemDesignService.createWorkOrderWithAutoCosts(
-        workOrderData.sales_order_id,
-        workOrderData.items,
-        workOrderData
-      );
-
-      if (result.success) {
-        return NextResponse.json({
-          success: true,
-          workOrderId: result.workOrderId,
-          totalEstimatedCost: result.totalEstimatedCost,
-          itemCosts: result.itemCosts,
-          message: "Work order created with automatic cost calculation (fallback)"
-        });
-      }
-    }
-
-    // Final fallback: Create basic work order with warning
-    console.warn("Creating basic work order without automatic cost calculation");
-    
     const result = await WorkOrderService.createBasicWorkOrder(workOrderData);
-    
-    if (!result.success) {
-      return NextResponse.json(
-        { success: false, error: result.error },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      workOrderId: result.workOrderId,
-      message: "Basic work order created - manual cost entry required"
-    });
-
+    if (!result.success) return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    return NextResponse.json({ success: true, workOrderId: result.workOrderId, message: "Basic work order created - manual cost entry required" });
   } catch (error) {
-    console.error("Error creating work order:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create work order" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: "Failed to create work order" }, { status: 500 });
   }
 }
 
+// PUT /api/work-orders - Update work order + auto-issue materials on in_progress
 export async function PUT(request: Request) {
   const auth = await requirePermission("work-orders:create")
   if (!auth.authorized) return auth.response
@@ -139,20 +55,75 @@ export async function PUT(request: Request) {
     const { id, ...workOrderData } = await request.json()
 
     const result = await WorkOrderService.updateWorkOrder(id, workOrderData)
+    if (!result.success) return NextResponse.json({ error: result.error || "Failed to update work order" }, { status: 400 })
 
-    if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || "Failed to update work order" },
-        { status: 400 }
-      )
+    if (workOrderData.status === "in_progress") {
+      try {
+        const serviceDb = getServiceClient()
+        const { data: wo } = await serviceDb.from(TABLES.WORK_ORDERS).select("*").eq("id", id).single()
+
+        if (wo) {
+          let materialsToIssue: any[] = []
+
+          if (wo.design_id) {
+            const { data: design } = await serviceDb.from(TABLES.DESIGNS).select("*").eq("id", wo.design_id).single()
+            if (design?.materials) {
+              const mats = Array.isArray(design.materials) ? design.materials : []
+              const orderQty = wo.items?.[0]?.quantity || wo.items?.[0]?.qty || 1
+              materialsToIssue = mats.map((m: any) => ({
+                materialId: m.inventoryItemId || m.id,
+                quantity: (m.quantityPerUnit || 0) * orderQty,
+              })).filter((m: any) => m.materialId && m.quantity > 0)
+            }
+          }
+
+          if (materialsToIssue.length === 0 && wo.materials_issued) {
+            const issued = Array.isArray(wo.materials_issued) ? wo.materials_issued : []
+            materialsToIssue = issued.map((m: any) => ({
+              materialId: m.itemId || m.materialId || m.inventoryItemId,
+              quantity: m.quantity || 0,
+            })).filter((m: any) => m.materialId && m.quantity > 0)
+          }
+
+          if (materialsToIssue.length > 0) {
+            const accountingMaterials: any[] = []
+            const inventoryRefs: Array<{ id: string; qty: number }> = []
+
+            for (const mat of materialsToIssue) {
+              const { data: invData } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("*").or(`id.eq.${mat.materialId},sku.eq.${mat.materialId}`).limit(1).single()
+              if (invData) {
+                const uc = invData.cost_per_unit || 0
+                accountingMaterials.push({ itemId: invData.id, itemName: invData.name, quantity: mat.quantity, unitCost: uc })
+                inventoryRefs.push({ id: invData.id, qty: mat.quantity })
+              }
+            }
+
+            if (accountingMaterials.length > 0) {
+              const accResult = await EnhancedAccountingService.recordMaterialIssue(id, accountingMaterials)
+              if (accResult.success) {
+                const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
+                await serviceDb.from(TABLES.WORK_ORDERS).update({
+                  raw_materials_used: materialsToIssue,
+                  materials_issued: accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost })),
+                  total_cost: totalMC + (wo.overhead_cost || 0),
+                  updated_at: new Date().toISOString()
+                }).eq("id", id)
+
+                for (const inv of inventoryRefs) {
+                  const { data: curr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", inv.id).single()
+                  await serviceDb.from(TABLES.INVENTORY_ITEMS).update({ quantity_on_hand: Math.max(0, (curr?.quantity_on_hand || 0) - inv.qty) }).eq("id", inv.id)
+                }
+              }
+            }
+          }
+        }
+      } catch (innerErr) {
+        console.error("Auto-issue materials failed:", innerErr)
+      }
     }
 
     return NextResponse.json({ id, status: workOrderData.status, success: true })
   } catch (error) {
-    console.error("Error updating work order:", error)
-    return NextResponse.json(
-      { error: "Failed to update work order" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to update work order" }, { status: 500 })
   }
 }
