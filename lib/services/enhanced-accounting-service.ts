@@ -1068,4 +1068,233 @@ export class EnhancedAccountingService {
     static async processOverdueInvoices(): Promise<{ processed: number; errors: number }> {
         return SalesAccountingService.processOverdueInvoices()
     }
+
+    /**
+     * Reconcile WIP GL balance against open work order job cost sheets.
+     *
+     * Computes the WIP balance from journal entries (GL) and compares it
+     * against the sum of costs on all open (non-completed, non-cancelled)
+     * work orders (sub-ledger). Returns the variance and investigation steps.
+     *
+     * Per IAS 2, WIP should equal actual production costs accumulated on
+     * open jobs. A variance > materiality threshold requires investigation.
+     */
+    static async reconcileWIP(materialityThreshold: number = 1000): Promise<{
+        wipGLBalance: number
+        wipSubLedgerTotal: number
+        variance: number
+        isReconciled: boolean
+        openJobCount: number
+        jobDetails: Array<{
+            id: string
+            woNumber: string
+            status: string
+            materialCost: number
+            laborCost: number
+            overheadCost: number
+            totalCost: number
+        }>
+        investigationSteps: string[]
+        recommendation: string
+    }> {
+        try {
+            const client = getServiceSupabase()
+
+            const wipGLBalance = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.INVENTORY_WIP)
+
+            const { data: openJobs } = await client
+                .from(TABLES.WORK_ORDERS)
+                .select("*")
+                .not("status", "in", '("completed","cancelled")')
+
+            const jobDetails: Array<{
+                id: string; woNumber: string; status: string
+                materialCost: number; laborCost: number; overheadCost: number; totalCost: number
+            }> = []
+
+            let wipSubLedgerTotal = 0
+
+            for (const wo of (openJobs || [])) {
+                const materials = wo.raw_materials_used || []
+                const matCost = materials.reduce(
+                    (sum: number, m: any) => sum + (m.totalCost || (m.qty * (m.unitCost || m.cost || 0)) || 0), 0
+                )
+                const laborCost = wo.labor_cost || 0
+                const overheadCost = wo.overhead_cost || 0
+                const totalCost = matCost + laborCost + overheadCost
+
+                wipSubLedgerTotal += totalCost
+                jobDetails.push({
+                    id: wo.id,
+                    woNumber: wo.wo_number || wo.id,
+                    status: wo.status,
+                    materialCost: Math.round(matCost * 100) / 100,
+                    laborCost: Math.round(laborCost * 100) / 100,
+                    overheadCost: Math.round(overheadCost * 100) / 100,
+                    totalCost: Math.round(totalCost * 100) / 100,
+                })
+            }
+
+            const variance = wipGLBalance - wipSubLedgerTotal
+            const isMaterial = Math.abs(variance) > materialityThreshold
+            const isReconciled = !isMaterial
+
+            const investigationSteps: string[] = []
+
+            if (isMaterial) {
+                investigationSteps.push(`1. Verify all material issues to WIP are posted (check goods issue confirmations)`)
+                investigationSteps.push(`2. Verify all labor confirmations are posted for open work orders`)
+                investigationSteps.push(`3. Verify overhead application has been run for the current period`)
+                investigationSteps.push(`4. Check for journal entries posted directly to WIP (1210) without a work order reference`)
+                investigationSteps.push(`5. Verify completed work orders have been settled (WIP → FG transfer) and are excluded from open jobs`)
+                investigationSteps.push(`6. Check for work orders in 'completed' status that still have WIP balances`)
+                investigationSteps.push(`7. Review work orders with zero costs — may indicate missing cost capture`)
+            }
+
+            const recommendation = isReconciled
+                ? `WIP reconciled within EGP ${materialityThreshold} tolerance.`
+                : `WIP variance of EGP ${Math.abs(Math.round(variance)).toLocaleString()} exceeds threshold. Investigate using steps above.`
+
+            return {
+                wipGLBalance: Math.round(wipGLBalance * 100) / 100,
+                wipSubLedgerTotal: Math.round(wipSubLedgerTotal * 100) / 100,
+                variance: Math.round(variance * 100) / 100,
+                isReconciled,
+                openJobCount: (openJobs || []).length,
+                jobDetails,
+                investigationSteps,
+                recommendation,
+            }
+        } catch (error) {
+            console.error("WIP reconciliation error:", error)
+            return {
+                wipGLBalance: 0, wipSubLedgerTotal: 0, variance: 0,
+                isReconciled: false, openJobCount: 0, jobDetails: [],
+                investigationSteps: ["Error during reconciliation — check database connectivity"],
+                recommendation: "Reconciliation failed. Retry after verifying database access.",
+            }
+        }
+    }
+
+    /**
+     * Check for accounting anomalies and red flags across the system.
+     * Returns a list of active alerts with severity and recommended action.
+     */
+    static async getRedFlags(): Promise<Array<{
+        severity: "critical" | "warning" | "info"
+        code: string
+        message: string
+        recommendation: string
+    }>> {
+        const flags: Array<{
+            severity: "critical" | "warning" | "info"
+            code: string; message: string; recommendation: string
+        }> = []
+
+        try {
+            const client = getServiceSupabase()
+
+            const wip = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.INVENTORY_WIP)
+            const fg = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS)
+            const ar = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE)
+            const revenue = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.SALES_CUSTOM_MTO)
+            const cogs = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.COST_OF_GOODS_SOLD)
+            const cash = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CASH_ON_HAND)
+                + await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.BANK_MAIN)
+
+            if (revenue > 0 && cogs <= 0) {
+                flags.push({
+                    severity: "critical", code: "NO_COGS",
+                    message: `Revenue recognized (EGP ${revenue.toLocaleString()}) but COGS is zero — revenue may be recognized without matching costs`,
+                    recommendation: "Verify IFRS 15 over-time recognition includes COGS journal entries. Run revenue recognition for active contracts.",
+                })
+            }
+
+            if (cogs > 0 && cogs > revenue * 1.5 && revenue > 0) {
+                flags.push({
+                    severity: "warning", code: "HIGH_COGS_RATIO",
+                    message: `COGS (EGP ${cogs.toLocaleString()}) exceeds 150% of revenue (EGP ${revenue.toLocaleString()}) — potential negative gross margin`,
+                    recommendation: "Review job costing, check for cost overruns, verify selling prices cover costs.",
+                })
+            }
+
+            const { data: negCMJobs } = await client
+                .from(TABLES.WORK_ORDERS)
+                .select("id, wo_number, total_amount, total_cost")
+                .not("status", "in", '("completed","cancelled")')
+
+            for (const job of (negCMJobs || [])) {
+                const totalAmount = job.total_amount || 0
+                const totalCost = job.total_cost || 0
+                if (totalAmount > 0 && totalCost > totalAmount) {
+                    flags.push({
+                        severity: "warning", code: "NEGATIVE_CM_JOB",
+                        message: `Job ${job.wo_number || job.id}: cost EGP ${totalCost.toLocaleString()} exceeds price EGP ${totalAmount.toLocaleString()} — negative contribution margin`,
+                        recommendation: "Review pricing for this job. Consider whether to accept or renegotiate.",
+                    })
+                }
+            }
+
+            const { data: overheadConfigs } = await client
+                .from(TABLES.OVERHEAD_CONFIG)
+                .select("*")
+                .eq("is_active", true)
+
+            for (const cfg of (overheadConfigs || [])) {
+                const rate = cfg.predetermined_rate || 0
+                const base = cfg.activity_base || "labor_hours"
+                if (rate > 1000 && base === "labor_hours") {
+                    flags.push({
+                        severity: "warning", code: "HIGH_POHR",
+                        message: `POHR of EGP ${rate.toFixed(2)} per labor hour is unusually high — verify allocation base is appropriate`,
+                        recommendation: `Consider switching to machine hours (MH) or material cost basis if labor is not the primary cost driver.`,
+                    })
+                }
+            }
+
+            const { data: activeContracts } = await client
+                .from(TABLES.CONTRACTS)
+                .select("*")
+                .eq("status", "active")
+
+            for (const c of (activeContracts || [])) {
+                if (c.costs_incurred_to_date > c.total_estimated_cost) {
+                    flags.push({
+                        severity: "critical", code: "COST_OVERRUN",
+                        message: `Contract ${c.id}: costs to date (EGP ${c.costs_incurred_to_date?.toLocaleString()}) exceed total estimated cost (EGP ${c.total_estimated_cost?.toLocaleString()})`,
+                        recommendation: "Immediately recognize onerous contract provision per IAS 37. Revise cost estimate and notify management.",
+                    })
+                }
+                if (c.costs_incurred_to_date > 0 && c.total_estimated_cost > c.contract_price * 0.95) {
+                    flags.push({
+                        severity: "warning", code: "MARGIN_EROSION",
+                        message: `Contract ${c.id}: costs at ${((c.costs_incurred_to_date / c.total_estimated_cost) * 100).toFixed(0)}% with only ${((1 - c.total_estimated_cost / c.contract_price) * 100).toFixed(1)}% margin remaining`,
+                        recommendation: "Closely monitor cost progression. If margin drops below 2%, consider onerous contract assessment.",
+                    })
+                }
+            }
+
+            const contractLiability = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CUSTOMER_DEPOSITS_LIABILITY)
+            if (contractLiability > 0 && revenue <= 0) {
+                flags.push({
+                    severity: "warning", code: "ADVANCE_NO_REVENUE",
+                    message: `Contract liability of EGP ${contractLiability.toLocaleString()} with no corresponding revenue — advances held without performance`,
+                    recommendation: "Verify performance obligations are being satisfied. Consider whether revenue recognition criteria are met.",
+                })
+            }
+
+            if (cash <= 0 && wip > 0 && ar <= 0) {
+                flags.push({
+                    severity: "critical", code: "CASH_CRUNCH",
+                    message: `Zero cash balance with EGP ${wip.toLocaleString()} in WIP and no AR — classic MTO cash flow gap`,
+                    recommendation: "Model milestone billing vs. cost outflow. Consider requesting customer advances or bridge financing.",
+                })
+            }
+
+            return flags
+        } catch (error) {
+            console.error("Red flag check error:", error)
+            return flags
+        }
+    }
 }

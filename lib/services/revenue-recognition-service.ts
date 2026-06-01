@@ -174,10 +174,11 @@ export class RevenueRecognitionService {
         }
       }
 
-      const entryId = `REV-${contractId}-${Date.now()}`
+      const revEntryId = `REV-${contractId}-${Date.now()}`
+      const cogsEntryId = `COGS-${contractId}-${Date.now()}`
       const now = new Date().toISOString()
 
-      const result = await JournalEntryService.createJournalEntry(
+      const revResult = await JournalEntryService.createJournalEntry(
         JournalEntryType.GENERAL,
         [
           {
@@ -200,8 +201,35 @@ export class RevenueRecognitionService {
         userId
       )
 
-      if (!result.success) {
-        return { success: false, error: result.error }
+      if (!revResult.success) {
+        return { success: false, error: revResult.error }
+      }
+
+      const cogsResult = await JournalEntryService.createJournalEntry(
+        JournalEntryType.SALES_COGS,
+        [
+          {
+            accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD,
+            accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD),
+            debit: costsIncurredThisPeriod,
+            credit: 0,
+            description: `COGS matched to revenue — ${pctComplete.toFixed(1)}% complete`,
+          },
+          {
+            accountCode: ACCOUNT_CODES.INVENTORY_WIP,
+            accountName: getAccountName(ACCOUNT_CODES.INVENTORY_WIP),
+            debit: 0,
+            credit: costsIncurredThisPeriod,
+            description: `Relieve WIP for costs recognized on ${contract.description}`,
+          },
+        ],
+        contractId,
+        `IFRS 15 COGS recognition: ${contract.description} — ${formatCurrency(costsIncurredThisPeriod)}`,
+        userId
+      )
+
+      if (!cogsResult.success) {
+        console.warn(`Revenue JE posted but COGS JE failed: ${cogsResult.error}`)
       }
 
       contract.updatedAt = now
@@ -216,7 +244,7 @@ export class RevenueRecognitionService {
         revenueThisPeriod,
         costsThisPeriod: costsIncurredThisPeriod,
         grossProfitThisPeriod: revenueThisPeriod - costsIncurredThisPeriod,
-        journalEntryId: result.entryId,
+        journalEntryId: revResult.entryId,
       }
 
       console.log(

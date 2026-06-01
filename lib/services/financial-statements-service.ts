@@ -487,4 +487,85 @@ export class FinancialStatementsService {
             isReconciled: Math.abs(reconciliationGap) < 100,
         }
     }
+
+    static async getWorkingCapitalMetrics(asOfDate: Date = new Date()): Promise<{
+        dio: number
+        dso: number
+        dpo: number
+        ccc: number
+        avgInventory: number
+        ar: number
+        ap: number
+        annualizedCOGS: number
+        annualizedRevenue: number
+        netWorkingCapital: number
+        riskFlags: string[]
+    }> {
+        const yearStart = new Date(asOfDate.getFullYear(), 0, 1)
+        const yearEnd = asOfDate
+
+        const inventoryAccounts = [
+            ACCOUNT_CODES.RAW_MATERIALS_FABRIC,
+            ACCOUNT_CODES.RAW_MATERIALS_ACCESSORIES,
+            ACCOUNT_CODES.PACKAGING_MATERIALS,
+            ACCOUNT_CODES.INVENTORY_WIP,
+            ACCOUNT_CODES.INVENTORY_FINISHED_GOODS,
+            ACCOUNT_CODES.SCRAP_INVENTORY,
+        ]
+
+        let avgInventory = 0
+        for (const code of inventoryAccounts) {
+            avgInventory += await this.getAccountBalance(code, undefined, yearEnd)
+        }
+
+        const ar = await this.getAccountBalance(ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, undefined, yearEnd)
+        const ap = await this.getAccountBalance(ACCOUNT_CODES.ACCOUNTS_PAYABLE, undefined, yearEnd)
+        const cash = await this.getAccountBalance(ACCOUNT_CODES.CASH_ON_HAND, undefined, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.BANK_MAIN, undefined, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.BANK_SAVINGS, undefined, yearEnd)
+
+        const periodCOGS = await this.getAccountBalance(ACCOUNT_CODES.COST_OF_GOODS_SOLD, yearStart, yearEnd)
+        const periodRevenue = await this.getAccountBalance(ACCOUNT_CODES.SALES_RETAIL, yearStart, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.SALES_WHOLESALE, yearStart, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.SALES_CUSTOM_MTO, yearStart, yearEnd)
+
+        const daysElapsed = Math.max(1, Math.ceil((yearEnd.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24)))
+        const annualizedCOGS = daysElapsed > 0 ? (periodCOGS / daysElapsed) * 365 : 0
+        const annualizedRevenue = daysElapsed > 0 ? (periodRevenue / daysElapsed) * 365 : 0
+
+        const dio = annualizedCOGS > 0 ? (avgInventory / annualizedCOGS) * 365 : 0
+        const dso = annualizedRevenue > 0 ? (ar / annualizedRevenue) * 365 : 0
+        const dpo = annualizedCOGS > 0 ? (ap / annualizedCOGS) * 365 : 0
+        const ccc = dio + dso - dpo
+
+        const currentAssets = avgInventory + ar + cash
+        const currentLiabilities = ap
+            + await this.getAccountBalance(ACCOUNT_CODES.VAT_PAYABLE, undefined, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.WAGES_PAYABLE_PRODUCTION, undefined, yearEnd)
+            + await this.getAccountBalance(ACCOUNT_CODES.PAYROLL_PAYABLE, undefined, yearEnd)
+        const netWorkingCapital = currentAssets - currentLiabilities
+
+        const riskFlags: string[] = []
+        if (ccc > 90) riskFlags.push(`CCC at ${Math.round(ccc)} days exceeds 90-day threshold — working capital strain`)
+        if (dso > 60) riskFlags.push(`DSO at ${Math.round(dso)} days exceeds 60-day threshold — slow collections`)
+        if (dio > 60) riskFlags.push(`DIO at ${Math.round(dio)} days exceeds 60-day threshold — excess or slow-moving inventory`)
+        if (dpo > 90) riskFlags.push(`DPO at ${Math.round(dpo)} days exceeds 90-day threshold — may indicate cash flow issues or strained supplier relationships`)
+        if (netWorkingCapital < 0) riskFlags.push(`Negative net working capital (EGP ${netWorkingCapital.toFixed(0)}) — liquidity risk`)
+        if (annualizedRevenue > 0 && ar / (annualizedRevenue / 12) > 3) riskFlags.push(`AR balance represents >3 months of revenue — collection risk`)
+
+        return {
+            dio: Math.round(dio * 10) / 10,
+            dso: Math.round(dso * 10) / 10,
+            dpo: Math.round(dpo * 10) / 10,
+            ccc: Math.round(ccc * 10) / 10,
+            avgInventory: Math.round(avgInventory * 100) / 100,
+            ar: Math.round(ar * 100) / 100,
+            ap: Math.round(ap * 100) / 100,
+            annualizedCOGS: Math.round(annualizedCOGS * 100) / 100,
+            annualizedRevenue: Math.round(annualizedRevenue * 100) / 100,
+            netWorkingCapital: Math.round(netWorkingCapital * 100) / 100,
+            riskFlags,
+        }
+    }
+
 }

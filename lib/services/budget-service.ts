@@ -206,4 +206,227 @@ export class BudgetService {
       }
     }
   }
+
+  static async generateMasterBudget(
+    fiscalYear: number,
+    inputs: {
+      expectedNewOrders: number
+      avgOrderValue: number
+      openingWIP: number
+      desiredEndingFG: number
+      materialCostPctOfRevenue: number
+      laborCostPctOfRevenue: number
+      variableOHPctOfRevenue: number
+      fixedOHAnnual: number
+      sgaFixedAnnual: number
+      sgaVariablePctOfRevenue: number
+      taxRate?: number
+    },
+    userId: string | null = null
+  ): Promise<{
+    success: boolean
+    budget?: {
+      totalRevenue: number
+      directMaterials: number
+      directLabor: number
+      manufacturingOH: number
+      cogm: number
+      grossProfit: number
+      sga: number
+      operatingIncome: number
+      taxExpense: number
+      netIncome: number
+      cashInflows: number
+      cashOutflows: number
+      netCashFlow: number
+      keyRatios: {
+        grossMarginPct: number
+        netMarginPct: number
+        opexPctOfRevenue: number
+        materialPctOfRevenue: number
+        laborPctOfRevenue: number
+      }
+    }
+    linesCreated: number
+    error?: string
+  }> {
+    try {
+      const now = new Date().toISOString()
+      let linesCreated = 0
+
+      const totalRevenue = inputs.expectedNewOrders * inputs.avgOrderValue
+      const directMaterials = Math.round(totalRevenue * inputs.materialCostPctOfRevenue * 100) / 100
+      const directLabor = Math.round(totalRevenue * inputs.laborCostPctOfRevenue * 100) / 100
+      const variableOH = Math.round(totalRevenue * inputs.variableOHPctOfRevenue * 100) / 100
+      const manufacturingOH = variableOH + inputs.fixedOHAnnual
+      const cogm = directMaterials + directLabor + manufacturingOH
+      const grossProfit = totalRevenue - cogm
+      const sgaVariable = Math.round(totalRevenue * inputs.sgaVariablePctOfRevenue * 100) / 100
+      const sga = sgaVariable + inputs.sgaFixedAnnual
+      const operatingIncome = grossProfit - sga
+      const taxRate = inputs.taxRate ?? 0.225
+      const taxExpense = operatingIncome > 0 ? Math.round(operatingIncome * taxRate * 100) / 100 : 0
+      const netIncome = operatingIncome - taxExpense
+      const cashInflows = totalRevenue
+      const cashOutflows = directMaterials + directLabor + manufacturingOH + sga + taxExpense
+      const netCashFlow = cashInflows - cashOutflows
+
+      const budgetLines = [
+        { accountCode: ACCOUNT_CODES.SALES_CUSTOM_MTO, amount: totalRevenue, notes: "Revenue — MTO custom orders" },
+        { accountCode: ACCOUNT_CODES.RAW_MATERIALS_USED, amount: directMaterials, notes: "Direct materials budget" },
+        { accountCode: ACCOUNT_CODES.DIRECT_LABOR, amount: directLabor, notes: "Direct labor budget" },
+        { accountCode: ACCOUNT_CODES.MANUFACTURING_OVERHEAD, amount: manufacturingOH, notes: `Variable OH ${variableOH} + Fixed OH ${inputs.fixedOHAnnual}` },
+        { accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD, amount: cogm, notes: "COGM = DM + DL + OH" },
+        { accountCode: ACCOUNT_CODES.OFFICE_SALARIES, amount: Math.round(sga * 0.5 * 100) / 100, notes: "SG&A — salaries portion (~50%)" },
+        { accountCode: ACCOUNT_CODES.OFFICE_RENT, amount: Math.round(sga * 0.15 * 100) / 100, notes: "SG&A — rent portion (~15%)" },
+        { accountCode: ACCOUNT_CODES.MARKETING_EXPENSE, amount: Math.round(sga * 0.15 * 100) / 100, notes: "SG&A — marketing portion (~15%)" },
+        { accountCode: ACCOUNT_CODES.DELIVERY_SHIPPING, amount: Math.round(sga * 0.1 * 100) / 100, notes: "SG&A — shipping portion (~10%)" },
+        { accountCode: ACCOUNT_CODES.BANK_FEES, amount: Math.round(sga * 0.05 * 100) / 100, notes: "SG&A — bank fees (~5%)" },
+        { accountCode: "6206", amount: Math.round(sga * 0.05 * 100) / 100, notes: "SG&A — misc (~5%)" },
+        { accountCode: "7005", amount: taxExpense, notes: `Income tax @ ${(taxRate * 100).toFixed(1)}%` },
+      ]
+
+      for (const line of budgetLines) {
+        if (line.amount <= 0) continue
+        const result = await this.setBudgetLine(fiscalYear, 0, line.accountCode, Math.abs(line.amount), line.notes, userId)
+        if (result.success) linesCreated++
+      }
+
+      return {
+        success: true,
+        budget: {
+          totalRevenue,
+          directMaterials,
+          directLabor,
+          manufacturingOH,
+          cogm,
+          grossProfit,
+          sga,
+          operatingIncome,
+          taxExpense,
+          netIncome,
+          cashInflows,
+          cashOutflows,
+          netCashFlow,
+          keyRatios: {
+            grossMarginPct: totalRevenue > 0 ? Math.round((grossProfit / totalRevenue) * 10000) / 100 : 0,
+            netMarginPct: totalRevenue > 0 ? Math.round((netIncome / totalRevenue) * 10000) / 100 : 0,
+            opexPctOfRevenue: totalRevenue > 0 ? Math.round((sga / totalRevenue) * 10000) / 100 : 0,
+            materialPctOfRevenue: totalRevenue > 0 ? Math.round((directMaterials / totalRevenue) * 10000) / 100 : 0,
+            laborPctOfRevenue: totalRevenue > 0 ? Math.round((directLabor / totalRevenue) * 10000) / 100 : 0,
+          },
+        },
+        linesCreated,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to generate master budget",
+        linesCreated: 0,
+      }
+    }
+  }
+
+  static async getCashBudget(
+    fiscalYear: number,
+    period: number = 0
+  ): Promise<{
+    periodLabel: string
+    expectedCollections: number
+    expectedPayments: number
+    netCashFlow: number
+    openingCash: number
+    closingCash: number
+    minimumCashRequired: number
+    surplusOrDeficit: number
+    recommendations: string[]
+  }> {
+    const lines = await this.getBudgetVsActual(fiscalYear, period)
+    const totalRevenue = lines
+      .filter(l => l.accountCode.startsWith("4"))
+      .reduce((s, l) => s + l.budgeted, 0)
+    const totalExpenses = lines
+      .filter(l => l.accountCode.startsWith("5") || l.accountCode.startsWith("6") || l.accountCode.startsWith("7"))
+      .reduce((s, l) => s + l.budgeted, 0)
+
+    const openingCash = await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.BANK_MAIN)
+      + await FinancialStatementsService.getAccountBalance(ACCOUNT_CODES.CASH_ON_HAND)
+
+    const expectedCollections = totalRevenue
+    const expectedPayments = totalExpenses
+    const netCashFlow = expectedCollections - expectedPayments
+    const closingCash = openingCash + netCashFlow
+    const minimumCashRequired = totalExpenses * 0.25
+    const surplusOrDeficit = closingCash - minimumCashRequired
+
+    const recommendations: string[] = []
+    if (surplusOrDeficit < 0) {
+      recommendations.push(`Cash deficit of EGP ${Math.abs(Math.round(surplusOrDeficit)).toLocaleString()} projected — consider milestone-based advance billing or short-term financing`)
+      if (netCashFlow < 0) recommendations.push(`Negative operating cash flow — review payment terms with suppliers and customers`)
+    }
+    if (surplusOrDeficit > 0) {
+      recommendations.push(`Cash surplus of EGP ${Math.round(surplusOrDeficit).toLocaleString()} — consider debt reduction or reinvestment`)
+    }
+
+    return {
+      periodLabel: period === 0 ? `FY${fiscalYear}` : `P${period}/FY${fiscalYear}`,
+      expectedCollections: Math.round(expectedCollections * 100) / 100,
+      expectedPayments: Math.round(expectedPayments * 100) / 100,
+      netCashFlow: Math.round(netCashFlow * 100) / 100,
+      openingCash: Math.round(openingCash * 100) / 100,
+      closingCash: Math.round(closingCash * 100) / 100,
+      minimumCashRequired: Math.round(minimumCashRequired * 100) / 100,
+      surplusOrDeficit: Math.round(surplusOrDeficit * 100) / 100,
+      recommendations,
+    }
+  }
+
+  static async getFlexibleBudget(
+    fiscalYear: number,
+    period: number,
+    actualVolume: number,
+    budgetedVolume: number
+  ): Promise<{
+    staticBudget: { revenue: number; variableCosts: number; fixedCosts: number; operatingIncome: number }
+    flexibleBudget: { revenue: number; variableCosts: number; fixedCosts: number; operatingIncome: number }
+    volumeVariance: number
+    flexibleBudgetVariance: number
+  }> {
+    const lines = await this.getBudgetVsActual(fiscalYear, period)
+    const volumeRatio = budgetedVolume > 0 ? actualVolume / budgetedVolume : 1
+
+    const budgetedRevenue = lines.filter(l => l.accountCode.startsWith("4")).reduce((s, l) => s + l.budgeted, 0)
+    const budgetedVariableCosts = lines
+      .filter(l => ["5001", "5002", "5004", "5005", "5006", "5007", "6108", "6109", "6110"].includes(l.accountCode))
+      .reduce((s, l) => s + l.budgeted, 0)
+    const budgetedFixedCosts = lines
+      .filter(l => (l.accountCode.startsWith("5") || l.accountCode.startsWith("6") || l.accountCode.startsWith("7"))
+        && !["5001", "5002", "5004", "5005", "5006", "5007", "6108", "6109", "6110"].includes(l.accountCode))
+      .reduce((s, l) => s + l.budgeted, 0)
+
+    const flexRevenue = Math.round(budgetedRevenue * volumeRatio * 100) / 100
+    const flexVariableCosts = Math.round(budgetedVariableCosts * volumeRatio * 100) / 100
+    const flexOperatingIncome = flexRevenue - flexVariableCosts - budgetedFixedCosts
+
+    const staticOpIncome = budgetedRevenue - budgetedVariableCosts - budgetedFixedCosts
+    const volumeVariance = flexOperatingIncome - staticOpIncome
+    const flexibleBudgetVariance = (lines.reduce((s, l) => s + l.actual, 0) || 0) - flexOperatingIncome
+
+    return {
+      staticBudget: {
+        revenue: Math.round(budgetedRevenue * 100) / 100,
+        variableCosts: Math.round(budgetedVariableCosts * 100) / 100,
+        fixedCosts: Math.round(budgetedFixedCosts * 100) / 100,
+        operatingIncome: Math.round(staticOpIncome * 100) / 100,
+      },
+      flexibleBudget: {
+        revenue: flexRevenue,
+        variableCosts: flexVariableCosts,
+        fixedCosts: Math.round(budgetedFixedCosts * 100) / 100,
+        operatingIncome: flexOperatingIncome,
+      },
+      volumeVariance: Math.round(volumeVariance * 100) / 100,
+      flexibleBudgetVariance: Math.round(flexibleBudgetVariance * 100) / 100,
+    }
+  }
 }

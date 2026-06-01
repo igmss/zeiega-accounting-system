@@ -59,8 +59,9 @@ describe("VarianceService", () => {
             // VOH Spending = 50 − (15 × 3) = 5 unfavorable
             // VOH Efficiency = 15 × (3 − 2) = 15 unfavorable
 
-            // FOH Budget = 0 − 200000 = −200000 (budget is annual, not per job)
-            // FOH Volume = 200000 − (8 × 2) = 199984 (simplified)
+            // Actual FOH: 0, SR_FOH: 8, AH: 3, SH: 2
+            // FOH Budget = 0 − (8 × 3) = −24 favorable (actual < budgeted for actual hours)
+            // FOH Volume = 8 × (3 − 2) = 8 unfavorable (used more hours than standard)
 
             const actualVOH = 50, srVoh = 15, ah = 3, sh = 2
             const vohSpending = actualVOH - (srVoh * ah)
@@ -68,6 +69,14 @@ describe("VarianceService", () => {
 
             expect(vohSpending).toBe(5)
             expect(vohEff).toBe(15)
+
+            const actualFOH = 0, srFoh = 8
+            const fohBudget = actualFOH - (srFoh * ah)
+            const fohVolume = srFoh * (ah - sh)
+
+            expect(fohBudget).toBe(-24)
+            expect(fohVolume).toBe(8)
+            expect(fohBudget + fohVolume).toBe(-16)
         })
 
         it("should flag favorable when total variance is negative", () => {
