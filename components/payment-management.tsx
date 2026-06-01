@@ -107,7 +107,7 @@ export function PaymentManagement() {
                   {filteredPayments.map((payment) => (
                     <TableRow key={payment.id}>
                       <TableCell className="font-medium">{payment.payment_number || payment.id?.slice(0, 8)}</TableCell>
-                      <TableCell className="font-mono text-xs">{payment.invoice_id?.slice(0, 8)}</TableCell>
+                      <TableCell className="font-mono text-xs">{payment.invoice_number || (payment.invoice_id ? payment.invoice_id.slice(0, 8) : "—")}</TableCell>
                       <TableCell className="font-medium text-green-600">{formatCurrency(payment.amount || 0)}</TableCell>
                       <TableCell><div className="flex items-center gap-2">{getMethodBadge(payment.method)}</div></TableCell>
                       <TableCell className="text-sm text-muted-foreground">{payment.reference_number || "—"}</TableCell>

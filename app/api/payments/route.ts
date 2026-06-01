@@ -42,6 +42,24 @@ export async function GET(request: Request) {
       date: doc.date || null,
     }))
 
+    // Batch-fetch invoice_number from invoices
+    const invIds = [...new Set(payments.filter((p: Record<string, any>) => p.invoice_id).map((p: Record<string, any>) => p.invoice_id))]
+    if (invIds.length > 0) {
+      const { data: invRows } = await getServiceClient()
+        .from(TABLES.INVOICES)
+        .select("id, invoice_number")
+        .in("id", invIds)
+      if (invRows) {
+        const invMap = new Map(invRows.map((r: any) => [r.id, r.invoice_number]))
+        for (const p of payments) {
+          const iid = p.invoice_id
+          if (iid && invMap.has(iid)) {
+            p.invoice_number = invMap.get(iid)
+          }
+        }
+      }
+    }
+
     const lastVisible = payments[payments.length - 1]
     const nextCursor = lastVisible ? lastVisible.id : null
 
