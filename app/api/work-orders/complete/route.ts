@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
+import { TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
 
 export async function POST(request: Request) {
@@ -53,21 +53,22 @@ export async function POST(request: Request) {
     const journalEntryIds: string[] = []
     if (result.journalEntryId) journalEntryIds.push(result.journalEntryId)
 
-    // Update Sales Order and Manual Orders status
+    // Update Sales Order + create invoice + AR/COGS journal entries
     if (workOrder.sales_order_id) {
       const soId = workOrder.sales_order_id
 
+      // Look up the sales order (maybeSingle to avoid exception when FK doesn't match)
       const { data: soDoc } = await serviceDb
         .from(TABLES.SALES_ORDERS)
         .select("*")
         .eq("id", soId)
-        .single()
+        .maybeSingle()
 
       const { data: manualDoc } = await serviceDb
         .from(TABLES.MANUAL_ORDERS)
         .select("*")
         .eq("id", soId)
-        .single()
+        .maybeSingle()
 
       if (soDoc) {
         await serviceDb.from(TABLES.SALES_ORDERS).update({
@@ -85,24 +86,51 @@ export async function POST(request: Request) {
       // Check if invoice already exists for this sales_order_id
       const { data: existingInvoice } = await serviceDb
         .from(TABLES.INVOICES)
-        .select("*")
+        .select("id")
         .eq("sales_order_id", soId)
         .maybeSingle()
 
       if (!existingInvoice) {
-        const customerId = (soDoc as any)?.user_id || (manualDoc as any)?.user_id || workOrder.customer_id || "unknown"
-        const customerName = (soDoc as any)?.shipping_address?.fullName || (manualDoc as any)?.customer_name || workOrder.customer_name || "Unknown Customer"
-        const totalAmount = (soDoc as any)?.total || (manualDoc as any)?.total_amount || workOrder.total_amount || 0
+        const customerName = (soDoc as any)?.shipping_address?.fullName
+          || (manualDoc as any)?.customer_name
+          || workOrder.customer_name
+          || "Unknown Customer"
 
-        const { data: newInvoice, error: invoiceError } = await serviceDb.from(TABLES.INVOICES).insert({
-          sales_order_id: soId,
-          customer_id: customerId,
-          customer_name: customerName,
-          amount: totalAmount,
-          total_amount: totalAmount,
-          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "pending",
-        }).select("id").single()
+        const rawCustomerId = (soDoc as any)?.user_id
+          || (manualDoc as any)?.user_id
+          || workOrder.customer_id
+          || ""
+
+        const totalAmount = (soDoc as any)?.total
+          || (manualDoc as any)?.total_amount
+          || workOrder.total_amount
+          || 0
+
+        // Resolve customer UUID: migrate 00007 added FK constraint on customer_id → customers.id
+        // Only insert a valid customer UUID, otherwise pass null to satisfy FK
+        let resolvedCustomerId: string | null = null
+        if (rawCustomerId) {
+          const { data: cust } = await serviceDb
+            .from(TABLES.CUSTOMERS)
+            .select("id")
+            .or(`id.eq.${rawCustomerId},user_id.eq.${rawCustomerId}`)
+            .maybeSingle()
+          if (cust?.id) resolvedCustomerId = cust.id
+        }
+
+        const { data: newInvoice, error: invoiceError } = await serviceDb
+          .from(TABLES.INVOICES)
+          .insert({
+            sales_order_id: soId,
+            customer_id: resolvedCustomerId,
+            customer_name: customerName,
+            amount: totalAmount,
+            total_amount: totalAmount,
+            due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            status: "pending",
+          })
+          .select("id")
+          .single()
 
         if (invoiceError) {
           console.error("Failed to create invoice:", invoiceError)
@@ -111,11 +139,11 @@ export async function POST(request: Request) {
 
         invoiceId = newInvoice?.id || null
 
-        // Sales Invoice JE — AR + Revenue
-        if (totalAmount > 0) {
-          const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
-          const invoiceRef = invoiceId || `INV-${soId.slice(-8)}`
+        // Sales Invoice JE — AR + Revenue (one-shot: use the already-imported module)
+        const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
+        const invoiceRef = invoiceId || `INV-${String(soId).slice(-8)}`
 
+        if (totalAmount > 0) {
           const arResult = await EnhancedAccountingService.createJournalEntry(
             JournalEntryType.SALES_INVOICE,
             [
@@ -131,9 +159,6 @@ export async function POST(request: Request) {
         // COGS JE — FG consumed
         const woTotalCost = workOrder.total_cost || workOrder.estimated_cost || 0
         if (woTotalCost > 0) {
-          const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
-          const invoiceRef = invoiceId || `INV-${soId.slice(-8)}`
-
           const cogsResult = await EnhancedAccountingService.createJournalEntry(
             JournalEntryType.SALES_COGS,
             [
