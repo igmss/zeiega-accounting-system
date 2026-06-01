@@ -203,6 +203,7 @@ export function InvoiceManagement() {
                 <TableHead>Invoice ID</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Amount</TableHead>
+                <TableHead>Balance</TableHead>
                 <TableHead>Due Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
@@ -226,6 +227,21 @@ export function InvoiceManagement() {
                         {formatCurrency(invoice.amount || invoice.total_amount || 0)} + {formatCurrency(invoice.tax_amount || 0)} tax
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">
+                      {(() => {
+                        const total = invoice.total_amount || invoice.amount || 0
+                        const paid = invoice.paid_amount || 0
+                        const bal = Math.max(0, total - paid)
+                        return formatCurrency(bal)
+                      })()}
+                    </div>
+                    {((invoice.paid_amount || 0) > 0) && (
+                      <div className="text-xs text-green-600 dark:text-green-400">
+                        Paid: {formatCurrency(invoice.paid_amount || 0)}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className={new Date() > new Date(invoice.due_date || new Date()) ? "text-red-600 dark:text-red-400" : ""}>
