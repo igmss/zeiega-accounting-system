@@ -216,7 +216,7 @@ export class WorkOrderMaterialService {
           status: "completed",
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          final_completion_cost: totalCost,
+          total_cost: totalCost,
           notes: totalCost > 0 
             ? `Completed with WIP→FG transfer at EGP ${totalCost.toFixed(2)}`
             : `Completed — no actual costs recorded. WIP→FG transfer skipped.`

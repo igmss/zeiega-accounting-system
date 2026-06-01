@@ -162,7 +162,7 @@ export async function POST(request: Request) {
 
         if (!woError && woData && woData.length > 0) {
           const wo: any = woData[0]
-          finalCOGS = wo.final_completion_cost || wo.total_cost || wo.estimated_cost || 0
+          finalCOGS = wo.total_cost || wo.estimated_cost || 0
         }
       } catch (err) {
         console.warn(`⚠️ Failed to auto-calculate COGS for invoice ${invoiceId}:`, err)
