@@ -35,7 +35,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "next-auth/react"
-import { hasPermission, UserRole } from "@/lib/auth"
+import { hasPermission, UserRole } from "@/lib/auth/user-model"
 
 interface NavItem {
   name: string
