@@ -52,22 +52,23 @@ export default function BOMPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedBOM, setSelectedBOM] = useState<BOM | null>(null)
 
-  useEffect(() => {
-    async function fetchBOMs() {
-      try {
-        const params = new URLSearchParams()
-        if (statusFilter !== "all") params.set("status", statusFilter)
-        const response = await fetch(`/api/bom?${params}`)
-        if (response.ok) {
-          const result = await response.json()
-          setBoms(result.data || [])
-        }
-      } catch (error) {
-        console.error("Error loading BOMs:", error)
-      } finally {
-        setLoading(false)
+  const fetchBOMs = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (statusFilter !== "all") params.set("status", statusFilter)
+      const response = await fetch(`/api/bom?${params}`)
+      if (response.ok) {
+        const result = await response.json()
+        setBoms(result.data || [])
       }
+    } catch (error) {
+      console.error("Error loading BOMs:", error)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchBOMs()
   }, [statusFilter])
 
