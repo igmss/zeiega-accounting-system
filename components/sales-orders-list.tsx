@@ -136,23 +136,36 @@ export function SalesOrdersList() {
     try {
       const response = await fetch('/api/sales-orders', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orderId: orderId,
-          status: "producing"
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: orderId, status: "producing" })
       })
 
       if (response.ok) {
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "producing" as const } : order)),
         )
-        toast.success("Production started — work order is being created")
+
+        const order = orders.find(o => o.id === orderId)
+        const items = (order?.items || []).map((item: any) => ({
+          productId: item.sku || item.product_id || "",
+          name: item.name || item.product_name || "",
+          quantity: item.qty || item.quantity || 1,
+          size: item.size || "M",
+          unit_price: item.unit_price || 0,
+        }))
+
+        const woResponse = await fetch('/api/work-orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sales_order_id: orderId, items })
+        })
+
+        if (woResponse.ok) {
+          const woData = await woResponse.json()
+          toast.success(`Work order ${woData.workOrderId} created`)
+        }
       } else {
-        const errData = await response.json().catch(() => ({}))
-        toast.error((errData as any).error || "Failed to update order status")
+        toast.error("Failed to start production")
       }
     } catch (error) {
       toast.error("Network error — failed to update order status")
