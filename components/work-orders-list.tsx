@@ -9,9 +9,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Play, CheckCircle, Clock, Wrench, Trash } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
-import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { WorkOrderDetails } from "./work-order-details"
 
@@ -44,15 +44,8 @@ export function WorkOrdersList() {
 
     fetchWorkOrders()
 
-    const channel = supabase
-      .channel("work-orders-changes")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "work_orders" },
-        () => fetchWorkOrders()
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    const interval = setInterval(fetchWorkOrders, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<any | null>(null)
@@ -252,13 +245,14 @@ export function WorkOrdersList() {
     if (workOrder.item_costs && workOrder.item_costs.length > 0) {
       return workOrder.item_costs.reduce((sum: number, item: any) => sum + (item.materialCost || 0), 0);
     }
-    return workOrder.estimated_cost ? (workOrder.estimated_cost * 0.4) : 0;
+    if (workOrder.estimated_material_cost) return workOrder.estimated_material_cost
+    return workOrder.estimated_cost ? (workOrder.estimated_cost * (workOrder.material_cost_ratio || 0.4)) : 0;
   }
 
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-4">
             <div className="text-2xl font-bold">{(Array.isArray(workOrders) ? workOrders : []).filter((wo) => wo.status === "pending").length}</div>
@@ -273,8 +267,17 @@ export function WorkOrdersList() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{(Array.isArray(workOrders) ? workOrders : []).filter((wo) => wo.status === "completed").length}</div>
+            <div className="text-2xl font-bold">{(() => {
+              const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+              return (Array.isArray(workOrders) ? workOrders : []).filter((wo) => wo.status === "completed" && new Date(wo.completed_at || wo.updated_at) >= todayStart).length
+            })()}</div>
             <div className="text-sm text-muted-foreground">Completed Today</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold">{(Array.isArray(workOrders) ? workOrders : []).filter((wo) => wo.status === "completed").length}</div>
+            <div className="text-sm text-muted-foreground">Total Completed</div>
           </CardContent>
         </Card>
       </div>
@@ -301,6 +304,15 @@ export function WorkOrdersList() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {(Array.isArray(workOrders) ? workOrders : []).length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8">
+                    <Wrench className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-muted-foreground">No work orders found</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
               {(Array.isArray(workOrders) ? workOrders : []).map((workOrder) => (
                 <TableRow key={workOrder.id}>
                   <TableCell className="font-medium">{workOrder.id}</TableCell>
@@ -341,7 +353,7 @@ export function WorkOrdersList() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {workOrder.labor_hours || (workOrder.labor_cost ? Math.round(workOrder.labor_cost / 50) : 0)}h
+                    {workOrder.labor_hours || (workOrder.labor_cost ? Math.round(workOrder.labor_cost / (workOrder.labor_rate || 50)) : 0)}h
                   </TableCell>
                   <TableCell>{getStatusBadge(workOrder.status)}</TableCell>
                   <TableCell>
@@ -389,6 +401,8 @@ export function WorkOrdersList() {
                   </TableCell>
                 </TableRow>
               ))}
+                </>
+              )}
             </TableBody>
           </Table>
           </div>
@@ -415,11 +429,9 @@ export function WorkOrdersList() {
                 <Label>Materials Used</Label>
                 {updateData.materials.map((material: any, index: number) => (
                   <div key={index} className="flex gap-2 mb-2 items-center">
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <Select
                       value={material.item_id}
-                      onChange={(e) => {
-                        const itemId = e.target.value
+                      onValueChange={(itemId) => {
                         const selectedItem = inventoryItems.find(item => item.id === itemId)
                         const newMaterials = [...updateData.materials]
                         newMaterials[index].item_id = itemId
@@ -427,13 +439,17 @@ export function WorkOrdersList() {
                         setUpdateData({ ...updateData, materials: newMaterials })
                       }}
                     >
-                      <option value="">Select Material</option>
-                      {inventoryItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name || item.sku} ({item.quantity_on_hand || item.qty_on_hand || 0} available)
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select Material" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {inventoryItems.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name || item.sku} ({item.quantity_on_hand || item.qty_on_hand || 0} available)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Input
                       type="number"
                       placeholder="Quantity"

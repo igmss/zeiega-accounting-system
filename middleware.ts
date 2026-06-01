@@ -104,6 +104,13 @@ function isProtectedPage(pathname: string): boolean {
         "/liabilities",
         "/accounting/setup/opening-balances",
         "/journal-entries",
+        "/vendors",
+        "/purchase-orders",
+        "/bom",
+        "/contracts",
+        "/variance",
+        "/overhead",
+        "/year-end-close",
     ]
     return pathname === "/" || protectedPages.some((p) => pathname.startsWith(p))
 }

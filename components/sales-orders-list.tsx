@@ -10,11 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Plus, Eye, Play, CheckCircle, ChevronsUpDown, Check } from "lucide-react"
+import { Search, Plus, Eye, Play, CheckCircle, ChevronsUpDown, Check, Package } from "lucide-react"
 import { SalesOrderDetails } from "./sales-order-details"
 import { ProcessOrdersDialog } from "./process-orders-dialog"
 import { formatCurrency } from "@/lib/utils"
-import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -33,7 +32,7 @@ export function SalesOrdersList() {
   const [customers, setCustomers] = useState<any[]>([])
   const [designs, setDesigns] = useState<any[]>([])
   const [custSearchOpen, setCustSearchOpen] = useState(false)
-  const [designSearchOpen, setDesignSearchOpen] = useState(false)
+  const [designSearchOpenByIndex, setDesignSearchOpenByIndex] = useState<boolean[]>([])
   const [custSearch, setCustSearch] = useState("")
   const [designSearch, setDesignSearch] = useState("")
   const [newManualOrder, setNewManualOrder] = useState({
@@ -79,15 +78,8 @@ export function SalesOrdersList() {
 
     fetchSalesOrders()
 
-    const channel = supabase
-      .channel("sales-orders-changes")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "sales_orders" },
-        () => fetchSalesOrders()
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    const interval = setInterval(fetchSalesOrders, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -177,6 +169,17 @@ export function SalesOrdersList() {
   const handleCompleteOrder = async (orderId: string) => {
     inFlightOrderIds.current.add(orderId)
     try {
+      const order = orders.find(o => o.id === orderId)
+      const linkedWoId = order?.work_order_id || order?.linked_work_order_id
+
+      if (linkedWoId) {
+        await fetch('/api/work-orders/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workOrderId: linkedWoId })
+        })
+      }
+
       const response = await fetch('/api/workflow/complete-order', {
         method: 'POST',
         headers: {
@@ -188,9 +191,6 @@ export function SalesOrdersList() {
       })
 
       if (response.ok) {
-        const result = await response.json()
-        console.log('Order completed:', result)
-
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? { ...order, status: "completed" as const } : order)),
         )
@@ -210,7 +210,7 @@ export function SalesOrdersList() {
 
   const handleCreateManualOrder = async () => {
     try {
-      const calculatedTotal = newManualOrder.items[0].quantity * newManualOrder.items[0].unit_price
+      const calculatedTotal = newManualOrder.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
       const orderToCreate = {
         ...newManualOrder,
         total: calculatedTotal
@@ -252,6 +252,7 @@ export function SalesOrdersList() {
         notes: ""
       })
       setIsManualOrderOpen(false)
+      toast.success("Order created successfully")
 
       const ordersResponse = await fetch('/api/sales-orders')
       if (ordersResponse.ok) {
@@ -260,6 +261,7 @@ export function SalesOrdersList() {
       }
     } catch (error) {
       console.error('Error creating manual order:', error)
+      toast.error('Failed to create manual order')
     }
   }
 
@@ -323,7 +325,16 @@ export function SalesOrdersList() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrders.map((order) => (
+              {filteredOrders.length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <Package className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-muted-foreground">No orders found matching your search</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
+                  {filteredOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium">{order.id}</TableCell>
                   <TableCell>
@@ -367,7 +378,7 @@ export function SalesOrdersList() {
                         </DialogContent>
                       </Dialog>
 
-                      {order.status === "pending" && order.order_source === "manual" && (
+                      {order.status === "pending" && (
                         <Button
                           size="sm"
                           onClick={() => handleStartProduction(order.id)}
@@ -378,7 +389,7 @@ export function SalesOrdersList() {
                         </Button>
                       )}
 
-                      {order.status === "producing" && order.order_source === "manual" && (
+                      {order.status === "producing" && (
                         <Button
                           size="sm"
                           onClick={() => handleCompleteOrder(order.id)}
@@ -392,6 +403,8 @@ export function SalesOrdersList() {
                   </TableCell>
                 </TableRow>
               ))}
+                </>
+              )}
             </TableBody>
           </Table>
           </div>
@@ -400,119 +413,183 @@ export function SalesOrdersList() {
 
       {/* Manual Order Dialog */}
       <Dialog open={isManualOrderOpen} onOpenChange={setIsManualOrderOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Create Manual Order</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Customer</Label>
-                <Popover open={custSearchOpen} onOpenChange={setCustSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                      {newManualOrder.customer_name || "Select customer..."}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[350px] p-0">
-                    <Command>
-                      <CommandInput placeholder="Search customers..." value={custSearch} onValueChange={setCustSearch} />
-                      <CommandList>
-                        <CommandEmpty>No customers found.</CommandEmpty>
-                        <CommandGroup>
-                          {customers.filter(c => c.name?.toLowerCase().includes(custSearch.toLowerCase()) || c.email?.toLowerCase().includes(custSearch.toLowerCase())).slice(0, 20).map(c => (
-                            <CommandItem key={c.id} value={c.name} onSelect={() => {
-                              setNewManualOrder({ ...newManualOrder, customer_name: c.name, customer_email: c.email || "" })
-                              setCustSearchOpen(false)
-                            }}>
-                              <Check className={cn("mr-2 h-4 w-4", newManualOrder.customer_name === c.name ? "opacity-100" : "opacity-0")} />
-                              <div><div className="font-medium">{c.name}</div><div className="text-xs text-muted-foreground">{c.email}</div></div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+          <ScrollArea className="max-h-[70vh]">
+            <div className="space-y-4 p-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Customer</Label>
+                  <Popover open={custSearchOpen} onOpenChange={setCustSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                        {newManualOrder.customer_name || "Select customer..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[350px] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search customers..." value={custSearch} onValueChange={setCustSearch} />
+                        <CommandList>
+                          <CommandEmpty>No customers found.</CommandEmpty>
+                          <CommandGroup>
+                            {customers.filter(c => c.name?.toLowerCase().includes(custSearch.toLowerCase()) || c.email?.toLowerCase().includes(custSearch.toLowerCase())).slice(0, 20).map(c => (
+                              <CommandItem key={c.id} value={c.name} onSelect={() => {
+                                setNewManualOrder({ ...newManualOrder, customer_name: c.name, customer_email: c.email || "" })
+                                setCustSearchOpen(false)
+                              }}>
+                                <Check className={cn("mr-2 h-4 w-4", newManualOrder.customer_name === c.name ? "opacity-100" : "opacity-0")} />
+                                <div><div className="font-medium">{c.name}</div><div className="text-xs text-muted-foreground">{c.email}</div></div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="customer_email">Email</Label>
+                  <Input id="customer_email" value={newManualOrder.customer_email} onChange={(e) => setNewManualOrder({...newManualOrder, customer_email: e.target.value})} placeholder="Auto-filled from customer" />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="customer_email">Email</Label>
-                <Input id="customer_email" value={newManualOrder.customer_email} onChange={(e) => setNewManualOrder({...newManualOrder, customer_email: e.target.value})} placeholder="Auto-filled from customer" />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Design (Product)</Label>
-                <Popover open={designSearchOpen} onOpenChange={setDesignSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                      {newManualOrder.items[0].product_name || "Select design..."}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[400px] p-0">
-                    <Command>
-                      <CommandInput placeholder="Search designs..." value={designSearch} onValueChange={setDesignSearch} />
-                      <CommandList>
-                        <CommandEmpty>No designs found.</CommandEmpty>
-                        <CommandGroup>
-                          {designs.filter(d => d.name?.toLowerCase().includes(designSearch.toLowerCase()) || d.category?.toLowerCase().includes(designSearch.toLowerCase())).slice(0, 20).map(d => (
-                            <CommandItem key={d.id} value={d.name} onSelect={() => {
-                              setNewManualOrder({
-                                ...newManualOrder,
-                                items: [{ ...newManualOrder.items[0], product_name: d.name, product_id: d.id, cost_price: d.totalCost || 0, unit_price: 0, category: d.category || "" }]
-                              })
-                              setDesignSearchOpen(false)
-                            }}>
-                              <Check className={cn("mr-2 h-4 w-4", newManualOrder.items[0].product_id === d.id ? "opacity-100" : "opacity-0")} />
-                              <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · Cost: EGP {d.totalCost || 0}</div></div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <div className="flex items-center justify-between mb-2">
+                  <Label>Order Items</Label>
+                </div>
+                {newManualOrder.items.map((item, index) => (
+                  <div key={index} className="border rounded-lg p-3 mb-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">Item {index + 1}</Label>
+                      {newManualOrder.items.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newItems = newManualOrder.items.filter((_, i) => i !== index)
+                            setNewManualOrder({ ...newManualOrder, items: newItems })
+                          }}
+                          className="text-red-500 h-6 px-2"
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Design (Product)</Label>
+                        <Popover open={designSearchOpenByIndex[index] || false} onOpenChange={(open) => {
+                          const newOpen = [...designSearchOpenByIndex]
+                          newOpen[index] = open
+                          setDesignSearchOpenByIndex(newOpen)
+                        }}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" role="combobox" className="w-full justify-between font-normal text-sm h-9">
+                              {item.product_name || "Select design..."}
+                              <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[400px] p-0">
+                            <Command>
+                              <CommandInput placeholder="Search designs..." value={designSearch} onValueChange={setDesignSearch} />
+                              <CommandList>
+                                <CommandEmpty>No designs found.</CommandEmpty>
+                                <CommandGroup>
+                                  {designs.filter(d => d.name?.toLowerCase().includes(designSearch.toLowerCase()) || d.category?.toLowerCase().includes(designSearch.toLowerCase())).slice(0, 20).map(d => (
+                                    <CommandItem key={d.id} value={d.name} onSelect={() => {
+                                      const newItems = [...newManualOrder.items]
+                                      newItems[index] = { ...newItems[index], product_name: d.name, product_id: d.id, cost_price: d.totalCost || 0, unit_price: newItems[index].unit_price || 0, category: d.category || "" }
+                                      setNewManualOrder({ ...newManualOrder, items: newItems })
+                                      const newOpen = [...designSearchOpenByIndex]
+                                      newOpen[index] = false
+                                      setDesignSearchOpenByIndex(newOpen)
+                                    }}>
+                                      <Check className={cn("mr-2 h-4 w-4", item.product_id === d.id ? "opacity-100" : "opacity-0")} />
+                                      <div><div className="font-medium">{d.name}</div><div className="text-xs text-muted-foreground">{d.category} · Cost: EGP {d.totalCost || 0}</div></div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Quantity</Label>
+                        <Input type="number" min="1" value={item.quantity} onChange={(e) => {
+                          const newItems = [...newManualOrder.items]
+                          newItems[index] = { ...newItems[index], quantity: parseInt(e.target.value) || 1 }
+                          setNewManualOrder({ ...newManualOrder, items: newItems })
+                        }} className="h-9" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs">Cost Price (from Design)</Label>
+                        <Input type="number" value={item.cost_price} readOnly className="bg-muted h-9" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Sale Price (EGP)</Label>
+                        <Input type="number" min="0" value={item.unit_price} onChange={(e) => {
+                          const newItems = [...newManualOrder.items]
+                          newItems[index] = { ...newItems[index], unit_price: parseFloat(e.target.value) || 0 }
+                          setNewManualOrder({ ...newManualOrder, items: newItems })
+                        }} className="h-9" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Line Total</Label>
+                        <Input type="number" value={item.quantity * item.unit_price} readOnly className="h-9" />
+                      </div>
+                    </div>
+                    {item.cost_price > 0 && item.unit_price > 0 && (
+                      <Badge variant={item.unit_price >= item.cost_price ? "default" : "destructive"} className="text-xs">
+                        Margin: EGP {formatCurrency(item.unit_price - item.cost_price)} ({Math.round(((item.unit_price - item.cost_price) / item.unit_price) * 100)}%)
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setNewManualOrder({
+                      ...newManualOrder,
+                      items: [...newManualOrder.items, {
+                        product_name: "",
+                        product_id: "",
+                        quantity: 1,
+                        unit_price: 0,
+                        cost_price: 0,
+                        category: "",
+                        color: "",
+                        size: ""
+                      }]
+                    })
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add Item
+                </Button>
               </div>
-              <div>
-                <Label htmlFor="quantity">Quantity</Label>
-                <Input id="quantity" type="number" min="1" value={newManualOrder.items[0].quantity} onChange={(e) => setNewManualOrder({ ...newManualOrder, items: [{ ...newManualOrder.items[0], quantity: parseInt(e.target.value) || 1 }] })} />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>Cost Price (from Design)</Label>
-                <Input type="number" value={newManualOrder.items[0].cost_price} readOnly className="bg-muted" />
+                <Label className="text-sm font-medium">Order Total: {formatCurrency(newManualOrder.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0))}</Label>
               </div>
-              <div>
-                <Label>Sale Price (EGP)</Label>
-                <Input type="number" min="0" value={newManualOrder.items[0].unit_price} onChange={(e) => setNewManualOrder({ ...newManualOrder, items: [{ ...newManualOrder.items[0], unit_price: parseFloat(e.target.value) || 0 }] })} />
-              </div>
-              <div>
-                <Label>Total (Qty × Sale Price)</Label>
-                <Input type="number" value={newManualOrder.items[0].quantity * newManualOrder.items[0].unit_price} readOnly />
-              </div>
-            </div>
-            {newManualOrder.items[0].cost_price > 0 && newManualOrder.items[0].unit_price > 0 && (
-              <div className="text-sm flex gap-2 items-center">
-                <Badge variant={newManualOrder.items[0].unit_price >= newManualOrder.items[0].cost_price ? "default" : "destructive"}>
-                  Margin: EGP {formatCurrency(newManualOrder.items[0].unit_price - newManualOrder.items[0].cost_price)} ({Math.round(((newManualOrder.items[0].unit_price - newManualOrder.items[0].cost_price) / newManualOrder.items[0].unit_price) * 100)}%)
-                </Badge>
-              </div>
-            )}
-            <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" value={newManualOrder.notes} onChange={(e) => setNewManualOrder({...newManualOrder, notes: e.target.value})} placeholder="Enter order notes" />
-            </div>
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsManualOrderOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreateManualOrder}>Create Order</Button>
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea id="notes" value={newManualOrder.notes} onChange={(e) => setNewManualOrder({...newManualOrder, notes: e.target.value})} placeholder="Enter order notes" />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsManualOrderOpen(false)}>Cancel</Button>
+                <Button onClick={handleCreateManualOrder}>Create Order</Button>
+              </div>
             </div>
-          </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
     </div>

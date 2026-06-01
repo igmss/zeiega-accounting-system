@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import type { Design, DesignFilter, DesignStats } from "@/lib/types/designs";
 import { MaterialSelector } from "./material-selector";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function DesignsManagement() {
   const [designs, setDesigns] = useState<Design[]>([]);
@@ -78,6 +79,14 @@ export default function DesignsManagement() {
       setSubcategories([]);
     }
   }, [filter.category]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadDesigns(false);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter.category, filter.subcategory, filter.status]);
 
   const loadDesigns = async (loadMore: boolean = false) => {
     try {
@@ -285,6 +294,19 @@ export default function DesignsManagement() {
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Designs with BOM</CardTitle>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{designs.filter(d => d.materials && d.materials.length > 0).length}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.totalDesigns > 0 ? Math.round((designs.filter(d => d.materials && d.materials.length > 0).length / stats.totalDesigns) * 100) : 0}% of total
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Average Cost</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -317,20 +339,6 @@ export default function DesignsManagement() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="search">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search"
-                  placeholder="Search designs..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
             <div>
               <Label htmlFor="category">Category</Label>
               <Select
@@ -386,11 +394,21 @@ export default function DesignsManagement() {
               </Select>
             </div>
           </div>
-          
-          <div className="flex justify-end mt-4">
-            <Button onClick={() => loadDesigns(false)}>
-              Apply Filters
-            </Button>
+        </CardContent>
+      </Card>
+
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="search"
+              placeholder="Search designs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
           </div>
         </CardContent>
       </Card>
@@ -621,10 +639,11 @@ function DesignDialog({
           
           <div>
             <Label htmlFor="description">Description</Label>
-            <Input
+            <Textarea
               id="description"
               value={formData.description || ""}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              rows={3}
             />
           </div>
           

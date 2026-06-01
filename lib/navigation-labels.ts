@@ -17,4 +17,11 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   setup: "Setup",
   "opening-balances": "Opening Balances",
   "api-docs": "API Documentation",
+  vendors: "Vendors",
+  "purchase-orders": "Purchase Orders",
+  bom: "BOM Management",
+  contracts: "IFRS 15 Contracts",
+  variance: "Variance Analysis",
+  overhead: "Overhead Configuration",
+  "year-end-close": "Year-End Close",
 }

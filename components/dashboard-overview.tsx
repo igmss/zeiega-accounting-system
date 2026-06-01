@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DollarSign, Package, TrendingUp, Clock, AlertCircle, CheckCircle, Wrench } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { formatCurrency } from "@/lib/utils"
-import { supabase } from "@/lib/supabase"
+import Link from "next/link"
 import { useEffect, useState } from "react"
 
 interface DashboardData {
@@ -74,7 +74,7 @@ export function DashboardOverview() {
           id: wo.id,
           salesOrder: wo.salesOrderId,
           status: wo.status,
-          completion: wo.status === "completed" ? 100 : 0,
+          completion: wo.completionPercentage ?? wo.completion_percentage ?? (wo.status === "completed" ? 100 : 0),
         })) : []
 
         setData({
@@ -98,33 +98,8 @@ export function DashboardOverview() {
 
     loadDashboardData()
 
-    let salesChannel: any = null
-    let woChannel: any = null
-
-    try {
-      salesChannel = supabase
-        .channel("dashboard-sales-changes")
-        .on("postgres_changes",
-          { event: "*", schema: "public", table: "sales_orders" },
-          () => loadDashboardData()
-        )
-        .subscribe()
-
-      woChannel = supabase
-        .channel("dashboard-wo-changes")
-        .on("postgres_changes",
-          { event: "*", schema: "public", table: "work_orders" },
-          () => loadDashboardData()
-        )
-        .subscribe()
-    } catch (err) {
-      console.warn("Supabase realtime unavailable:", err)
-    }
-
-    return () => {
-      if (salesChannel) supabase.removeChannel(salesChannel)
-      if (woChannel) supabase.removeChannel(woChannel)
-    }
+    const interval = setInterval(loadDashboardData, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   if (loading) {
@@ -277,9 +252,11 @@ export function DashboardOverview() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Sales Orders</CardTitle>
-            <Button variant="outline" size="sm">
-              View All
-            </Button>
+            <Link href="/sales-orders">
+              <Button variant="outline" size="sm">
+                View All
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -318,9 +295,11 @@ export function DashboardOverview() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Active Work Orders</CardTitle>
-            <Button variant="outline" size="sm">
-              View All
-            </Button>
+            <Link href="/work-orders">
+              <Button variant="outline" size="sm">
+                View All
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
