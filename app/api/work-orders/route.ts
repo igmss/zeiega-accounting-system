@@ -128,19 +128,20 @@ export async function PUT(request: Request) {
             }
           }
 
-          if (accountingMaterials.length > 0) {
-            console.log(`[DEBUG:PUT:ACC] recording material issue: ${JSON.stringify(accountingMaterials)}`)
-            const accResult = await EnhancedAccountingService.recordMaterialIssue(id, accountingMaterials)
-            console.log(`[DEBUG:PUT:ACC] recordMaterialIssue result: success=${accResult.success}, entryId=${accResult.entryId}, error=${accResult.error}`)
-            if (accResult.success) {
-              const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
-              const issuedPayload = accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost }))
-              const newTotalCost = totalMC + (wo.labor_cost || 0) + (wo.overhead_cost || 0)
-              console.log(`[DEBUG:PUT:WO:UPDATE] setting total_cost=${newTotalCost}, materials_issued=${JSON.stringify(issuedPayload)}`)
-              await serviceDb.from(TABLES.WORK_ORDERS).update({
-                raw_materials_used: materialsToIssue,
-                materials_issued: issuedPayload,
-                total_cost: newTotalCost,
+            if (accountingMaterials.length > 0) {
+              console.log(`[DEBUG:PUT:ACC] recording material issue: ${JSON.stringify(accountingMaterials)}`)
+              const accResult = await EnhancedAccountingService.recordMaterialIssue(id, accountingMaterials)
+              console.log(`[DEBUG:PUT:ACC] recordMaterialIssue result: success=${accResult.success}, entryId=${accResult.entryId}, error=${accResult.error}`)
+              if (accResult.success) {
+                const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
+                const issuedPayload = accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost }))
+                const rawMaterialsForUI = accountingMaterials.map((m: any) => ({ item_id: m.itemId, qty: m.quantity, cost: m.unitCost }))
+                const newTotalCost = totalMC + (wo.labor_cost || 0) + (wo.overhead_cost || 0)
+                console.log(`[DEBUG:PUT:WO:UPDATE] setting total_cost=${newTotalCost}, materials_issued=${JSON.stringify(issuedPayload)}`)
+                await serviceDb.from(TABLES.WORK_ORDERS).update({
+                  raw_materials_used: rawMaterialsForUI,
+                  materials_issued: issuedPayload,
+                  total_cost: newTotalCost,
                 updated_at: new Date().toISOString()
               }).eq("id", id)
 
