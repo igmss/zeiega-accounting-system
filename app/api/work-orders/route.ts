@@ -146,9 +146,18 @@ export async function PUT(request: Request) {
               }).eq("id", id)
 
               for (const inv of inventoryRefs) {
-                const { data: curr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", inv.id).maybeSingle()
+                const { data: curr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand,sku").eq("id", inv.id).maybeSingle()
                 if (curr) {
                   await serviceDb.from(TABLES.INVENTORY_ITEMS).update({ quantity_on_hand: Math.max(0, (curr.quantity_on_hand || 0) - inv.qty) }).eq("id", inv.id)
+                  await serviceDb.from(TABLES.INVENTORY_MOVEMENTS).insert({
+                    item_id: inv.id,
+                    sku: curr.sku || inv.id,
+                    qty: -inv.qty,
+                    type: "issue",
+                    related_doc: id,
+                    notes: `Issued to WO ${id} — ${accountingMaterials.find((m: any) => m.itemId === inv.id)?.itemName || 'material'} × ${inv.qty}`,
+                    created_at: new Date().toISOString()
+                  })
                 }
               }
             } else {

@@ -95,14 +95,25 @@ export async function POST(request: Request) {
     for (const inv of inventoryRefs) {
       const { data: currentInv } = await serviceDb
         .from(TABLES.INVENTORY_ITEMS)
-        .select("quantity_on_hand")
+        .select("quantity_on_hand, sku, name")
         .eq("id", inv.id)
-        .single()
+        .maybeSingle()
       
-      const currentQty = currentInv?.quantity_on_hand || 0
+      const currentQty = Number(currentInv?.quantity_on_hand) || 0
+
       await serviceDb.from(TABLES.INVENTORY_ITEMS).update({
         quantity_on_hand: currentQty - inv.qty
       }).eq("id", inv.id)
+
+      await serviceDb.from(TABLES.INVENTORY_MOVEMENTS).insert({
+        item_id: inv.id,
+        sku: currentInv?.sku || inv.id,
+        qty: -inv.qty,
+        type: "issue",
+        related_doc: workOrderId,
+        notes: `Issued to WO ${workOrderId} — ${currentInv?.name || 'material'} × ${inv.qty}`,
+        created_at: new Date().toISOString()
+      })
     }
     
     await syncInventoryWithChartOfAccounts()

@@ -89,13 +89,12 @@ export class WorkOrderMaterialService {
           .from(TABLES.INVENTORY_MOVEMENTS)
           .insert({
             item_id: requirement.inventoryItemId,
-            qty: -requirement.requiredQuantity, // Negative for issue
+            sku: requirement.inventoryItemSku || requirement.inventoryItemId,
+            qty: -requirement.requiredQuantity,
             type: "issue",
             related_doc: workOrderId,
-            created_at: new Date().toISOString(),
-            description: `Issued for work order ${workOrderId} - Design ${designId}`,
-            unit_cost: requirement.costPerUnit,
-            total_cost: requirement.totalCost
+            notes: `Issued to WO ${workOrderId} — ${requirement.inventoryItemName} × ${requirement.requiredQuantity}`,
+            created_at: new Date().toISOString()
           });
 
         issuedMaterials.push(requirement);
