@@ -6,6 +6,7 @@ import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-se
 import { orderStatusWebhookSchema } from "@/lib/validation/schemas"
 import { getCORSHeaders, handlePreflight } from "@/lib/cors"
 import { formatCurrency } from "@/lib/utils"
+import { generateSalesOrderNumber } from "@/lib/utils/id-generator"
 
 export async function OPTIONS(request: NextRequest) {
   return handlePreflight(request, ["x-webhook-secret"]) ?? new NextResponse(null, { status: 204 })
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
     } else {
       const salesOrder = {
         id: orderId,
+        order_number: generateSalesOrderNumber(),
         website_order_id: orderId,
         customer_id: orderData.userId || "unknown",
         customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",

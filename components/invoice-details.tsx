@@ -59,8 +59,8 @@ export function InvoiceDetails({ invoice }: { invoice: any }) {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Invoice ID:</span>
-              <span className="font-medium">{invoice.id}</span>
+              <span className="text-muted-foreground">Invoice Number:</span>
+              <span className="font-medium">{invoice.invoice_number || invoice.id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sales Order:</span>

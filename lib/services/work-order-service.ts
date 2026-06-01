@@ -3,12 +3,7 @@ import { DesignService } from "./design-service";
 import { OrderItemDesignService } from "./order-item-design-service";
 import type { WorkOrder } from "../types";
 import { formatCurrency } from "@/lib/utils"
-
-function generateWorkOrderNumber(): string {
-  const year = new Date().getFullYear()
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase()
-  return `WO-${year}-${random}`
-}
+import { generateWorkOrderNumber } from "@/lib/utils/id-generator";
 
 export class WorkOrderService {
   /**
@@ -393,6 +388,24 @@ export class WorkOrderService {
 
         return wo;
       });
+
+      // Batch-fetch readable order_number from sales_orders
+      const soIds = [...new Set(workOrders.filter(wo => (wo as any).sales_order_id).map(wo => (wo as any).sales_order_id))]
+      if (soIds.length > 0) {
+        const { data: soRows } = await getServiceSupabase()
+          .from(TABLES.SALES_ORDERS)
+          .select("id, order_number")
+          .in("id", soIds)
+        if (soRows) {
+          const soMap = new Map(soRows.map((r: any) => [r.id, r.order_number]))
+          for (const wo of workOrders) {
+            const soId = (wo as any).sales_order_id
+            if (soId && soMap.has(soId)) {
+              (wo as any).order_number = soMap.get(soId)
+            }
+          }
+        }
+      }
 
       // Self-healing in background: detect zero-cost WOs that have items and fire-and-forget recalculation
       const zeroCostWOs = workOrders.filter(

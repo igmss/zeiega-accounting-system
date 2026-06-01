@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServiceClient, TABLES } from "@/lib/supabase"
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service"
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers"
+import { generateSalesOrderNumber } from "@/lib/utils/id-generator"
 
 export async function GET(request: Request) {
   const auth = await requireAuth()
@@ -140,6 +141,7 @@ export async function POST(request: Request) {
       const salesOrderId = docRef.id
       const accountingSalesOrder = {
         id: salesOrderId,
+        order_number: generateSalesOrderNumber(),
         website_order_id: salesOrderId,
         customer_id: null,
         customer_name: orderData.customer_name || "Manual Customer",

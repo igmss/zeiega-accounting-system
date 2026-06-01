@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils"
 interface SalesOrderDetailsProps {
   order: {
     id: string
+    order_number?: string
     website_order_id: string
     customer_id: string
     customer_name: string
@@ -50,8 +51,8 @@ export function SalesOrderDetails({ order }: SalesOrderDetailsProps) {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Order ID:</span>
-              <span className="font-medium">{order.id}</span>
+              <span className="text-muted-foreground">Order Number:</span>
+              <span className="font-medium">{order.order_number || order.id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Website Order:</span>

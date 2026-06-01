@@ -309,12 +309,12 @@ export function SalesOrdersList() {
                 <>
                   {filteredOrders.map((order) => (
                 <TableRow key={order.id}>
-                  <TableCell className="font-medium">{order.website_order_id || order.id?.slice(0, 8)}</TableCell>
+                  <TableCell className="font-medium">{order.order_number || order.id?.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{order.customer_name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {order.order_source === "manual" ? "Manual" : "Web"}: {order.website_order_id}
+                        {order.order_source === "manual" ? "Manual" : "Web"}: {order.order_number || order.id?.slice(0, 8)}
                       </div>
                     </div>
                   </TableCell>

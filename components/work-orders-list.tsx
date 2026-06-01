@@ -304,7 +304,7 @@ export function WorkOrdersList() {
               {(Array.isArray(workOrders) ? workOrders : []).map((workOrder) => (
                 <TableRow key={workOrder.id}>
                   <TableCell className="font-medium">{workOrder.wo_number || workOrder.id}</TableCell>
-                  <TableCell>{workOrder.sales_order_id ? workOrder.sales_order_id.slice(0, 8) : "—"}</TableCell>
+                  <TableCell>{workOrder.order_number || (workOrder.sales_order_id ? workOrder.sales_order_id.slice(0, 8) : "—")}</TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{workOrder.customer_name || "Unknown Customer"}</div>

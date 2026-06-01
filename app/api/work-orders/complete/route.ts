@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission } from "@/lib/auth"
+import { generateInvoiceNumber } from "@/lib/utils/id-generator"
 
 export async function POST(request: Request) {
   try {
@@ -118,10 +119,13 @@ export async function POST(request: Request) {
           if (cust?.id) resolvedCustomerId = cust.id
         }
 
+        const invoiceNumber = generateInvoiceNumber()
+
         const { data: newInvoice, error: invoiceError } = await serviceDb
           .from(TABLES.INVOICES)
           .insert({
             sales_order_id: soId,
+            invoice_number: invoiceNumber,
             customer_id: resolvedCustomerId,
             customer_name: customerName,
             amount: totalAmount,
@@ -129,7 +133,7 @@ export async function POST(request: Request) {
             due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             status: "pending",
           })
-          .select("id")
+          .select("id, invoice_number")
           .single()
 
         if (invoiceError) {

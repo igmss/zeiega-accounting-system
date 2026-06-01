@@ -212,7 +212,7 @@ export function InvoiceManagement() {
             <TableBody>
               {filteredInvoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.id}</TableCell>
+                  <TableCell className="font-medium">{invoice.invoice_number || invoice.id?.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{invoice.customer_name}</div>
