@@ -5,6 +5,20 @@ import { BOMService } from "./bom-service";
 import { formatCurrency } from "@/lib/utils"
 
 export class OrderItemDesignService {
+
+  private static normalizeDesignFields(raw: any): any {
+    if (!raw) return raw
+    return {
+      ...raw,
+      materialCost: raw.materialCost ?? raw.material_cost ?? 0,
+      laborCost: raw.laborCost ?? raw.labor_cost ?? 0,
+      overheadCost: raw.overheadCost ?? raw.overhead_cost ?? 0,
+      totalCost: raw.totalCost ?? raw.total_cost ?? 0,
+      manufacturingTime: raw.manufacturingTime ?? raw.manufacturing_time ?? 0,
+      complexity: raw.complexity ?? 'medium',
+    }
+  }
+
   static async calculateOrderCostsFromDesigns(orderItems: any[]): Promise<{
     success: boolean;
     totalEstimatedCost: number;
@@ -249,7 +263,7 @@ export class OrderItemDesignService {
         .single();
 
       if (error || !data) return null;
-      return { id: data.id, ...data };
+      return this.normalizeDesignFields(data);
     } catch (error) {
       console.error("Error finding design by product ID:", error);
       return null;
@@ -267,7 +281,7 @@ export class OrderItemDesignService {
         .single();
       
       if (exactData) {
-        return { id: exactData.id, ...exactData };
+        return this.normalizeDesignFields(exactData);
       }
       
       const { data: prefixData } = await getServiceSupabase().from(TABLES.DESIGNS)
@@ -278,7 +292,7 @@ export class OrderItemDesignService {
         .single();
         
       if (prefixData) {
-        return { id: prefixData.id, ...prefixData };
+        return this.normalizeDesignFields(prefixData);
       }
 
       return null;
@@ -297,7 +311,7 @@ export class OrderItemDesignService {
         .single();
 
       if (error || !data) return null;
-      return { id: data.id, ...data };
+      return this.normalizeDesignFields(data);
     } catch (error) {
       console.error("Error finding design by category:", error);
       return null;
