@@ -283,6 +283,9 @@ export function WorkOrdersList() {
                 <TableHead>Order Value</TableHead>
                 <TableHead>Progress</TableHead>
                 <TableHead>Material Cost</TableHead>
+                <TableHead>Labor Cost</TableHead>
+                <TableHead>Overhead</TableHead>
+                <TableHead>Total Cost</TableHead>
                 <TableHead>Labor Hours</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
@@ -291,7 +294,7 @@ export function WorkOrdersList() {
             <TableBody>
               {(Array.isArray(workOrders) ? workOrders : []).length === 0 && !loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={12} className="text-center py-8">
                     <Wrench className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                     <p className="text-muted-foreground">No work orders found</p>
                   </TableCell>
@@ -337,6 +340,9 @@ export function WorkOrdersList() {
                       }
                     </div>
                   </TableCell>
+                  <TableCell>{formatCurrency(workOrder.labor_cost || 0)}</TableCell>
+                  <TableCell>{formatCurrency(workOrder.overhead_cost || 0)}</TableCell>
+                  <TableCell className="font-medium">{formatCurrency((workOrder.raw_materials_used && workOrder.raw_materials_used.length > 0 ? totalMaterialCost(workOrder.raw_materials_used) : getEstimatedMaterialCost(workOrder)) + (workOrder.labor_cost || 0) + (workOrder.overhead_cost || 0))}</TableCell>
                   <TableCell>
                     {workOrder.labor_hours || (workOrder.labor_cost ? Math.round(workOrder.labor_cost / (workOrder.labor_rate || 50)) : 0)}h
                   </TableCell>
