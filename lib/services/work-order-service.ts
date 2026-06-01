@@ -609,7 +609,7 @@ export class WorkOrderService {
         })
         .eq("id", workOrderId)
 
-      return { success: true, updates: whitelistedUpdates }
+      return { success: true }
     } catch (error) {
       console.error("Error updating work order:", error)
       return { success: false, error: error instanceof Error ? error.message : "Failed to update work order" }
