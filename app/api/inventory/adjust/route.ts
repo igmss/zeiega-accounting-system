@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const currentQty = currentData?.quantity_on_hand || 0
     const unitCost = currentData?.cost_per_unit || 0
     const itemName = currentData?.name || "Unknown Item"
-    const itemCategory = currentData?.category || "raw_materials"
+    const itemCategory = currentData?.type || "raw"
 
     let newQty = currentQty
     let actualAdjustment = 0
@@ -54,25 +54,20 @@ export async function POST(request: Request) {
       .from(TABLES.INVENTORY_ITEMS)
       .update({
         quantity_on_hand: newQty,
-        last_updated: new Date().toISOString()
+        updated_at: new Date().toISOString()
       })
       .eq("id", itemId)
 
-    const movementId = `MOV-${Date.now()}`
     await getServiceClient()
       .from(TABLES.INVENTORY_MOVEMENTS)
       .insert({
-        id: movementId,
         item_id: itemId,
-        item_name: itemName,
-        movement_type: 'adjustment',
-        quantity: actualAdjustment,
-        unit_cost: unitCost,
-        total_cost: Math.abs(actualAdjustment) * unitCost,
-        reason: reason,
-        reference: `ADJ-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        created_by: auth.user?.id || 'manual'
+        sku: currentData?.sku || itemId,
+        qty: actualAdjustment,
+        type: 'adjustment',
+        related_doc: `ADJ-${Date.now()}`,
+        notes: `${reason} | Item: ${itemName} | Unit cost: ${unitCost}`,
+        created_at: new Date().toISOString()
       })
 
     const adjustmentValue = Math.abs(actualAdjustment) * unitCost

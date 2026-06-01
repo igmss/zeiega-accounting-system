@@ -338,10 +338,10 @@ export class OrderItemDesignService {
         throw new Error(costCalculation.error || 'Failed to calculate costs');
       }
 
-      const workOrderId = `WO-${salesOrderId.split("-").slice(-1)[0]}-${Date.now()}`;
-      const now = new Date().toISOString()
       const year = new Date().getFullYear()
       const random = Math.random().toString(36).slice(2, 6).toUpperCase()
+      const workOrderId = `WO-${year}-${random}`
+      const now = new Date().toISOString()
 
       const firstMatch = costCalculation.itemCosts[0] || {}
       const designId = firstMatch.designId || undefined
@@ -350,8 +350,7 @@ export class OrderItemDesignService {
       const overheadCost = costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.overheadCost || 0), 0)
 
       const workOrder = {
-        id: workOrderId,
-        wo_number: `WO-${year}-${random}`,
+        wo_number: workOrderId,
         sales_order_id: salesOrderId,
         design_id: designId,
         design_name: firstMatch.designName || undefined,
@@ -373,14 +372,15 @@ export class OrderItemDesignService {
         ...additionalData
       };
 
-      const { error } = await getServiceSupabase().from(TABLES.WORK_ORDERS).insert(workOrder);
+      const { data: inserted, error } = await getServiceSupabase().from(TABLES.WORK_ORDERS).insert(workOrder).select("id").single();
       if (error) throw error;
 
-      console.log(`✅ Created work order ${workOrderId} with auto-calculated cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
+      const finalId = inserted?.id || workOrderId
+      console.log(`✅ Created work order ${finalId} with auto-calculated cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
 
       return {
         success: true,
-        workOrderId,
+        workOrderId: finalId,
         totalEstimatedCost: costCalculation.totalEstimatedCost,
         itemCosts: costCalculation.itemCosts
       };

@@ -222,14 +222,14 @@ export class DesignService {
         'overheadCost', 
         'manufacturingTime'
       ];
-      const shouldRecalculate = costFields.some(field => field in updates);
+      const shouldRecalculate = costFields.some(field => field in updates) || (updates as any).materials !== undefined;
       
       const updateData: any = {
         updated_at: new Date().toISOString()
       };
-      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.name !== undefined) { updateData.name = updates.name; updateData.name_lower = updates.name.trim().toLowerCase(); }
       if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.category !== undefined) { updateData.category = updates.category; updateData.category_lower = updates.category.trim().toLowerCase(); }
       if (updates.subcategory !== undefined) updateData.subcategory = updates.subcategory;
       if (updates.image !== undefined) updateData.image = updates.image;
       if (updates.images !== undefined) updateData.images = updates.images;
@@ -245,17 +245,15 @@ export class DesignService {
       if (updates.variants !== undefined) updateData.variants = updates.variants;
       if ((updates as any).materials !== undefined) updateData.materials = (updates as any).materials;
       if ((updates as any).processes !== undefined) updateData.processes = (updates as any).processes;
+      if ((updates as any).sizeConfigurations !== undefined) updateData.size_configurations = (updates as any).sizeConfigurations;
+      if ((updates as any).sizeRanges !== undefined) updateData.size_ranges = (updates as any).sizeRanges;
+      if ((updates as any).defaultSizeMultipliers !== undefined) updateData.default_size_multipliers = (updates as any).defaultSizeMultipliers;
+      if ((updates as any).sizeCosts !== undefined) updateData.size_costs = (updates as any).sizeCosts;
 
       if (shouldRecalculate) {
         const mergedDesign = { ...existingDesign, ...updates };
         updateData.total_cost = this.calculateTotalCost(mergedDesign);
         console.log(`Recalculated totalCost for design ${id}: ${formatCurrency(updateData.total_cost)}`);
-      }
-
-      if ((updates as any).materials !== undefined) {
-        const matCost = (updates as any).materials.reduce((sum: number, m: any) =>
-          sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0)
-        updateData.total_cost = matCost + (updates.laborCost || existingDesign.laborCost || 0) + (updates.overheadCost || existingDesign.overheadCost || 0)
       }
 
       const { error } = await getServiceSupabase().from(this.TABLE_NAME).update(updateData).eq("id", id);
@@ -319,8 +317,7 @@ export class DesignService {
       console.log("Starting import of designs from products collection...");
       
       const { data: products, error: prodErr } = await getServiceSupabase().from(TABLES.PRODUCTS)
-        .select("*")
-        .eq("isActive", true);
+        .select("*");
       if (prodErr) throw prodErr;
 
       console.log(`Found ${products?.length || 0} products to import`);
@@ -335,8 +332,8 @@ export class DesignService {
       const byNameCategory = new Map<string, any>();
       
       (existingDesigns || []).forEach((design: any) => {
-        if (design.productId) {
-          byProductId.set(design.productId, design);
+        if (design.product_id) {
+          byProductId.set(design.product_id, design);
         }
         const nameLower = (design.name_lower || (design.name || "").trim().toLowerCase());
         const categoryLower = (design.category_lower || (design.category || "").trim().toLowerCase());
@@ -359,9 +356,9 @@ export class DesignService {
             subcategory: product.subcategory || "",
             image: product.image || "",
             images: product.images || [],
-            materialCost: product.basePrice ? product.basePrice * 0.15 : 150,
-            laborCost: product.basePrice ? product.basePrice * 0.1 : 100,
-            overheadCost: product.basePrice ? product.basePrice * 0.05 : 50,
+            materialCost: product.price ? product.price * 0.15 : 150,
+            laborCost: product.price ? product.price * 0.1 : 100,
+            overheadCost: product.price ? product.price * 0.05 : 50,
             totalCost: 0,
             manufacturingTime: 2,
             complexity: 'medium',

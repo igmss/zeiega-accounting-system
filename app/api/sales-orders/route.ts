@@ -271,16 +271,23 @@ export async function PUT(request: Request) {
           } else {
             console.error(`❌ Failed to create work order: ${workOrderResult.error}`);
 
+            const fallbackDesignId = workOrderResult.itemCosts?.[0]?.designId
+              || (typeof normalizedItems?.[0]?.productId === 'string' ? null : undefined)
+            const fallbackDesignName = workOrderResult.itemCosts?.[0]?.designName || undefined
+
             const basicWorkOrder = {
               wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
               sales_order_id: orderId,
               status: "pending",
+              design_id: fallbackDesignId || null,
+              design_name: fallbackDesignName || null,
               completion_percentage: 0,
               raw_materials_used: [],
               materials_issued: [],
               labor_hours: 0,
               labor_cost: 0,
               overhead_cost: 0,
+              material_cost: 0,
               total_cost: 0,
               estimated_cost: 0,
               items: normalizedItems,
@@ -289,6 +296,7 @@ export async function PUT(request: Request) {
               customer_phone: (orderData as any).shipping_address?.phone || (orderData as any).customer_phone || null,
               customer_address: (orderData as any).shipping_address?.street ? `${(orderData as any).shipping_address.street}, ${(orderData as any).shipping_address.city}` : (orderData as any).customer_address || null,
               total_amount: orderData.total || (orderData as any).total_amount || 0,
+              order_source: orderSource,
               notes: `Basic work order for ${orderSource} order ${orderId} (auto-cost failed: ${workOrderResult.error})`,
             };
 

@@ -29,16 +29,17 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
 
-        const { design_id, name, items, labor_hours, notes } = body
-
-        if (!design_id || !name || !items?.length) {
-            return createErrorResponse("design_id, name, and items are required", 400)
+        const validation = bomSchema.safeParse(body)
+        if (!validation.success) {
+            return createErrorResponse(`Validation failed: ${validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`, 400)
         }
+
+        const { design_id, name, items, labor_hours, notes } = validation.data
 
         const result = await BOMService.createBOM(
             design_id,
             name,
-            items,
+            items as any,
             labor_hours || 0,
             body.labor_rate || 50,
             body.overhead_percentage || 15,

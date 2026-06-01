@@ -66,17 +66,26 @@ export class BOMService {
             const designName = (designData as any).name || "Unknown Design"
 
             const processedItems: BOMItem[] = items.map(item => {
-                const quantityWithWaste = item.quantity * (1 + item.waste_factor)
-                const totalCost = quantityWithWaste * item.unit_cost
+                const wf = Number(item.waste_factor) || 0
+                const qty = Number(item.quantity) || 0
+                const uc = Number(item.unit_cost) || 0
+                const quantityWithWaste = qty * (1 + wf)
+                const totalCost = quantityWithWaste * uc
                 return {
                     ...item,
-                    total_cost: totalCost
+                    waste_factor: wf,
+                    quantity: qty,
+                    unit_cost: uc,
+                    total_cost: isNaN(totalCost) ? 0 : totalCost
                 }
             })
 
+            const lh = Number(laborHours) || 0
+            const lr = Number(laborRate) || 0
+            const op = Number(overheadPercentage) || 0
             const totalMaterialCost = processedItems.reduce((sum, item) => sum + item.total_cost, 0)
-            const totalLaborCost = laborHours * laborRate
-            const totalOverheadCost = (totalMaterialCost + totalLaborCost) * (overheadPercentage / 100)
+            const totalLaborCost = lh * lr
+            const totalOverheadCost = (totalMaterialCost + totalLaborCost) * (op / 100)
             const totalCost = totalMaterialCost + totalLaborCost + totalOverheadCost
 
             const now = new Date().toISOString()
@@ -183,19 +192,22 @@ export class BOMService {
 
             if (updates.items) {
                 const processedItems: BOMItem[] = updates.items.map(item => {
-                    const quantityWithWaste = item.quantity * (1 + item.waste_factor)
-                    const totalCost = quantityWithWaste * item.unit_cost
-                    return { ...item, total_cost: totalCost }
+                    const wf = Number(item.waste_factor) || 0
+                    const qty = Number(item.quantity) || 0
+                    const uc = Number(item.unit_cost) || 0
+                    const quantityWithWaste = qty * (1 + wf)
+                    const totalCost = quantityWithWaste * uc
+                    return { ...item, waste_factor: wf, quantity: qty, unit_cost: uc, total_cost: isNaN(totalCost) ? 0 : totalCost }
                 })
 
                 updates.items = processedItems
                 updates.total_material_cost = processedItems.reduce((sum, item) => sum + item.total_cost, 0)
 
-                const laborHours = updates.labor_hours ?? existing.labor_hours
-                const laborRate = updates.labor_rate ?? existing.labor_rate
+                const laborHours = Number(updates.labor_hours ?? existing.labor_hours) || 0
+                const laborRate = Number(updates.labor_rate ?? existing.labor_rate) || 0
                 updates.total_labor_cost = laborHours * laborRate
 
-                const overheadPct = updates.overhead_percentage ?? existing.overhead_percentage
+                const overheadPct = Number(updates.overhead_percentage ?? existing.overhead_percentage) || 0
                 updates.total_overhead_cost = (updates.total_material_cost + updates.total_labor_cost) * (overheadPct / 100)
                 updates.total_cost = updates.total_material_cost + updates.total_labor_cost + updates.total_overhead_cost
             }

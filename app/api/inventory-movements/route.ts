@@ -15,14 +15,8 @@ export async function GET() {
 
     const movements = (movementsData || []).map((data: Record<string, any>) => {
       return {
-        id: data.id,
         ...data,
-        created_at: data.created_at || null,
-        type: data.type || data.movement_type || "unknown",
-        qty: data.qty ?? data.quantity ?? 0,
-        related_doc: data.related_doc || data.reference || null,
-        user: data.user || data.created_by || null,
-        item_id: data.item_id || data.sku || null,
+        item_name: data.item_name || `Item ${data.item_id || data.sku || 'unknown'}`,
       }
     })
 
@@ -43,11 +37,14 @@ export async function POST(request: Request) {
 
     const movementData = await request.json()
 
-    // Add timestamps
     const now = new Date().toISOString()
     const movement = {
-      ...movementData,
-      createdAt: now,
+      item_id: movementData.item_id || movementData.itemId,
+      sku: movementData.sku || movementData.item_id || null,
+      qty: movementData.qty ?? movementData.quantity ?? 0,
+      type: movementData.type || movementData.movement_type || 'adjustment',
+      related_doc: movementData.related_doc || movementData.reference || null,
+      notes: movementData.notes || movementData.reason || null,
       created_at: now,
     }
 

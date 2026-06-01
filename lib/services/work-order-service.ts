@@ -48,8 +48,9 @@ export class WorkOrderService {
       }
 
       // Create work order with design integration
-      const workOrder: WorkOrder = {
-        id: `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      const matCost = design.materials?.reduce((sum: number, m: any) => sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0) || 0
+
+      const workOrder = {
         wo_number: generateWorkOrderNumber(),
         sales_order_id: salesOrderId,
         design_id: designId,
@@ -59,7 +60,8 @@ export class WorkOrderService {
         labor_hours: design.manufacturingTime * quantity,
         labor_cost: estimatedLaborCost,
         overhead_cost: estimatedOverheadCost,
-        total_cost: 0, // Will be updated when materials are issued
+        material_cost: matCost,
+        total_cost: 0,
         estimated_cost: estimatedTotalCost,
         status: "pending",
         created_at: new Date().toISOString(),
@@ -72,19 +74,18 @@ export class WorkOrderService {
         customer_address: additionalData.customer_address || undefined,
         total_amount: additionalData.total_amount || 0,
         order_status: additionalData.order_status || undefined,
-        ...additionalData
       };
 
       // Save work order to database
       const { data: inserted, error: insertError } = await getServiceSupabase()
         .from(TABLES.WORK_ORDERS)
         .insert(workOrder)
-        .select()
+        .select("id")
         .single();
 
       if (insertError) throw insertError;
 
-      const workOrderRefId = inserted?.id || workOrder.id;
+      const workOrderRefId = inserted?.id;
 
       console.log(`✅ Created work order ${workOrderRefId} with estimated cost ${formatCurrency(estimatedTotalCost)}`);
 
