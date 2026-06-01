@@ -171,19 +171,22 @@ export class WorkOrderMaterialService {
       const workOrderData = workOrderDoc;
       console.log(`[DEBUG:CWO:WO] status=${workOrderData.status}, total_cost=${workOrderData.total_cost}, estimated_cost=${workOrderData.estimated_cost}, labor_cost=${workOrderData.labor_cost}, overhead_cost=${workOrderData.overhead_cost}, material_cost=${workOrderData.material_cost}`);
       console.log(`[DEBUG:CWO:WO] materials_issued=${JSON.stringify(workOrderData.materials_issued)}`);
-      
-      let totalCost = (workOrderData?.materials_issued || []).reduce((sum: number, material: any) => 
+
+      const matCost = (workOrderData?.materials_issued || []).reduce((sum: number, material: any) =>
         sum + (material.totalCost || 0), 0);
-      console.log(`[DEBUG:CWO:COST] from materials_issued: ${totalCost}`);
-      
+      const labCost = workOrderData?.labor_cost || 0;
+      const ohCost = workOrderData?.overhead_cost || 0;
+      let totalCost = matCost + labCost + ohCost;
+      console.log(`[DEBUG:CWO:COST] matCost=${matCost}, labCost=${labCost}, ohCost=${ohCost}, totalCost=${totalCost}`);
+
       if (totalCost <= 0) {
         totalCost = workOrderData?.total_cost || 0;
         console.log(`[DEBUG:CWO:COST] fallback to total_cost: ${totalCost}`);
       }
 
       if (totalCost <= 0) {
-        totalCost = (workOrderData?.material_cost || 0) + 
-                    (workOrderData?.labor_cost || 0) + 
+        totalCost = (workOrderData?.material_cost || 0) +
+                    (workOrderData?.labor_cost || 0) +
                     (workOrderData?.overhead_cost || 0);
         console.log(`[DEBUG:CWO:COST] fallback to material+labor+overhead: ${totalCost}`);
       }

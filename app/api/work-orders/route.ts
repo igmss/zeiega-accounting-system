@@ -135,11 +135,12 @@ export async function PUT(request: Request) {
             if (accResult.success) {
               const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
               const issuedPayload = accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost }))
-              console.log(`[DEBUG:PUT:WO:UPDATE] setting total_cost=${totalMC + (wo.overhead_cost || 0)}, materials_issued=${JSON.stringify(issuedPayload)}`)
+              const newTotalCost = totalMC + (wo.labor_cost || 0) + (wo.overhead_cost || 0)
+              console.log(`[DEBUG:PUT:WO:UPDATE] setting total_cost=${newTotalCost}, materials_issued=${JSON.stringify(issuedPayload)}`)
               await serviceDb.from(TABLES.WORK_ORDERS).update({
                 raw_materials_used: materialsToIssue,
                 materials_issued: issuedPayload,
-                total_cost: totalMC + (wo.overhead_cost || 0),
+                total_cost: newTotalCost,
                 updated_at: new Date().toISOString()
               }).eq("id", id)
 
