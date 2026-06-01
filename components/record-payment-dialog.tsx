@@ -19,6 +19,7 @@ interface RecordPaymentDialogProps {
     id: string
     amount?: number
     total_amount?: number
+    paid_amount?: number
     status: string
   }
 }
@@ -27,8 +28,10 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const invoiceAmount = (invoice.total_amount || invoice.amount || 0) as number
+  const paidSoFar = (invoice.paid_amount || 0) as number
+  const remaining = Math.max(0, invoiceAmount - paidSoFar)
   const [paymentData, setPaymentData] = useState({
-    amount: invoiceAmount.toString(),
+    amount: remaining.toString(),
     method: "",
     reference: "",
     notes: "",
@@ -93,12 +96,15 @@ export function RecordPaymentDialog({ invoice }: RecordPaymentDialogProps) {
               type="number"
               step="0.01"
               min="0"
-              max={invoice.total_amount || invoice.amount || 0}
+              max={remaining}
               value={paymentData.amount}
               onChange={(e) => handleInputChange("amount", e.target.value)}
               required
             />
-            <div className="text-sm text-muted-foreground">Invoice total: {formatCurrency(invoice.total_amount || invoice.amount || 0)}</div>
+            <div className="text-sm text-muted-foreground">
+              Invoice total: {formatCurrency(invoiceAmount)}
+              {paidSoFar > 0 && <> | Paid: {formatCurrency(paidSoFar)} | Remaining: {formatCurrency(remaining)}</>}
+            </div>
           </div>
 
           <div className="space-y-2">

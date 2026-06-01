@@ -102,16 +102,16 @@ export function PaymentManagement() {
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Payment ID</TableHead><TableHead>Invoice</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Notes</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Invoice</TableHead><TableHead>Amount</TableHead><TableHead>Method</TableHead><TableHead>Reference</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {filteredPayments.map((payment) => (
                     <TableRow key={payment.id}>
-                      <TableCell className="font-medium">{payment.id}</TableCell>
-                      <TableCell className="font-mono text-xs">{payment.invoice_id}</TableCell>
+                      <TableCell className="font-medium">{payment.payment_number || payment.id?.slice(0, 8)}</TableCell>
+                      <TableCell className="font-mono text-xs">{payment.invoice_id?.slice(0, 8)}</TableCell>
                       <TableCell className="font-medium text-green-600">{formatCurrency(payment.amount || 0)}</TableCell>
                       <TableCell><div className="flex items-center gap-2">{getMethodBadge(payment.method)}</div></TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{payment.notes}</TableCell>
-                      <TableCell className="text-sm">{payment.created_at ? new Date(payment.created_at).toLocaleString() : "N/A"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{payment.reference_number || "—"}</TableCell>
+                      <TableCell className="text-sm">{payment.date ? new Date(payment.date).toLocaleDateString() : payment.created_at ? new Date(payment.created_at).toLocaleDateString() : "N/A"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

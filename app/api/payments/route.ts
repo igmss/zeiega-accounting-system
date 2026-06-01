@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requireAuth, requirePermission } from "@/lib/auth"
+import { generateOrderNumber } from "@/lib/utils/id-generator"
 
 export async function GET(request: Request) {
   try {
@@ -34,14 +35,12 @@ export async function GET(request: Request) {
     if (error) throw error
 
     const hasMore = (paymentsData || []).length > limit
-    const payments = (paymentsData || []).slice(0, limit).map((doc: Record<string, any>) => {
-      return {
-        id: doc.id,
-        ...doc,
-        date: doc.date || null,
-        created_at: doc.created_at || null,
-      }
-    })
+    const payments = (paymentsData || []).slice(0, limit).map((doc: Record<string, any>) => ({
+      ...doc,
+      id: doc.id,
+      created_at: doc.created_at || null,
+      date: doc.date || null,
+    }))
 
     const lastVisible = payments[payments.length - 1]
     const nextCursor = lastVisible ? lastVisible.id : null
@@ -61,6 +60,19 @@ export async function GET(request: Request) {
   }
 }
 
+const PAYMENT_ACCOUNT_MAP: Record<string, { account: string; name: string }> = {
+  cash:            { account: "1101", name: "Cash on Hand" },
+  bank_transfer:   { account: "1103", name: "Bank Account" },
+  bank:            { account: "1103", name: "Bank Account" },
+  transfer:        { account: "1103", name: "Bank Account" },
+  card:            { account: "1103", name: "Bank Account" },
+  credit_card:     { account: "1103", name: "Bank Account" },
+  check:           { account: "1103", name: "Bank Account" },
+  mobile_payment:  { account: "1103", name: "Bank Account" },
+  paypal:          { account: "1103", name: "Bank Account" },
+  other:           { account: "1103", name: "Bank Account" },
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await requirePermission("payments:create")
@@ -70,7 +82,7 @@ export async function POST(request: Request) {
     const {
       amount,
       invoice_id,
-      payment_method, // "cash", "bank", "card"
+      payment_method,
       date,
       reference_number
     } = body
@@ -79,9 +91,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Amount and invoice_id are required" }, { status: 400 })
     }
 
-    const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
+    const paymentDate = date ? new Date(date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]
 
-    const paymentId = `PAY-${Date.now()}`
+    const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
 
     // Read invoice
     const { data: invoiceDoc, error: invoiceError } = await getServiceClient()
@@ -96,7 +108,8 @@ export async function POST(request: Request) {
 
     const invoiceData = invoiceDoc as any
     const invoiceTotal = invoiceData.total_amount || invoiceData.amount || 0
-    const remainingBalance = invoiceTotal - (invoiceData.paid_amount || 0)
+    const paidSoFar = invoiceData.paid_amount || 0
+    const remainingBalance = invoiceTotal - paidSoFar
 
     if (remainingBalance <= 0) {
       return NextResponse.json({ error: "Invoice is already fully paid" }, { status: 400 })
@@ -104,54 +117,59 @@ export async function POST(request: Request) {
 
     if (amount > remainingBalance + 0.01) {
       return NextResponse.json({
-        error: `Overpayment not allowed. Remaining balance is ${remainingBalance.toLocaleString()}`
+        error: `Overpayment not allowed. Remaining balance is EGP ${remainingBalance.toFixed(2)}`
       }, { status: 400 })
     }
 
-    // Prepare payment account mapping
-    let paymentAccount = "1101"
-    let accountName = "Cash on Hand"
-
-    if (payment_method === "bank" || payment_method === "transfer" || payment_method === "card") {
-      paymentAccount = "1103"
-      accountName = "Bank Account"
+    // Map method to DB-valid value and resolve payment account
+    const methodMap: Record<string, string> = {
+      cash: "cash", bank: "bank_transfer", transfer: "bank_transfer",
+      bank_transfer: "bank_transfer", check: "check",
+      card: "card", credit_card: "card",
+      mobile_payment: "mobile_payment", mobile: "mobile_payment",
+      paypal: "bank_transfer", other: "bank_transfer",
     }
+    const dbMethod = methodMap[payment_method?.toLowerCase()] || "cash"
+    const acctInfo = PAYMENT_ACCOUNT_MAP[payment_method?.toLowerCase()] || PAYMENT_ACCOUNT_MAP["cash"]
 
-    // Create journal entry
+    const paymentNumber = `PAY-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+
+    // Create journal entry with user-specified date
     const lines = [
       {
-        accountCode: paymentAccount,
-        accountName: accountName,
+        accountCode: acctInfo.account,
+        accountName: acctInfo.name,
         debit: amount,
         credit: 0,
-        description: `Payment ${paymentId} received for invoice ${invoice_id}`
+        description: `Payment ${paymentNumber} via ${dbMethod} — invoice ${invoiceData.invoice_number || invoice_id}`
       },
       {
         accountCode: "1110",
         accountName: "Accounts Receivable",
         debit: 0,
         credit: amount,
-        description: `AR reduction for invoice ${invoice_id}`
+        description: `AR reduction for invoice ${invoiceData.invoice_number || invoice_id}`
       }
     ]
 
     const jeResult = await EnhancedAccountingService.createJournalEntry(
       JournalEntryType.PAYMENT_RECEIVED,
       lines,
-      paymentId,
-      `Payment receipt for invoice ${invoice_id}. Ref: ${reference_number || 'N/A'}`,
-      null
+      paymentNumber,
+      `Payment receipt for invoice ${invoiceData.invoice_number || invoice_id}. Ref: ${reference_number || 'N/A'}`,
+      null,
+      new Date(paymentDate)
     )
 
     if (!jeResult.success) {
       return NextResponse.json({ error: jeResult.error || "Failed to create journal entry" }, { status: 400 })
     }
 
-    // Update invoice and create payment record
-    const newPaidAmount = (invoiceData.paid_amount || 0) + amount
+    // Update invoice paid_amount and status
+    const newPaidAmount = paidSoFar + amount
     const isFullyPaid = newPaidAmount >= invoiceTotal - 0.01
 
-    await getServiceClient()
+    const { error: invUpdateError } = await getServiceClient()
       .from(TABLES.INVOICES)
       .update({
         paid_amount: newPaidAmount,
@@ -160,37 +178,49 @@ export async function POST(request: Request) {
       })
       .eq("id", invoice_id)
 
-    // Map payment method to valid DB values
-    const methodMap: Record<string, string> = {
-      cash: "cash", bank: "bank_transfer", transfer: "bank_transfer",
-      card: "card", credit_card: "card", check: "check",
-      mobile: "mobile_payment", mobile_payment: "mobile_payment",
-    }
-    const dbMethod = methodMap[payment_method?.toLowerCase()] || "cash"
-
-    const payment = {
-      invoice_id,
-      amount,
-      method: dbMethod,
-      notes: `Ref: ${reference_number || "N/A"}. JE: ${jeResult.entryId}`,
+    if (invUpdateError) {
+      console.error("Failed to update invoice after JE creation:", invUpdateError)
+      return NextResponse.json({
+        error: `Invoice update failed: ${invUpdateError.message}. Journal entry ${jeResult.entryId} was created.`,
+        journalEntryId: jeResult.entryId
+      }, { status: 500 })
     }
 
-    const { error: paymentError } = await getServiceClient()
+    // Insert payment record
+    const { data: inserted, error: paymentError } = await getServiceClient()
       .from(TABLES.PAYMENTS)
-      .insert(payment)
+      .insert({
+        invoice_id,
+        payment_number: paymentNumber,
+        amount,
+        method: dbMethod,
+        reference_number: reference_number || null,
+        date: paymentDate,
+        notes: `JE: ${jeResult.entryId}`,
+      })
       .select()
       .single()
 
     if (paymentError) {
-      console.error("Failed to insert payment after journal entry creation:", paymentError)
-      return NextResponse.json({ error: "Failed to create payment record. Journal entry was created and may need manual cleanup.", journalEntryId: jeResult.entryId }, { status: 500 })
+      console.error("Failed to insert payment record after JE creation:", paymentError)
+      return NextResponse.json({
+        error: "Payment record insert failed. Journal entry and invoice update were committed.",
+        journalEntryId: jeResult.entryId
+      }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, paymentId, ...payment })
+    return NextResponse.json({
+      success: true,
+      paymentId: inserted?.id,
+      paymentNumber,
+      amount,
+      method: dbMethod,
+      invoiceStatus: isFullyPaid ? "paid" : "partial",
+      remainingBalance: Math.max(0, invoiceTotal - newPaidAmount),
+      journalEntryId: jeResult.entryId,
+    })
   } catch (error) {
     console.error("Error creating payment:", error)
     return NextResponse.json({ error: "Failed to create payment" }, { status: 500 })
   }
 }
-
-// PUT endpoint removed to ensure journal entry immutability (BUG-011)
