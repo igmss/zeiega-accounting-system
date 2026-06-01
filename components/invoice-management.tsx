@@ -216,7 +216,7 @@ export function InvoiceManagement() {
                   <TableCell>
                     <div>
                       <div className="font-medium">{invoice.customer_name}</div>
-                      <div className="text-sm text-muted-foreground">Order: {invoice.sales_order_id}</div>
+                      <div className="text-sm text-muted-foreground">Order: {invoice.order_number || (invoice.sales_order_id ? invoice.sales_order_id.slice(0, 8) : "—")}</div>
                     </div>
                   </TableCell>
                   <TableCell>

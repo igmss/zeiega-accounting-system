@@ -46,6 +46,23 @@ export async function GET(request: Request) {
           paid_at: doc.paid_at || null,
         }))
 
+        const soIds = [...new Set(invoices.filter(inv => (inv as any).sales_order_id).map(inv => (inv as any).sales_order_id))]
+        if (soIds.length > 0) {
+          const { data: soRows } = await getServiceClient()
+            .from(TABLES.SALES_ORDERS)
+            .select("id, order_number")
+            .in("id", soIds)
+          if (soRows) {
+            const soMap = new Map(soRows.map((r: any) => [r.id, r.order_number]))
+            for (const inv of invoices) {
+              const soId = (inv as any).sales_order_id
+              if (soId && soMap.has(soId)) {
+                (inv as any).order_number = soMap.get(soId)
+              }
+            }
+          }
+        }
+
         const lastVisible = invoices[invoices.length - 1]
         nextCursor = lastVisible ? lastVisible.id : null
       }

@@ -64,7 +64,7 @@ export function InvoiceDetails({ invoice }: { invoice: any }) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Sales Order:</span>
-              <span className="font-medium">{invoice.sales_order_id}</span>
+              <span className="font-medium">{invoice.order_number || invoice.sales_order_id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Status:</span>
