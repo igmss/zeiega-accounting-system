@@ -59,6 +59,12 @@ export class WorkOrderService {
         updated_at: new Date().toISOString(),
         completionPercentage: 0,
         notes: `Work order for design: ${design.name} (${quantity} units)`,
+        customer_name: additionalData.customer_name || null,
+        customer_email: additionalData.customer_email || null,
+        customer_phone: additionalData.customer_phone || null,
+        customer_address: additionalData.customer_address || null,
+        total_amount: additionalData.total_amount || 0,
+        order_status: additionalData.order_status || null,
         ...additionalData
       };
 
@@ -349,7 +355,7 @@ export class WorkOrderService {
   }
 
   /**
-   * Get all work orders with design, customer, and sales order information
+   * Get all work orders — single query, customer data is denormalized on the row
    */
   static async getAllWorkOrdersWithDesigns(): Promise<WorkOrder[]> {
     try {
@@ -360,173 +366,51 @@ export class WorkOrderService {
 
       if (!snapshot) return [];
 
-      const workOrders = await Promise.all(snapshot.map(async (doc: any) => {
-        const workOrderData = {
+      const workOrders = snapshot.map((doc: any) => {
+        const wo = {
           ...doc,
           created_at: doc.created_at || new Date().toISOString(),
           updated_at: doc.updated_at || new Date().toISOString(),
           completed_at: doc.completed_at || null,
           start_time: doc.start_time || null,
-          estimated_completion: doc.estimated_completion || null
+          estimated_completion: doc.estimated_completion || null,
+          customer_name: doc.customer_name || "Unknown Customer",
+          customer_email: doc.customer_email || "",
+          customer_phone: doc.customer_phone || "",
+          customer_address: doc.customer_address || "",
+          total_amount: doc.total_amount || 0,
+          order_status: doc.order_status || "unknown",
+          items: doc.items || [],
         } as WorkOrder;
 
-        // Fetch sales order details from multiple possible sources
-        if (workOrderData.sales_order_id) {
-          try {
-            let salesOrderData = null;
-            let customerData = null;
+        return wo;
+      });
 
-            // Try to get from acc_sales_orders first (accounting system)
-            const { data: accSalesOrderDoc } = await getServiceSupabase()
-              .from(TABLES.SALES_ORDERS)
-              .select("*")
-              .eq("id", workOrderData.sales_order_id)
-              .single();
-
-            if (accSalesOrderDoc) {
-              salesOrderData = accSalesOrderDoc;
-
-              // Use customer data directly from sales order if available
-              if (salesOrderData?.customer_name) {
-                customerData = {
-                  name: salesOrderData.customer_name,
-                  email: salesOrderData.customer_email || "",
-                  phone: salesOrderData.customer_phone || "",
-                  address: salesOrderData.customer_address || ""
-                };
-              } else if (salesOrderData?.customer_id) {
-                // Fallback: try to fetch from customers collection
-                const { data: customerDoc } = await getServiceSupabase()
-                  .from(TABLES.CUSTOMERS)
-                  .select("*")
-                  .eq("id", salesOrderData.customer_id)
-                  .single();
-
-                if (customerDoc) {
-                  customerData = customerDoc;
-                }
-              }
-            }
-
-            // If not found in accounting system, try original orders collection
-            if (!salesOrderData) {
-              const { data: orderDoc } = await getServiceSupabase()
-                .from(TABLES.ORDERS)
-                .select("*")
-                .eq("id", workOrderData.sales_order_id)
-                .single();
-
-              if (orderDoc) {
-                salesOrderData = orderDoc;
-                // Extract customer data from order
-                customerData = {
-                  name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
-                  email: salesOrderData?.userId || "",
-                  phone: salesOrderData?.shippingAddress?.phone || "",
-                  address: `${salesOrderData?.shippingAddress?.street || ""} ${salesOrderData?.shippingAddress?.city || ""}`.trim()
-                };
-              }
-            }
-
-            // If still not found, try manual_orders collection
-            if (!salesOrderData) {
-              const { data: manualOrderDoc } = await getServiceSupabase()
-                .from(TABLES.MANUAL_ORDERS)
-                .select("*")
-                .eq("id", workOrderData.sales_order_id)
-                .single();
-
-              if (manualOrderDoc) {
-                salesOrderData = manualOrderDoc;
-                // Extract customer data from manual order
-                customerData = {
-                  name: salesOrderData?.shippingAddress?.fullName || "Unknown Customer",
-                  email: salesOrderData?.userId || "",
-                  phone: salesOrderData?.shippingAddress?.phone || "",
-                  address: `${salesOrderData?.shippingAddress?.street || ""} ${salesOrderData?.shippingAddress?.city || ""}`.trim()
-                };
-              }
-            }
-
-            // Set customer data if found
-            if (customerData) {
-              workOrderData.customer_name = customerData.name || "Unknown Customer";
-              workOrderData.customer_email = customerData.email || "";
-              workOrderData.customer_phone = customerData.phone || "";
-              workOrderData.customer_address = customerData.address || "";
-            } else {
-              workOrderData.customer_name = "Unknown Customer";
-              workOrderData.customer_email = "";
-              workOrderData.customer_phone = "";
-              workOrderData.customer_address = "";
-            }
-
-            // Add sales order items and total amount (preserve original work order items if they exist)
-            if (salesOrderData) {
-              // Only set items if work order doesn't already have complete item data
-              if (!workOrderData.items || workOrderData.items.length === 0 || !workOrderData.items[0]?.name) {
-                workOrderData.items = salesOrderData.items || [];
-              }
-              workOrderData.total_amount = salesOrderData.total || salesOrderData.total_amount || 0;
-              workOrderData.order_status = salesOrderData.status || "unknown";
-            } else {
-              workOrderData.items = [];
-              workOrderData.total_amount = 0;
-              workOrderData.order_status = "unknown";
-            }
-
-            // Self-healing: auto-calculate and persist costs from designs if zero or missing
-            if (workOrderData.items && workOrderData.items.length > 0 && (!workOrderData.estimated_cost || workOrderData.estimated_cost === 0)) {
-              try {
-                const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(workOrderData.items);
-                if (costCalculation.success && costCalculation.itemCosts.length > 0) {
-                  const estimatedCost = costCalculation.totalEstimatedCost;
-                  const laborCost = costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0);
-                  const overheadCost = costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0);
-                  const laborHours = costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost / 50), 0);
-
-                  const updateFields = {
-                    estimated_cost: estimatedCost,
-                    labor_cost: laborCost,
-                    labor_hours: laborHours,
-                    overhead_cost: overheadCost,
+      // Self-healing in background: detect zero-cost WOs that have items and fire-and-forget recalculation
+      const zeroCostWOs = workOrders.filter(
+        (wo) => wo.items && wo.items.length > 0 && (!wo.estimated_cost || wo.estimated_cost === 0)
+      );
+      if (zeroCostWOs.length > 0) {
+        zeroCostWOs.forEach((wo) => {
+          OrderItemDesignService.calculateOrderCostsFromDesigns(wo.items!)
+            .then((costCalculation) => {
+              if (costCalculation.success && costCalculation.itemCosts.length > 0) {
+                return getServiceSupabase()
+                  .from(TABLES.WORK_ORDERS)
+                  .update({
+                    estimated_cost: costCalculation.totalEstimatedCost,
+                    labor_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.laborCost, 0),
+                    labor_hours: costCalculation.itemCosts.reduce((sum, item) => sum + (item.laborCost / 50), 0),
+                    overhead_cost: costCalculation.itemCosts.reduce((sum, item) => sum + item.overheadCost, 0),
                     item_costs: costCalculation.itemCosts,
                     updated_at: new Date().toISOString()
-                  };
-
-                  await getServiceSupabase()
-                    .from(TABLES.WORK_ORDERS)
-                    .update(updateFields)
-                    .eq("id", workOrderData.id);
-
-                  Object.assign(workOrderData, updateFields);
-                }
-              } catch (err) {
-                console.warn(`Failed to auto-recalculate/persist costs for work order ${workOrderData.id}:`, err);
+                  })
+                  .eq("id", wo.id);
               }
-            }
-          } catch (error) {
-            console.warn(`Failed to fetch sales order ${workOrderData.sales_order_id}:`, error);
-            workOrderData.customer_name = "Unknown Customer";
-            workOrderData.customer_email = "";
-            workOrderData.customer_phone = "";
-            workOrderData.customer_address = "";
-            workOrderData.items = [];
-            workOrderData.total_amount = 0;
-            workOrderData.order_status = "unknown";
-          }
-        } else {
-          workOrderData.customer_name = "Unknown Customer";
-          workOrderData.customer_email = "";
-          workOrderData.customer_phone = "";
-          workOrderData.customer_address = "";
-          workOrderData.items = [];
-          workOrderData.total_amount = 0;
-          workOrderData.order_status = "unknown";
-        }
-
-        return workOrderData;
-      }));
+            })
+            .catch(() => {});
+        });
+      }
 
       return workOrders;
     } catch (error) {
@@ -637,6 +521,12 @@ export class WorkOrderService {
         estimated_completion: workOrderData.estimated_completion || null,
         completed_at: workOrderData.completed_at || null,
         notes: workOrderData.notes || null,
+        customer_name: workOrderData.customer_name || null,
+        customer_email: workOrderData.customer_email || null,
+        customer_phone: workOrderData.customer_phone || null,
+        customer_address: workOrderData.customer_address || null,
+        total_amount: workOrderData.total_amount || 0,
+        order_status: workOrderData.order_status || null,
         created_at: now,
         updated_at: now,
       }
