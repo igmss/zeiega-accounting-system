@@ -588,7 +588,10 @@ export class WorkOrderService {
         whitelistedUpdates.estimated_completion = updates.estimated_completion ? new Date(updates.estimated_completion).toISOString() : null
       }
       if (updates.started_at !== undefined) {
-        whitelistedUpdates.started_at = updates.started_at ? new Date(updates.started_at).toISOString() : null
+        whitelistedUpdates.start_time = updates.started_at ? new Date(updates.started_at).toISOString() : null
+      }
+      if (updates.start_time !== undefined) {
+        whitelistedUpdates.start_time = updates.start_time ? new Date(updates.start_time).toISOString() : null
       }
       if (updates.completed_at !== undefined) {
         whitelistedUpdates.completed_at = updates.completed_at ? new Date(updates.completed_at).toISOString() : null
@@ -606,7 +609,7 @@ export class WorkOrderService {
         })
         .eq("id", workOrderId)
 
-      return { success: true }
+      return { success: true, updates: whitelistedUpdates }
     } catch (error) {
       console.error("Error updating work order:", error)
       return { success: false, error: error instanceof Error ? error.message : "Failed to update work order" }

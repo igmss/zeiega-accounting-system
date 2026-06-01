@@ -147,7 +147,7 @@ export async function PUT(request: Request) {
       )
     }
 
-    return NextResponse.json({ id, ...workOrderData, updatedAt: new Date().toISOString() })
+    return NextResponse.json({ id, status: workOrderData.status, success: true })
   } catch (error) {
     console.error("Error updating work order:", error)
     return NextResponse.json(
