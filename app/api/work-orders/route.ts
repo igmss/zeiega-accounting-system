@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WorkOrderService } from "@/lib/services/work-order-service";
 import { OrderItemDesignService } from "@/lib/services/order-item-design-service";
-import { EnhancedAccountingService } from "@/lib/services/enhanced-accounting-service";
+import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service";
 import { getServiceClient, TABLES } from "@/lib/supabase";
 import { requirePermission, requireAuth } from "@/lib/auth/auth-helpers";
 
@@ -119,6 +119,56 @@ export async function PUT(request: Request) {
         }
       } catch (innerErr) {
         console.error("Auto-issue materials failed:", innerErr)
+      }
+    }
+
+    if (workOrderData.status === "completed") {
+      try {
+        const serviceDb = getServiceClient()
+        const { data: wo } = await serviceDb.from(TABLES.WORK_ORDERS).select("*").eq("id", id).single()
+
+        if (wo) {
+          const woTotalCost = wo.total_cost || 0
+          if (woTotalCost > 0) {
+            const wipLines: any[] = []
+
+            const matIssued = Array.isArray(wo.materials_issued) ? wo.materials_issued : []
+            const matCost = matIssued.reduce((s: number, m: any) => s + (m.totalCost || m.quantity * m.unitCost || 0), 0)
+            const ohCost = wo.overhead_cost || 0
+
+            if (matCost > 0) wipLines.push({ accountCode: "1710", accountName: "WIP - Materials", debit: 0, credit: matCost, description: "Materials transferred to FG" })
+            if (wo.labor_cost > 0) wipLines.push({ accountCode: "1711", accountName: "WIP - Labor", debit: 0, credit: wo.labor_cost, description: "Labor transferred to FG" })
+            if (ohCost > 0) wipLines.push({ accountCode: "1712", accountName: "WIP - Overhead", debit: 0, credit: ohCost, description: "Overhead transferred to FG" })
+
+            const totalFG = matCost + (wo.labor_cost || 0) + ohCost
+            wipLines.unshift({ accountCode: "1220", accountName: "Finished Goods Inventory", debit: totalFG, credit: 0, description: `WIP transfer for WO ${id}` })
+
+            await EnhancedAccountingService.createJournalEntry(
+              JournalEntryType.WIP_TO_FINISHED_GOODS, wipLines, `WIP-FG-${id}`, `WIP to FG for WO ${id}`, null
+            )
+
+            const cogsLines: any[] = [
+              { accountCode: "5301", accountName: "Cost of Goods Sold", debit: woTotalCost, credit: 0, description: `COGS for WO ${id}` },
+              { accountCode: "1220", accountName: "Finished Goods Inventory", debit: 0, credit: woTotalCost, description: `FG consumed for WO ${id}` }
+            ]
+            if (ohCost > 0) {
+              cogsLines.push({ accountCode: "5009", accountName: "Manufacturing OH - Applied", debit: ohCost, credit: 0, description: `Clear applied OH for WO ${id}` })
+              cogsLines.push({ accountCode: "5301", accountName: "Cost of Goods Sold", debit: 0, credit: ohCost, description: `OH portion of COGS for WO ${id}` })
+            }
+
+            await EnhancedAccountingService.createJournalEntry(
+              JournalEntryType.SALES_COGS, cogsLines, `COGS-${id}`, `COGS for WO ${id}`, null
+            )
+
+            await serviceDb.from(TABLES.WORK_ORDERS).update({
+              completed_at: new Date().toISOString(),
+              total_cost: woTotalCost,
+              updated_at: new Date().toISOString()
+            }).eq("id", id)
+          }
+        }
+      } catch (innerErr) {
+        console.error("Auto-complete JE failed:", innerErr)
       }
     }
 
