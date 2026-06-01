@@ -151,53 +151,57 @@ export class WorkOrderMaterialService {
     error?: string;
   }> {
     try {
-      console.log(`Completing work order ${workOrderId} for design ${designId}`);
+      console.log(`[DEBUG:CWO:START] workOrderId=${workOrderId}, designId=${designId}, quantity=${quantity}`);
 
-      // Get work order
-      const { data: workOrderDoc } = await getServiceSupabase()
+      const { data: workOrderDoc, error: woFetchErr } = await getServiceSupabase()
         .from(TABLES.WORK_ORDERS)
         .select("*")
         .eq("id", workOrderId)
         .single();
 
+      if (woFetchErr) {
+        console.error(`[DEBUG:CWO:FETCH] error: ${woFetchErr.message}`);
+        throw new Error(`Failed to fetch work order: ${woFetchErr.message}`);
+      }
       if (!workOrderDoc) {
+        console.error(`[DEBUG:CWO:FETCH] work order not found`);
         throw new Error("Work order not found");
       }
 
       const workOrderData = workOrderDoc;
+      console.log(`[DEBUG:CWO:WO] status=${workOrderData.status}, total_cost=${workOrderData.total_cost}, estimated_cost=${workOrderData.estimated_cost}, labor_cost=${workOrderData.labor_cost}, overhead_cost=${workOrderData.overhead_cost}, material_cost=${workOrderData.material_cost}`);
+      console.log(`[DEBUG:CWO:WO] materials_issued=${JSON.stringify(workOrderData.materials_issued)}`);
       
-      // Per IAS 2.10 / EAS 2: WIP→FG transfer at ACTUAL cost, never at estimated cost
-      // 1. Check materials_issued array (formal issue path from service)
       let totalCost = (workOrderData?.materials_issued || []).reduce((sum: number, material: any) => 
         sum + (material.totalCost || 0), 0);
+      console.log(`[DEBUG:CWO:COST] from materials_issued: ${totalCost}`);
       
-      // 2. Fallback to total_cost field (set by update-materials route)
       if (totalCost <= 0) {
         totalCost = workOrderData?.total_cost || 0;
+        console.log(`[DEBUG:CWO:COST] fallback to total_cost: ${totalCost}`);
       }
 
-      // 3. Fallback to computed from individual cost fields
       if (totalCost <= 0) {
         totalCost = (workOrderData?.material_cost || 0) + 
                     (workOrderData?.labor_cost || 0) + 
                     (workOrderData?.overhead_cost || 0);
+        console.log(`[DEBUG:CWO:COST] fallback to material+labor+overhead: ${totalCost}`);
       }
 
-      // 4. Do NOT fallback to estimated_cost — that creates phantom WIP credits
-      //    per IAS 2.9 (lower of cost and NRV). If no actual cost exists, skip transfer.
+      console.log(`[DEBUG:CWO:COST] final totalCost=${totalCost}`);
 
-      // Create journal entry for completion (WIP → Finished Goods) BEFORE updating status
-      // This ensures atomicity: if accounting fails, the WO stays in_progress
       let journalEntryId: string | undefined = undefined;
       
       if (totalCost > 0) {
+        console.log(`[DEBUG:CWO:JE] calling recordWIPToFinishedGoods with totalCost=${totalCost}`);
         const accountingResult = await EnhancedAccountingService.recordWIPToFinishedGoods(
           workOrderId,
           totalCost
         );
 
+        console.log(`[DEBUG:CWO:JE] result: success=${accountingResult.success}, entryId=${accountingResult.entryId}, error=${accountingResult.error || 'none'}`);
         if (!accountingResult.success) {
-          console.error(`❌ WIP→FG accounting failed for WO ${workOrderId}: ${accountingResult.error}`);
+          console.error(`[DEBUG:CWO:JE] FAILED: ${accountingResult.error}`);
           return {
             success: false,
             error: `WIP→FG transfer failed: ${accountingResult.error}`
@@ -205,12 +209,11 @@ export class WorkOrderMaterialService {
         }
         journalEntryId = accountingResult.entryId;
       } else {
-        console.warn(`⚠️ Work order ${workOrderId} has no actual costs recorded. Skipping WIP→FG journal entry.`);
-        console.warn(`   materials_issued: empty, total_cost: 0, material/labor/overhead costs all zero.`);
+        console.warn(`[DEBUG:CWO:JE] SKIPPED — totalCost is 0, no WIP→FG JE created`);
       }
 
-      // Update work order status ONLY after successful accounting
-      await getServiceSupabase()
+      console.log(`[DEBUG:CWO:UPDATE] setting status=completed, total_cost=${totalCost}`);
+      const { error: updateErr } = await getServiceSupabase()
         .from(TABLES.WORK_ORDERS)
         .update({
           status: "completed",
@@ -223,9 +226,12 @@ export class WorkOrderMaterialService {
         })
         .eq("id", workOrderId);
 
+      if (updateErr) {
+        console.error(`[DEBUG:CWO:UPDATE] FAILED: ${updateErr.message}`);
+        throw new Error(`Status update failed: ${updateErr.message}`);
+      }
 
-      console.log(`✅ Successfully completed work order ${workOrderId}`);
-
+      console.log(`[DEBUG:CWO:END] success, journalEntryId=${journalEntryId}`);
       return {
         success: true,
         journalEntryId

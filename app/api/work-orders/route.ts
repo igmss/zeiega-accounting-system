@@ -62,80 +62,105 @@ export async function PUT(request: Request) {
         const serviceDb = getServiceClient()
         const { data: wo } = await serviceDb.from(TABLES.WORK_ORDERS).select("*").eq("id", id).maybeSingle()
 
+        console.log(`[DEBUG:PUT:START] WO ${id} — status=${workOrderData.status}`)
+        console.log(`[DEBUG:PUT:WO] design_id=${wo?.design_id}, items=${JSON.stringify(wo?.items)}, quantity=${wo?.quantity}`)
+        console.log(`[DEBUG:PUT:WO] materials_issued=${JSON.stringify(wo?.materials_issued)}, raw_materials_used=${JSON.stringify(wo?.raw_materials_used)}`)
+        console.log(`[DEBUG:PUT:WO] total_cost=${wo?.total_cost}, labor_cost=${wo?.labor_cost}, overhead_cost=${wo?.overhead_cost}`)
+
         if (!wo) {
+          console.log(`[DEBUG:PUT:WO] WO not found in DB`)
           return NextResponse.json({ id, status: workOrderData.status, success: true })
         }
 
         const alreadyIssued = Array.isArray(wo.materials_issued) && wo.materials_issued.length > 0
         if (alreadyIssued) {
-          console.log(`Materials already issued for WO ${id}, skipping auto-issue`)
+          console.log(`[DEBUG:PUT:GUARD] materials_issued already has ${wo.materials_issued.length} entries, skipping`)
           return NextResponse.json({ id, status: workOrderData.status, success: true, message: "Materials already issued" })
         }
 
         let materialsToIssue: any[] = []
 
         if (wo.design_id) {
-          const { data: design } = await serviceDb.from(TABLES.DESIGNS).select("materials").eq("id", wo.design_id).maybeSingle()
+          const { data: design, error: designErr } = await serviceDb.from(TABLES.DESIGNS).select("id,materials").eq("id", wo.design_id).maybeSingle()
+          console.log(`[DEBUG:PUT:DESIGN] lookup for ${wo.design_id}: found=${!!design}, error=${designErr?.message || 'none'}`)
           if (design?.materials) {
             const mats = Array.isArray(design.materials) ? design.materials : []
+            console.log(`[DEBUG:PUT:DESIGN] materials count=${mats.length}, raw=${JSON.stringify(mats).substring(0, 300)}`)
             const orderQty = wo.items?.[0]?.quantity || wo.items?.[0]?.qty || wo.quantity || 1
+            console.log(`[DEBUG:PUT:QTY] orderQty=${orderQty} (items[0].quantity=${wo.items?.[0]?.quantity}, items[0].qty=${wo.items?.[0]?.qty}, wo.quantity=${wo.quantity})`)
             materialsToIssue = mats.map((m: any) => ({
               materialId: m.inventoryItemId || m.itemId || m.id,
               quantity: (m.quantityPerUnit || m.quantityRequired || 0) * orderQty,
             })).filter((m: any) => m.materialId && m.quantity > 0)
+            console.log(`[DEBUG:PUT:DESIGN] resolved materialsToIssue=${materialsToIssue.length} items: ${JSON.stringify(materialsToIssue)}`)
             if (materialsToIssue.length === 0 && mats.length > 0) {
-              console.warn(`Design ${wo.design_id} has ${mats.length} materials but none resolved to valid materialId or quantity > 0`)
+              console.warn(`[DEBUG:PUT:DESIGN] ${mats.length} materials but all filtered — check quantityPerUnit/quantityRequired > 0 and inventoryItemId is set`)
             }
+          } else {
+            console.log(`[DEBUG:PUT:DESIGN] design ${wo.design_id} exists but has no materials array`)
           }
+        } else {
+          console.log(`[DEBUG:PUT:DESIGN] WO has no design_id`)
         }
 
         if (materialsToIssue.length === 0 && wo.raw_materials_used) {
           const rawUsed = Array.isArray(wo.raw_materials_used) ? wo.raw_materials_used : []
+          console.log(`[DEBUG:PUT:RAW] raw_materials_used has ${rawUsed.length} entries: ${JSON.stringify(rawUsed)}`)
           materialsToIssue = rawUsed.map((m: any) => ({
             materialId: m.item_id || m.itemId || m.materialId || m.inventoryItemId,
             quantity: m.qty || m.quantity || 0,
           })).filter((m: any) => m.materialId && m.quantity > 0)
+          console.log(`[DEBUG:PUT:RAW] resolved from raw_materials_used: ${materialsToIssue.length} items`)
         }
 
-          if (materialsToIssue.length > 0) {
-            const accountingMaterials: any[] = []
-            const inventoryRefs: Array<{ id: string; qty: number }> = []
+        if (materialsToIssue.length > 0) {
+          const accountingMaterials: any[] = []
+          const inventoryRefs: Array<{ id: string; qty: number }> = []
 
-            for (const mat of materialsToIssue) {
-              const { data: invData } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("*").or(`id.eq.${mat.materialId},sku.eq.${mat.materialId}`).limit(1).maybeSingle()
-              if (invData) {
-                const uc = invData.cost_per_unit || 0
-                accountingMaterials.push({ itemId: invData.id, itemName: invData.name, quantity: mat.quantity, unitCost: uc })
-                inventoryRefs.push({ id: invData.id, qty: mat.quantity })
-              }
+          for (const mat of materialsToIssue) {
+            console.log(`[DEBUG:PUT:INV] looking up inventory for materialId=${mat.materialId}, qty=${mat.quantity}`)
+            const { data: invData, error: invErr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("*").or(`id.eq.${mat.materialId},sku.eq.${mat.materialId}`).limit(1).maybeSingle()
+            console.log(`[DEBUG:PUT:INV] result: found=${!!invData}, error=${invErr?.message || 'none'}, name=${invData?.name}, cost_per_unit=${invData?.cost_per_unit}`)
+            if (invData) {
+              const uc = invData.cost_per_unit || 0
+              accountingMaterials.push({ itemId: invData.id, itemName: invData.name, quantity: mat.quantity, unitCost: uc })
+              inventoryRefs.push({ id: invData.id, qty: mat.quantity })
             }
+          }
 
-            if (accountingMaterials.length > 0) {
-              const accResult = await EnhancedAccountingService.recordMaterialIssue(id, accountingMaterials)
-              if (accResult.success) {
-                const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
-                await serviceDb.from(TABLES.WORK_ORDERS).update({
-                  raw_materials_used: materialsToIssue,
-                  materials_issued: accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost })),
-                  total_cost: totalMC + (wo.overhead_cost || 0),
-                  updated_at: new Date().toISOString()
-                }).eq("id", id)
+          if (accountingMaterials.length > 0) {
+            console.log(`[DEBUG:PUT:ACC] recording material issue: ${JSON.stringify(accountingMaterials)}`)
+            const accResult = await EnhancedAccountingService.recordMaterialIssue(id, accountingMaterials)
+            console.log(`[DEBUG:PUT:ACC] recordMaterialIssue result: success=${accResult.success}, entryId=${accResult.entryId}, error=${accResult.error}`)
+            if (accResult.success) {
+              const totalMC = accountingMaterials.reduce((s: number, m: any) => s + (m.quantity * m.unitCost), 0)
+              const issuedPayload = accountingMaterials.map((m: any) => ({ itemId: m.itemId, itemName: m.itemName, quantity: m.quantity, unitCost: m.unitCost, totalCost: m.quantity * m.unitCost }))
+              console.log(`[DEBUG:PUT:WO:UPDATE] setting total_cost=${totalMC + (wo.overhead_cost || 0)}, materials_issued=${JSON.stringify(issuedPayload)}`)
+              await serviceDb.from(TABLES.WORK_ORDERS).update({
+                raw_materials_used: materialsToIssue,
+                materials_issued: issuedPayload,
+                total_cost: totalMC + (wo.overhead_cost || 0),
+                updated_at: new Date().toISOString()
+              }).eq("id", id)
 
-                for (const inv of inventoryRefs) {
-                  const { data: curr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", inv.id).maybeSingle()
-                  if (curr) {
-                    await serviceDb.from(TABLES.INVENTORY_ITEMS).update({ quantity_on_hand: Math.max(0, (curr.quantity_on_hand || 0) - inv.qty) }).eq("id", inv.id)
-                  }
+              for (const inv of inventoryRefs) {
+                const { data: curr } = await serviceDb.from(TABLES.INVENTORY_ITEMS).select("quantity_on_hand").eq("id", inv.id).maybeSingle()
+                if (curr) {
+                  await serviceDb.from(TABLES.INVENTORY_ITEMS).update({ quantity_on_hand: Math.max(0, (curr.quantity_on_hand || 0) - inv.qty) }).eq("id", inv.id)
                 }
               }
             } else {
-              console.warn(`Auto-issue for WO ${id}: ${materialsToIssue.length} materials resolved, but none matched inventory items`)
+              console.error(`[DEBUG:PUT:ACC] FAILED to create material issue JE: ${accResult.error}`)
             }
           } else {
-            console.log(`Auto-issue for WO ${id}: no materials to issue (design_id=${wo.design_id || 'none'}, raw_materials_used=${wo.raw_materials_used ? 'present' : 'none'})`)
+            console.warn(`[DEBUG:PUT:INV] ${materialsToIssue.length} materials resolved but NONE matched inventory items`)
           }
+        } else {
+          console.log(`[DEBUG:PUT:SKIP] no materials to auto-issue — design_id=${wo.design_id || 'none'}, raw_materials_used=${wo.raw_materials_used ? JSON.stringify(wo.raw_materials_used).substring(0, 100) : 'none'}, items=${JSON.stringify(wo.items).substring(0, 100)}`)
+        }
+        console.log(`[DEBUG:PUT:END] WO ${id} — done`)
       } catch (innerErr) {
-        console.error("Auto-issue materials failed:", innerErr)
+        console.error("[DEBUG:PUT:ERROR]", innerErr)
       }
     }
 
