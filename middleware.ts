@@ -111,6 +111,8 @@ function isProtectedPage(pathname: string): boolean {
         "/variance",
         "/overhead",
         "/year-end-close",
+        "/users",
+        "/settings",
     ]
     return pathname === "/" || protectedPages.some((p) => pathname.startsWith(p))
 }
@@ -281,7 +283,7 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    // Verify JWT using next-auth getToken (works with both Firebase and Supabase Credentials providers)
+    // Verify JWT using next-auth getToken (Supabase Credentials provider)
     // The JWT is signed with NEXTAUTH_SECRET or MIDDLEWARE_SECRET
     let token = null
     try {
