@@ -327,13 +327,13 @@ export class SalesAccountingService {
                 const { data: current } = await client
                     .from(TABLES.INVENTORY_ITEMS)
                     .select("quantity_on_hand")
-                    .eq("id", item.sku)
+                    .eq("sku", item.sku)
                     .maybeSingle()
                 const newQty = (current?.quantity_on_hand ?? 0) + item.quantity
                 await client
                     .from(TABLES.INVENTORY_ITEMS)
                     .update({ quantity_on_hand: newQty, updated_at: new Date().toISOString() })
-                    .eq("id", item.sku)
+                    .eq("sku", item.sku)
             }
 
             return { success: true, creditMemoId }
@@ -358,7 +358,7 @@ export class SalesAccountingService {
             .maybeSingle()
 
         if (existingSO) {
-            console.log(`ℹ️ Sales order ${salesOrderId} already exists, skipping`)
+            console.warn(`⚠️ Sales order ${salesOrderId} already exists — skipping. Review if order items changed upstream.`)
             return
         }
 

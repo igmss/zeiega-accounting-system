@@ -272,12 +272,9 @@ export class FinancialStatementsService {
         const currentLiabilitiesTotal = currentLiabilityItems.reduce((sum, item) => sum + item.amount, 0)
         const longTermLiabilitiesTotal = longTermLiabilityItems.reduce((sum, item) => sum + item.amount, 0)
 
-        const cogsItems = await this.getAccountBalancesByType(AccountType.COGS, undefined, asOfDate)
-        const cogsCreditTotal = cogsItems
-            .filter(item => !isDebitNormalBalance(item.code) && item.amount > 0)
-            .reduce((sum, item) => sum + item.amount, 0)
-
-        const totalLiabilities = currentLiabilitiesTotal + longTermLiabilitiesTotal + cogsCreditTotal
+        // NOTE: COGS credit-balance accounts (5009 OH-Applied, 5011 OH-Variance) are contra-COGS,
+        // not liabilities. Including them inflates the liability side of the balance sheet.
+        const totalLiabilities = currentLiabilitiesTotal + longTermLiabilitiesTotal
 
         const equityItems = await this.getAccountBalancesByType(AccountType.EQUITY, undefined, asOfDate)
 

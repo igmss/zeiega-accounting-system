@@ -326,7 +326,7 @@ export class OverheadService {
         JournalEntryType.GENERAL,
         [
           { accountCode: ACCOUNT_CODES.OH_VARIANCE, accountName: getAccountName(ACCOUNT_CODES.OH_VARIANCE), debit: isOver ? 0 : absV, credit: isOver ? absV : 0, description: "OH variance isolated" },
-          { accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD, accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD), debit: isOver ? absV : 0, credit: isOver ? 0 : absV, description: `Dispose OH variance to COGS` },
+          { accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD, accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD), debit: isOver ? 0 : absV, credit: isOver ? absV : 0, description: `Dispose ${isOver ? "over" : "under"}-applied OH to COGS` },
         ],
         refDoc, `${isOver ? "Over" : "Under"}-applied OH ${formatCurrency(absV)} -> COGS`, userId, endDate
       )

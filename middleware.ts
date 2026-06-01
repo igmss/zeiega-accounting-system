@@ -254,13 +254,9 @@ export async function middleware(request: NextRequest) {
         const rateLimit = await checkRateLimit(ip)
 
         if (!rateLimit.redisAvailable) {
-            const response = NextResponse.json(
-                { success: false, error: "Service temporarily unavailable" },
-                { status: 503 }
-            )
-            response.headers.set("Retry-After", "30")
-            response.headers.set("X-RateLimit-Warning", "Redis unavailable")
-            return response
+            // BUG-07: Fail-open when Redis is unavailable — don't block all traffic.
+            // Log the outage and allow the request through without rate limiting.
+            console.warn("Rate limiter: Redis unavailable, allowing request without rate limiting")
         }
 
         rateLimitInfo = { remaining: rateLimit.remaining, reset: rateLimit.reset }

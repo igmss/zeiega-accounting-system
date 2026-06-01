@@ -427,7 +427,7 @@ export class EnhancedAccountingService {
 
             let query = client
                 .from(TABLES.JOURNAL_ENTRY_LINES)
-                .select(TABLES.JOURNAL_ENTRIES === null ? "debit, credit" : "debit, credit, journal_entries!inner(date)")
+                .select("debit, credit, journal_entries!inner(date)")
                 .eq("account_code", accountCode)
 
             if (startDate) {
@@ -566,7 +566,8 @@ export class EnhancedAccountingService {
             const wipValue = (workOrders || []).reduce((sum: any, wo: any) => {
                 const materialCost = (wo.raw_materials_used as any[])?.reduce((matSum, mat) => matSum + (mat.qty * (mat.cost || 0)), 0) || 0
                 const laborCost = wo.labor_cost || 0
-                return sum + materialCost + laborCost
+                const overheadCost = wo.overhead_cost || 0
+                return sum + materialCost + laborCost + overheadCost
             }, 0)
 
             return {

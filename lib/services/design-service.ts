@@ -468,11 +468,11 @@ export class DesignService {
     const matsCost = (design.materials || []).reduce((sum: number, m: any) =>
       sum + ((m.quantityPerUnit || 0) * (m.costPerUnit || 0)), 0)
     const materialCost = matsCost || design.materialCost || 0;
-    const laborCostPerHour = design.laborCost || 0;
-    const manufacturingTime = design.manufacturingTime || 0;
+    // BUG-08: laborCost is a total cost field, not a per-hour rate.
+    // Do NOT multiply by manufacturingTime — that double-counts labor.
+    const laborCost = design.laborCost || 0;
     const overheadCost = design.overheadCost || 0;
-    const totalLaborCost = laborCostPerHour * manufacturingTime;
-    return materialCost + totalLaborCost + overheadCost;
+    return materialCost + laborCost + overheadCost;
   }
 
   static async migrateToSizeCosts(designId: string): Promise<boolean> {

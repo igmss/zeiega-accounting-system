@@ -1,5 +1,5 @@
 import { supabase, TABLES, getServiceSupabase } from "../supabase"
-import { isDebitNormalBalance } from "../accounting/account-types"
+import { isDebitNormalBalance, CHART_OF_ACCOUNTS } from "../accounting/account-types"
 
 export enum JournalEntryType {
     MATERIAL_RECEIPT = "MATERIAL_RECEIPT",
@@ -81,11 +81,22 @@ export class JournalEntryService {
             const periodId = `FY-${entryYear}-${String(entryMonth).padStart(2, "0")}`
 
             const client = getServiceSupabase()
+            // BUG-14: Validate all account codes exist in Chart of Accounts
+            for (const line of lines) {
+                if (!CHART_OF_ACCOUNTS[line.accountCode]) {
+                    return {
+                        success: false,
+                        error: `Invalid account code: ${line.accountCode} (${line.accountName}) — not found in Chart of Accounts`
+                    }
+                }
+            }
+
+            // BUG-17: Use maybeSingle() so missing periods don't throw (treat as open)
             const { data: period } = await client
                 .from(TABLES.FISCAL_PERIODS)
                 .select("status")
                 .eq("id", periodId)
-                .single()
+                .maybeSingle()
 
             if (period && (period.status === "closed" || period.status === "locked")) {
                 if (entryType !== JournalEntryType.CLOSING_ENTRY) {
@@ -226,6 +237,36 @@ export class JournalEntryService {
                         is_posted: false,
                     })
                     .eq("id", entryId)
+
+                // BUG-16: Update account balance cache for the voided entry's lines.
+                // The reversing entry already updated balances in createJournalEntry above,
+                // but we must also reverse the original entry's line contributions.
+                const entryDate = (entry as any).date ? new Date((entry as any).date) : new Date()
+                for (const line of existingLines) {
+                    const l = line as any
+                    const { data: currentBal } = await client
+                        .from(TABLES.ACCOUNT_BALANCES)
+                        .select("total_debits, total_credits")
+                        .eq("account_code", l.account_code)
+                        .maybeSingle()
+
+                    const revDebits = (currentBal?.total_debits || 0) - (l.debit || 0) + (l.credit || 0)
+                    const revCredits = (currentBal?.total_credits || 0) - (l.credit || 0) + (l.debit || 0)
+                    const isDebit = isDebitNormalBalance(l.account_code)
+                    const balance = isDebit ? revDebits - revCredits : revCredits - revDebits
+
+                    const periodStart = new Date(entryDate.getFullYear(), entryDate.getMonth(), 1).toISOString().split("T")[0]
+                    const periodEnd = new Date(entryDate.getFullYear(), entryDate.getMonth() + 1, 0).toISOString().split("T")[0]
+
+                    await client.from(TABLES.ACCOUNT_BALANCES).upsert({
+                        account_code: l.account_code,
+                        period_start: periodStart,
+                        period_end: periodEnd,
+                        total_debits: revDebits,
+                        total_credits: revCredits,
+                        closing_balance: balance,
+                    }, { onConflict: "account_code, period_end" })
+                }
             }
 
             return {

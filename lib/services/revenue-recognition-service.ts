@@ -389,15 +389,15 @@ export class RevenueRecognitionService {
           JournalEntryType.GENERAL,
           [
             {
-              accountCode: "7002",
-              accountName: "Loss on Onerous Contract",
+              accountCode: ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE,
+              accountName: getAccountName(ACCOUNT_CODES.REWORK_SPOILAGE_EXPENSE),
               debit: expectedLoss,
               credit: 0,
               description: `Expected loss on contract ${contractId}`,
             },
             {
-              accountCode: "2150",
-              accountName: "Provision for Onerous Contract",
+              accountCode: ACCOUNT_CODES.PROVISION_ONEROUS_CONTRACTS,
+              accountName: getAccountName(ACCOUNT_CODES.PROVISION_ONEROUS_CONTRACTS),
               debit: 0,
               credit: expectedLoss,
               description: `Onerous contract provision per IAS 37`,

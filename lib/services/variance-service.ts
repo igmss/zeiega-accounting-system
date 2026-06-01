@@ -125,12 +125,14 @@ export class VarianceService {
       const laborEfficiencyVariance = sq.standardDLRate * (actualHours - standardHours)
 
       const actualVOH = wo.overhead_cost || 0
-      const actualFOH = 0
+      // Fetch actual FOH from work order document (populated at period-end)
+      const actualFOH = (wo.actual_foh as number) || 0
       const budgetedFOHPerJob = sq.standardFOHRate * standardHours
 
       const vohSpendingVariance = actualVOH - (sq.standardVOHRate * actualHours)
       const vohEfficiencyVariance = sq.standardVOHRate * (actualHours - standardHours)
-      const fohBudgetVariance = actualFOH - sq.budgetedFOH
+      // Budget variance: actual FOH incurred vs. budgeted allocation for this job
+      const fohBudgetVariance = actualFOH - budgetedFOHPerJob
       const fohVolumeVariance = sq.budgetedFOH - (sq.standardFOHRate * standardHours)
 
       const totalMaterialVariance = materialPriceVariance + materialUsageVariance
