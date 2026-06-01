@@ -230,7 +230,7 @@ export class EnhancedAccountingService {
         notes?: string,
         userId: string | null = null,
         customDate?: Date,
-        tx?: FirebaseFirestore.Transaction,
+        tx?: unknown,
         metadata?: Record<string, unknown>
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         return JournalEntryService.createJournalEntry(entryType, lines, referenceDoc, notes, userId, customDate, tx, metadata)
@@ -294,7 +294,7 @@ export class EnhancedAccountingService {
     static async recordWIPToFinishedGoods(
         workOrderId: string,
         totalCost: number,
-        tx?: FirebaseFirestore.Transaction
+        tx?: unknown
     ): Promise<{ success: boolean; entryId?: string; error?: string }> {
         return ManufacturingAccountingService.recordWIPToFinishedGoods(workOrderId, totalCost, tx)
     }

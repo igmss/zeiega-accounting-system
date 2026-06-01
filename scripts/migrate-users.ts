@@ -1,17 +1,17 @@
 /**
- * Migrate users from Firestore `erp_users` → Supabase Auth + `erp_user_profiles`
+ * HISTORICAL: One-time migration script (ALREADY EXECUTED)
  *
- * Prerequisites:
- *   1. Firebase env vars in .env.local (for reading old Firestore)
- *   2. Supabase env vars in .env.local: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
- *   3. SQL migrations already applied (erp_user_profiles table must exist)
+ * Migrated users from Firestore `erp_users` → Supabase Auth + `erp_user_profiles`.
+ * This script no longer runs because `lib/firebase.ts` and `firebase-admin` have
+ * been removed from the project. Retained for reference only.
  *
- * Run: npx ts-node --require dotenv/config scripts/migrate-users.ts
+ * Original run command: npx ts-node --require dotenv/config scripts/migrate-users.ts
  */
 
 import dotenv from "dotenv"
 dotenv.config({ path: ".env.local" })
-import { db } from "../lib/firebase"
+// @ts-ignore — historical script, firebase-admin package no longer installed
+// import { db } from "../lib/firebase"
 import { createClient } from "@supabase/supabase-js"
 import ws from "ws"
 import * as crypto from "crypto"

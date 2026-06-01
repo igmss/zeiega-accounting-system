@@ -10,7 +10,7 @@ Manufacturing ERP system for Make-to-Order (MTO) garment production — "TEL U A
 | Language | TypeScript 5.9 (strict) |
 | Styling | Tailwind CSS v4 + shadcn/ui |
 | Auth | next-auth v4 (Credentials + JWT, 6 roles) |
-| Database | Firebase Firestore (Admin SDK) |
+| Database | Supabase PostgreSQL |
 | Rate Limiting | Upstash Redis |
 | Charts | Recharts |
 | Validation | Zod + react-hook-form |
@@ -24,7 +24,7 @@ npm install
 
 # Copy environment variables
 cp .env.example .env.local
-# Fill in .env.local with your Firebase and Upstash credentials
+# Fill in .env.local with your Supabase and Upstash credentials
 
 # Run development server
 npm run dev
@@ -35,7 +35,7 @@ npm run dev
 
 See `.env.example` for the full list. Required:
 - `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
-- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SECRET_KEY`
 - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` (optional, for rate limiting)
 
 ## Features

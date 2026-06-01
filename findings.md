@@ -42,12 +42,15 @@ Website Orders → Webhook → Sales Orders → Work Orders → Material/Labor/O
 5001 = Raw Materials Used (component)
 5301 = Cost of Goods Sold (aggregate, the one that should be used for sales entries)
 
-## Journal Entry Collection
-Stored in `acc_journal_entries` with `account_ids` array for indexing.
-Structure: { id, date, type, reference_doc, entries[], account_ids[], total_debits, total_credits }
+## Journal Entry Table
+Stored in Supabase `journal_entries` table.
+Structure: { id, date, type, reference_doc, entries (JSONB), total_debits, total_credits }
 
-## Firestore Collections (all prefixed acc_):
-acc_customers, acc_chart_of_accounts, acc_journal_entries, acc_sales_orders,
-acc_work_orders, acc_inventory_items, acc_inventory_movements, acc_invoices,
-acc_payments, acc_assets, acc_designs, acc_bom, acc_vendors,
-acc_purchase_orders, acc_fiscal_years, acc_fiscal_periods, acc_manual_orders
+## Supabase Tables
+customers, chart_of_accounts, journal_entries, journal_entry_lines,
+sales_orders, work_orders, inventory_items, inventory_movements, invoices,
+payments, assets, designs, bom, vendors, purchase_orders, fiscal_years,
+fiscal_periods, manual_orders, inventory_layers, scrap_records, rework_orders,
+change_orders, retention_schedules, budget_lines, account_balances,
+overhead_config, standard_costs, contracts, revenue_recognition,
+exchange_rates, orders, returns, products, website_users, erp_user_profiles

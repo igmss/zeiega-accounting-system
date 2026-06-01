@@ -67,7 +67,7 @@ export interface WorkOrder {
   created_at: string
   completed_at?: string | null
   updated_at?: string
-  completionPercentage?: number
+  completion_percentage?: number
   assigned_worker?: string
   start_time?: string | null
   estimated_completion?: string | null

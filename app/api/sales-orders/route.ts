@@ -273,7 +273,7 @@ export async function PUT(request: Request) {
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
-              completionPercentage: 0,
+              completion_percentage: 0,
               raw_materials_used: [],
               materials_issued: [],
               labor_hours: 0,

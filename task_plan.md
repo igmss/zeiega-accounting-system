@@ -59,7 +59,7 @@ All critical bugs fixed, 5 new services created, zero TypeScript errors.
 ## Decisions Log
 | Decision | Rationale |
 |----------|-----------|
-| Keep Firestore as sole DB | Migration to SQL out of scope |
+| Migrated from Firestore to Supabase PostgreSQL | Completed — `lib/firebase.ts` removed, `lib/supabase.ts` is now the sole DB access layer |
 | Fix bugs before adding features | Stability first |
 | Preserve backward compatibility | No breaking API changes |
 | COGS → 5301 (Cost of Goods Sold) | 5001 was Raw Materials Used — component, not aggregate |

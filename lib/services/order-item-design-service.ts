@@ -335,7 +335,7 @@ export class OrderItemDesignService {
         status: "pending",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        completionPercentage: 0,
+        completion_percentage: 0,
         notes: `Auto-generated work order with design-based costs (${formatCurrency(costCalculation.totalEstimatedCost)})`,
         items: orderItems,
         item_costs: costCalculation.itemCosts,

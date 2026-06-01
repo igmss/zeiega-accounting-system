@@ -57,7 +57,7 @@ export class WorkOrderService {
         status: "pending",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        completionPercentage: 0,
+        completion_percentage: 0,
         notes: `Work order for design: ${design.name} (${quantity} units)`,
         customer_name: additionalData.customer_name || undefined,
         customer_email: additionalData.customer_email || undefined,
@@ -465,7 +465,7 @@ export class WorkOrderService {
     try {
       const whitelistedUpdates: Record<string, any> = {}
       if (updates.status !== undefined) whitelistedUpdates.status = updates.status
-      if (updates.completionPercentage !== undefined) whitelistedUpdates.completionPercentage = updates.completionPercentage
+      if (updates.completionPercentage !== undefined) whitelistedUpdates.completion_percentage = updates.completionPercentage
       if (updates.notes !== undefined) whitelistedUpdates.notes = updates.notes
       if (updates.assigned_worker !== undefined) whitelistedUpdates.assigned_worker = updates.assigned_worker
       if (updates.estimated_completion !== undefined) {
@@ -515,7 +515,7 @@ export class WorkOrderService {
         total_cost: workOrderData.total_cost || 0,
         estimated_cost: workOrderData.estimated_cost || 0,
         status: workOrderData.status || "pending",
-        completionpercentage: workOrderData.completionPercentage || workOrderData.completionpercentage || 0,
+        completion_percentage: workOrderData.completionPercentage || workOrderData.completion_percentage || 0,
         assigned_worker: workOrderData.assigned_worker || undefined,
         start_time: workOrderData.start_time || null,
         estimated_completion: workOrderData.estimated_completion || null,

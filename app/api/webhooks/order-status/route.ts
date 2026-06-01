@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
             const workOrder = {
               sales_order_id: orderId,
               status: "pending",
-              completionPercentage: 0,
+              completion_percentage: 0,
               raw_materials_used: [],
               materials_issued: [],
               overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.overheadCost || 0), 0),
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
             const basicWorkOrder = {
               sales_order_id: orderId,
               status: "pending",
-              completionPercentage: 0,
+              completion_percentage: 0,
               raw_materials_used: [],
               materials_issued: [],
               overhead_cost: 0,
@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
           await serviceDb.from(TABLES.WORK_ORDERS).insert({
             sales_order_id: orderId,
             status: "pending",
-            completionPercentage: 0,
+            completion_percentage: 0,
             raw_materials_used: [],
             materials_issued: [],
             overhead_cost: 0,

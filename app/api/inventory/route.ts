@@ -122,8 +122,7 @@ export async function PUT(request: Request) {
 
     const item = {
       ...itemData,
-      updatedAt: new Date().toISOString(),
-      lastUpdated: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }
 
     await getServiceClient()
@@ -143,7 +142,7 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const auth = await requirePermission("inventory:create")
+  const auth = await requirePermission("inventory:delete")
   if (!auth.authorized) return auth.response
   try {
     const { searchParams } = new URL(request.url)

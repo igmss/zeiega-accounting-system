@@ -19,13 +19,13 @@ npm run test -- --testPathPattern=overhead  # Run a single test file by pattern
 
 ### Data Layer
 
-- **Firebase Firestore** via Admin SDK (`lib/firebase.ts`). All collection names use an `acc_` prefix (e.g. `acc_journal_entries`, `acc_sales_orders`). Two external collections share the same database without the prefix: `orders` (website orders) and `products`.
-- There is **no ORM**. All DB access goes through service classes in `lib/services/` that import `{ db, COLLECTIONS }` from `lib/firebase.ts`.
-- Account balances are **not cached**. Financial reports derive balances live from journal entries by scanning `COLLECTIONS.JOURNAL_ENTRIES` filtered by `account_ids` array-contains. `CentralizedAccountingService.syncAccountBalance` is deprecated.
+- **Supabase PostgreSQL** via `@supabase/supabase-js` (`lib/supabase.ts`). All table names are defined in the `TABLES` constant (e.g. `TABLES.JOURNAL_ENTRIES`, `TABLES.SALES_ORDERS`). Two external tables share the same database without the `acc_` prefix: `orders` (website orders) and `products`.
+- There is **no ORM**. All DB access goes through service classes in `lib/services/` that import `{ db, TABLES }` from `lib/supabase.ts`.
+- Account balances are **not cached**. Financial reports derive balances live from journal entries by querying `TABLES.JOURNAL_ENTRIES` via Supabase. `CentralizedAccountingService.syncAccountBalance` is deprecated.
 
 ### Chart of Accounts
 
-The authoritative account definitions live entirely in `lib/accounting/account-types.ts` as the `CHART_OF_ACCOUNTS` constant (static TypeScript, not Firestore). Account codes follow a numeric scheme:
+The authoritative account definitions live entirely in `lib/accounting/account-types.ts` as the `CHART_OF_ACCOUNTS` constant (static TypeScript). Account codes follow a numeric scheme:
 
 | Range | Category |
 |-------|----------|
@@ -56,7 +56,7 @@ Each module is a static class:
 ### Authentication & Middleware
 
 - `next-auth` v4 with Credentials provider. JWT sessions. 6 roles: `admin`, `accountant`, `warehouse`, `sales`, `production`, `viewer` (defined in `lib/auth/user-model.ts`).
-- Users are stored in Firestore `users` collection, not a static file.
+- Users are stored in Supabase Auth + `erp_user_profiles` table, not a static file.
 - `middleware.ts` runs on every non-static request: rate limiting (Upstash Redis, 100 req/60s sliding window), JWT auth check, CORS, security headers. `/api/webhooks` and `/api/health` are public; all other `/api/*` routes are protected.
 
 ### API Routes (`app/api/`)
@@ -71,7 +71,7 @@ Each module is a static class:
 
 ### Testing
 
-Tests live in `__tests__/services/` and `__tests__/validation/`. They use `ts-jest` and run in the Node environment. Firebase is mocked in tests — do not import `lib/firebase.ts` directly in test files.
+Tests live in `__tests__/services/` and `__tests__/validation/`. They use `ts-jest` and run in the Node environment.
 
 Run a single test suite:
 ```bash
