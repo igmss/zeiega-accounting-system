@@ -5,14 +5,15 @@ import { EnhancedAccountingService, ACCOUNTS, JournalEntryType } from "./enhance
 export interface PurchaseOrderItem {
     material_id: string
     material_name: string
+    sku?: string
     item_type: "inventory_raw" | "inventory_accessory" | "equipment" | "supplies"
     quantity: number
     unit: string
     unit_cost: number
     total_cost: number
-    asset_account?: string       // for equipment POs: 1301-1307 or 1401+
-    useful_life_years?: number   // for equipment POs: depreciation life
-    supplies_account?: string    // for supplies POs: 6001-6012
+    asset_account?: string
+    useful_life_years?: number
+    supplies_account?: string
     received_quantity?: number
 }
 
@@ -375,6 +376,7 @@ export class PurchaseOrderService {
                 const itype = poItem?.item_type || "inventory_raw"
 
                 if (itype === "inventory_raw" || itype === "inventory_accessory") {
+                    console.log(`[PO:INV] Looking up inventory for material_id=${recItem.material_id}, qty=${recItem.quantity_received}`)
                     const { data: invItem } = await getServiceSupabase()
                         .from(TABLES.INVENTORY_ITEMS)
                         .select("id, quantity_on_hand, sku, name")
@@ -383,6 +385,7 @@ export class PurchaseOrderService {
                         .maybeSingle()
 
                     if (invItem) {
+                        console.log(`[PO:INV] Found: ${invItem.name} (${invItem.id}), current qty=${invItem.quantity_on_hand}`)
                         const newQty = (invItem.quantity_on_hand || 0) + recItem.quantity_received
                         await getServiceSupabase()
                             .from(TABLES.INVENTORY_ITEMS)
@@ -400,6 +403,8 @@ export class PurchaseOrderService {
                                 notes: `PO receipt: ${invItem.name || recItem.material_id} × ${recItem.quantity_received}`,
                                 created_at: new Date().toISOString()
                             })
+                    } else {
+                        console.warn(`[PO:INV] NOT FOUND: material_id=${recItem.material_id} — no inventory item matched by id or sku`)
                     }
                 }
             }

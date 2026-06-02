@@ -357,7 +357,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
   const [formData, setFormData] = useState({
     vendor_id: "",
     vendor_name: "",
-    items: [{ material_name: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }],
+    items: [{ material_name: "", material_id: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }],
     expected_delivery: "",
     shipping_address: "",
     shipping_cost: "0",
@@ -388,7 +388,16 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: formData.vendor_id,
-          items: formData.items.map(i => ({ material_id: (i as any).material_id || i.material_name, material_name: i.material_name, item_type: i.item_type, asset_account: (i as any).asset_account || undefined, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
+          items: formData.items.map(i => ({ 
+            material_id: (i as any).material_id || (i as any).sku || i.material_name, 
+            material_name: i.material_name, 
+            sku: (i as any).sku,
+            item_type: i.item_type, 
+            asset_account: (i as any).asset_account || undefined, 
+            quantity: i.quantity, 
+            unit: i.unit, 
+            unit_cost: i.unit_cost 
+          })),
           expected_delivery: formData.expected_delivery || undefined,
           shipping_address: formData.shipping_address || undefined,
           shipping_cost: shipping || undefined,
@@ -538,6 +547,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
                                 const items = [...formData.items] as any[]
                                 items[idx].material_id = inv.id
                                 items[idx].material_name = inv.name
+                                items[idx].sku = inv.sku || ''
                                 items[idx].unit = inv.unit || items[idx].unit
                                 items[idx].unit_cost = inv.cost_per_unit || items[idx].unit_cost
                                 setFormData({ ...formData, items })
@@ -582,7 +592,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
           </div>
         ))}
         <Button type="button" size="sm" variant="outline" onClick={() =>
-          setFormData({ ...formData, items: [...formData.items, { material_name: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }] })
+          setFormData({ ...formData, items: [...formData.items, { material_name: "", material_id: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }] })
         }>
           <Plus className="h-3 w-3 mr-1" /> Add Item
         </Button>
