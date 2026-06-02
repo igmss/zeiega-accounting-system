@@ -212,6 +212,8 @@ export default function PurchaseOrdersPage() {
                     <TableHead>PO ID</TableHead>
                     <TableHead>Vendor</TableHead>
                     <TableHead>Items</TableHead>
+                    <TableHead>Subtotal</TableHead>
+                    <TableHead>VAT</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Date</TableHead>
@@ -221,7 +223,7 @@ export default function PurchaseOrdersPage() {
                 <TableBody>
                   {filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No purchase orders found</TableCell>
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No purchase orders found</TableCell>
                     </TableRow>
                   ) : (
                     filteredOrders.map((order) => (
@@ -229,7 +231,20 @@ export default function PurchaseOrdersPage() {
                         <TableCell className="font-medium">{order.id?.slice(0, 8)}</TableCell>
                         <TableCell>{order.vendor_name}</TableCell>
                         <TableCell>{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</TableCell>
-                        <TableCell>{formatCurrency(order.total_amount || 0)}</TableCell>
+                        <TableCell>{formatCurrency(order.subtotal || 0)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col text-sm">
+                            {((order.tax_amount || 0) > 0) ? (
+                              <span className="text-amber-600">{formatCurrency(order.tax_amount)} (14%)</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                            {(order.shipping_cost || 0) > 0 && (
+                              <span className="text-xs text-muted-foreground">+ Ship: {formatCurrency(order.shipping_cost)}</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{formatCurrency(order.total_amount || 0)}</TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell>{order.created_at ? new Date(order.created_at).toLocaleDateString() : "—"}</TableCell>
                         <TableCell>
@@ -318,6 +333,9 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
     items: [{ material_name: "", quantity: 1, unit: "pcs", unit_cost: 0 }],
     expected_delivery: "",
     shipping_address: "",
+    shipping_cost: "0",
+    apply_tax: true,
+    tax_rate: "14",
     notes: ""
   })
 
@@ -325,7 +343,10 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
     fetch('/api/vendors').then(r => r.json()).then(d => setVendors(d.data || [])).catch(() => {})
   }, [])
 
-  const total = formData.items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0)
+  const subtotal = formData.items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0)
+  const taxAmount = formData.apply_tax ? subtotal * (parseFloat(formData.tax_rate) / 100) : 0
+  const shipping = parseFloat(formData.shipping_cost) || 0
+  const total = subtotal + taxAmount + shipping
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -342,6 +363,8 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
           items: formData.items.map(i => ({ material_id: i.material_name, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
           expected_delivery: formData.expected_delivery || undefined,
           shipping_address: formData.shipping_address || undefined,
+          shipping_cost: shipping || undefined,
+          tax_rate: formData.apply_tax ? parseFloat(formData.tax_rate) / 100 : 0,
           notes: formData.notes || undefined
         })
       })
@@ -453,12 +476,48 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
           <Input value={formData.shipping_address} onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })} />
         </div>
       </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <Label>Shipping Cost</Label>
+          <Input type="number" min="0" value={formData.shipping_cost} onChange={(e) => setFormData({ ...formData, shipping_cost: e.target.value })} />
+        </div>
+        <div>
+          <Label>VAT Rate (%)</Label>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={formData.apply_tax}
+              onChange={(e) => setFormData({ ...formData, apply_tax: e.target.checked })}
+              className="h-4 w-4"
+            />
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              disabled={!formData.apply_tax}
+              value={formData.apply_tax ? formData.tax_rate : ""}
+              onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
+              className="w-20"
+            />
+            <span className="text-xs text-muted-foreground">%</span>
+          </div>
+        </div>
+        <div>
+          <Label>VAT Amount</Label>
+          <Input type="text" disabled value={formData.apply_tax ? formatCurrency(taxAmount) : "—"} />
+        </div>
+      </div>
       <div>
         <Label>Notes</Label>
         <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
       </div>
-      <div className="flex justify-between items-center">
-        <span className="font-medium">Total: {formatCurrency(total)}</span>
+      <div className="flex justify-between items-center border-t pt-3">
+        <div className="text-sm space-y-1">
+          <div>Subtotal: {formatCurrency(subtotal)}</div>
+          {taxAmount > 0 && <div className="text-amber-600">VAT ({formData.tax_rate}%): {formatCurrency(taxAmount)}</div>}
+          {shipping > 0 && <div className="text-muted-foreground">Shipping: {formatCurrency(shipping)}</div>}
+        </div>
+        <span className="font-medium text-lg">Total: {formatCurrency(total)}</span>
       </div>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
