@@ -511,14 +511,15 @@ function POForm({ onClose, onCreated, editingPO }: { onClose: () => void; onCrea
                     const items = [...formData.items] as any[]; items[idx].asset_account = val
                     setFormData({ ...formData, items })
                   }}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="1304" /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="1303" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1301">1301 - Land</SelectItem>
-                      <SelectItem value="1302">1302 - Buildings</SelectItem>
-                      <SelectItem value="1304">1304 - Production Equipment</SelectItem>
-                      <SelectItem value="1305">1305 - Office Equipment</SelectItem>
-                      <SelectItem value="1306">1306 - Vehicles</SelectItem>
-                      <SelectItem value="1307">1307 - Computers</SelectItem>
+                      <SelectItem value="1301">1301 - Sewing Machines</SelectItem>
+                      <SelectItem value="1302">1302 - Cutting Machines</SelectItem>
+                      <SelectItem value="1303">1303 - Production Equipment</SelectItem>
+                      <SelectItem value="1304">1304 - Office Equipment</SelectItem>
+                      <SelectItem value="1305">1305 - Computers & Tablets</SelectItem>
+                      <SelectItem value="1306">1306 - Furniture & Fixtures</SelectItem>
+                      <SelectItem value="1307">1307 - Vehicles</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

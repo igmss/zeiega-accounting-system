@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(ls -lh \"D:/New folder/ZEIEGA/accounting-system/lib/services/\"*.ts)",
-      "Bash(awk '{print $9, $5}')"
+      "Bash(awk '{print $9, $5}')",
+      "Bash(Get-ChildItem \"D:\\\\New folder\\\\ZEIEGA\\\\accounting-system\\\\app\" -Recurse -Name \"page.tsx\")",
+      "Bash(Sort-Object)"
     ]
+  },
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    }
   }
 }

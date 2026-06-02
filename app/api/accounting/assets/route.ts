@@ -119,7 +119,7 @@ export async function GET() {
                     assetsMap[entry.id] = {
                         id: entry.id,
                         amount: assetLine.debit || 0,
-                        description: entry.description || assetLine.description || '',
+                        description: assetLine.description || entry.description || '',
                         assetAccount: assetLine.account_code || '',
                         paymentAccount: paymentLine?.account_code || '',
                         date: entry.date || null,

@@ -300,7 +300,7 @@ export class PurchaseOrderService {
             const ACCOUNT_MAP: Record<string, { code: string; name: string }> = {
                 inventory_raw:       { code: "1201", name: "Raw Materials - Fabric" },
                 inventory_accessory: { code: "1202", name: "Raw Materials - Accessories" },
-                equipment:           { code: "1304", name: "Production Equipment" },
+                equipment:           { code: "1303", name: "Production Equipment" },
                 supplies:            { code: "6005", name: "Office Supplies" },
             }
 
@@ -321,7 +321,7 @@ export class PurchaseOrderService {
                             material_name: item.material_name,
                             qty: qtyReceived,
                             unit_cost: unitCost,
-                            account: item.asset_account || "1304"
+                            account: item.asset_account || "1303"
                         })
                     }
                 }
