@@ -103,11 +103,12 @@ export async function GET() {
         ;(journalData || []).forEach((entry: Record<string, any>) => {
             const lines = entry.journal_entry_lines || entry.lines || []
 
-            if (entry.type === 'ASSET_PURCHASE') {
-                const assetLine = lines.find((line: any) => {
-                    const code = line.account_code || line.accountCode || ""
-                    return (code.startsWith('13') || code.startsWith('14') || code.startsWith('15')) && (line.debit > 0)
-                })
+            const assetLine = lines.find((line: any) => {
+                const code = line.account_code || line.accountCode || ""
+                return (code.startsWith('13') || code.startsWith('14') || code.startsWith('15')) && (line.debit > 0)
+            })
+
+            if (entry.type === 'ASSET_PURCHASE' || (entry.type === 'MATERIAL_RECEIPT' && assetLine)) {
                 const paymentLine = lines.find((line: any) => {
                     const code = line.account_code || line.accountCode || ""
                     return (line.credit > 0)

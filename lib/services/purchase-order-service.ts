@@ -11,6 +11,7 @@ export interface PurchaseOrderItem {
     unit_cost: number
     total_cost: number
     asset_account?: string       // for equipment POs: 1301-1307 or 1401+
+    useful_life_years?: number   // for equipment POs: depreciation life
     supplies_account?: string    // for supplies POs: 6001-6012
     received_quantity?: number
 }
@@ -216,12 +217,13 @@ export class PurchaseOrderService {
             }
 
             // Compute received amounts for THIS receipt, bucketed by item_type
+            // For equipment items, track per-line account codes
             let receiptTotal = 0
-            const receiptByType: Record<string, { cost: number; lines: any[][]; items: Array<{ material_id: string; material_name: string; qty: number; unit_cost: number; account: string }> }> = {
-                inventory_raw:       { cost: 0, lines: [], items: [] },
-                inventory_accessory: { cost: 0, lines: [], items: [] },
-                equipment:           { cost: 0, lines: [], items: [] },
-                supplies:            { cost: 0, lines: [], items: [] },
+            const receiptByType: Record<string, { cost: number; items: Array<{ material_id: string; material_name: string; qty: number; unit_cost: number; account: string }> }> = {
+                inventory_raw:       { cost: 0, items: [] },
+                inventory_accessory: { cost: 0, items: [] },
+                equipment:           { cost: 0, items: [] },
+                supplies:            { cost: 0, items: [] },
             }
 
             const ACCOUNT_MAP: Record<string, { code: string; name: string }> = {
@@ -242,6 +244,15 @@ export class PurchaseOrderService {
                 const itype = item.item_type || "inventory_raw"
                 if (receiptByType[itype]) {
                     receiptByType[itype].cost += lineTotal
+                    if (itype === "equipment") {
+                        receiptByType[itype].items.push({
+                            material_id: item.material_id,
+                            material_name: item.material_name,
+                            qty: qtyReceived,
+                            unit_cost: unitCost,
+                            account: item.asset_account || "1304"
+                        })
+                    }
                 }
 
                 const newReceivedQty = (item.received_quantity || 0) + qtyReceived
@@ -273,14 +284,30 @@ export class PurchaseOrderService {
 
                     for (const [itype, bucket] of Object.entries(receiptByType)) {
                         if (bucket.cost <= 0) continue
-                        const acct = ACCOUNT_MAP[itype] || ACCOUNT_MAP.inventory_raw
-                        lines.push({
-                            accountCode: acct.code,
-                            accountName: acct.name,
-                            debit: bucket.cost,
-                            credit: 0,
-                            description: `${acct.name} received: PO ${receipt.purchase_order_id}`
-                        })
+                        if (itype === "equipment") {
+                            // Equipment: use the PO line's specified asset_account, not a hardcoded default
+                            for (const eqItem of bucket.items) {
+                                const lineTotal = eqItem.qty * eqItem.unit_cost
+                                if (lineTotal <= 0) continue
+                                const code = eqItem.account || ACCOUNT_MAP.equipment.code
+                                lines.push({
+                                    accountCode: code,
+                                    accountName: `${eqItem.material_name} (PO receipt)`,
+                                    debit: lineTotal,
+                                    credit: 0,
+                                    description: `Equipment received via PO ${receipt.purchase_order_id}: ${eqItem.material_name}`
+                                })
+                            }
+                        } else {
+                            const acct = ACCOUNT_MAP[itype] || ACCOUNT_MAP.inventory_raw
+                            lines.push({
+                                accountCode: acct.code,
+                                accountName: acct.name,
+                                debit: bucket.cost,
+                                credit: 0,
+                                description: `${acct.name} received: PO ${receipt.purchase_order_id}`
+                            })
+                        }
                     }
 
                     if (receiptTax > 0) {
@@ -311,11 +338,25 @@ export class PurchaseOrderService {
                         description: `Liability for PO ${receipt.purchase_order_id} receipt`
                     })
 
+                    // Attach asset metadata if equipment items were received in this batch
+                    const hasEquipment = receiptByType.equipment.cost > 0
+                    const eqItem = hasEquipment ? po.items.find(i => (i.item_type || "inventory_raw") === "equipment") : null
+                    const assetMeta = hasEquipment ? {
+                        useful_life_years: (eqItem as any)?.useful_life_years || 5,
+                        salvage_value: 0,
+                        depreciation_method: 'straight-line',
+                        source: `PO ${receipt.purchase_order_id}`
+                    } : undefined
+
                     const jeResult = await EnhancedAccountingService.createJournalEntry(
                         JournalEntryType.MATERIAL_RECEIPT,
                         lines,
                         jeRef,
-                        `Materials received for PO: ${receipt.purchase_order_id}`
+                        `Materials received for PO: ${receipt.purchase_order_id}`,
+                        null,
+                        undefined,
+                        undefined,
+                        assetMeta
                     )
 
                     if (jeResult.success) {

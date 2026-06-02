@@ -471,13 +471,14 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
                 </Select>
               </div>
               {(item as any).item_type === "equipment" && (
+                <>
                 <div className="flex-1">
                   <Label className="text-xs">Asset Account</Label>
                   <Select value={(item as any).asset_account || ""} onValueChange={(val) => {
-                    const items = [...formData.items]; (items[idx] as any).asset_account = val
+                    const items = [...formData.items] as any[]; items[idx].asset_account = val
                     setFormData({ ...formData, items })
                   }}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="1304" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1301">1301 - Land</SelectItem>
                       <SelectItem value="1302">1302 - Buildings</SelectItem>
@@ -488,6 +489,15 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="w-20">
+                  <Label className="text-xs">Life (Yrs)</Label>
+                  <Input type="number" min="1" max="25" className="h-8 text-xs" value={(item as any).useful_life_years || 5}
+                    onChange={(e) => {
+                      const items = [...formData.items] as any[]; items[idx].useful_life_years = parseInt(e.target.value) || 5
+                      setFormData({ ...formData, items })
+                    }} />
+                </div>
+                </>
               )}
             </div>
             <div className="grid grid-cols-4 gap-2">
