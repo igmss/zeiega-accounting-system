@@ -70,7 +70,7 @@ export default function VendorsPage() {
   const handleDelete = async (vendorId: string) => {
     if (!confirm("Deactivate this vendor?")) return
     try {
-      const response = await fetch(`/api/vendors?id=${vendorId}`, { method: 'DELETE' })
+      const response = await fetch(`/api/vendors/${vendorId}`, { method: 'DELETE' })
       if (response.ok) {
         setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, status: "inactive" as const } : v))
         toast.success("Vendor deactivated")
@@ -125,10 +125,10 @@ export default function VendorsPage() {
                 onSave={async (data) => {
                   try {
                     if (editingVendor) {
-                      const response = await fetch('/api/vendors', {
+                      const response = await fetch(`/api/vendors/${editingVendor.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: editingVendor.id, ...data })
+                        body: JSON.stringify(data)
                       })
                       if (response.ok) {
                         setVendors(prev => prev.map(v => v.id === editingVendor.id ? { ...v, ...data } : v))
@@ -174,11 +174,11 @@ export default function VendorsPage() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Vendors</CardTitle>
+              <CardTitle className="text-sm font-medium">Inactive</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {vendors.filter(v => v.status === "active").length}
+                {vendors.filter(v => v.status === "inactive").length}
               </div>
             </CardContent>
           </Card>

@@ -16,9 +16,22 @@ export async function GET() {
     const apByVendor: any[] = []
 
     for (const po of (purchaseOrders || [])) {
-      if (po.status === "received" || po.status === "cancelled") continue
+      if (po.status === "cancelled") continue
+      const remaining = (po.total_amount || 0) - (po.paid_amount || 0)
+      if (remaining <= 0) continue  // fully paid
       const vendor = (vendors || []).find((v: any) => v.id === po.vendor_id)
-      const dueDate = po.expected_delivery ? new Date(po.expected_delivery) : new Date(po.created_at)
+
+      // Use vendor payment_terms for due date calculation
+      let dueDate: Date
+      if (po.received_at || po.actual_delivery) {
+        dueDate = new Date(po.received_at || po.actual_delivery)
+      } else {
+        const terms = vendor?.payment_terms || "Net 30"
+        const days = parseInt(terms.match(/\d+/)?.[0] || "30")
+        dueDate = new Date(po.created_at)
+        dueDate.setDate(dueDate.getDate() + days)
+      }
+
       const daysDue = Math.floor((now.getTime() - dueDate.getTime()) / 86400000)
 
       let aging = "current"
@@ -31,7 +44,9 @@ export async function GET() {
         vendor_id: po.vendor_id,
         vendor_name: vendor?.name || "Unknown",
         po_id: po.id,
-        amount: po.total_amount || 0,
+        amount: remaining,
+        total: po.total_amount,
+        paid: po.paid_amount || 0,
         due_date: dueDate.toISOString().split("T")[0],
         days_overdue: Math.max(0, daysDue),
         aging,

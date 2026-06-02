@@ -53,7 +53,7 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ) {
     try {
-        const auth = await requirePermission("vendors:create")
+        const auth = await requirePermission("vendors:delete")
         if (!auth.authorized) return auth.response
 
         const result = await VendorService.deactivateVendor(params.id)

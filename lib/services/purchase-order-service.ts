@@ -14,6 +14,7 @@ export interface PurchaseOrderItem {
 
 export interface PurchaseOrder {
     id: string
+    po_number?: string
     vendor_id: string
     vendor_name: string
     items: PurchaseOrderItem[]
@@ -21,6 +22,7 @@ export interface PurchaseOrder {
     tax_amount: number
     shipping_cost: number
     total_amount: number
+    paid_amount?: number
     expected_delivery?: string
     actual_delivery?: string
     shipping_address?: string
@@ -244,9 +246,10 @@ export class PurchaseOrderService {
             let journalEntryId: string | undefined
 
             if (totalAP > 0) {
+                const jeRef = `${receipt.purchase_order_id}-${Date.now()}`
                 const { data: existingJE } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
                     .select("id")
-                    .eq("reference_id", `${receipt.purchase_order_id}-${Date.now()}`)
+                    .eq("reference_id", jeRef)
                     .eq("type", JournalEntryType.MATERIAL_RECEIPT)
                     .limit(1)
 
@@ -306,7 +309,6 @@ export class PurchaseOrderService {
                         JournalEntryType.MATERIAL_RECEIPT,
                         lines,
                         jeRef,
-                        `Materials received for PO: ${receipt.purchase_order_id}`
                     )
 
                     if (jeResult.success) {
@@ -380,8 +382,8 @@ export class PurchaseOrderService {
                 return { success: false, error: "Purchase order not found" }
             }
 
-            if (po.status === "received") {
-                return { success: false, error: "Cannot cancel received purchase orders" }
+            if (po.status === "received" || po.status === "partial") {
+                return { success: false, error: "Cannot cancel received or partially received purchase orders. Goods have been received and journal entries created." }
             }
 
             const { error } = await getServiceSupabase().from(TABLES.PURCHASE_ORDERS).update({
@@ -445,6 +447,12 @@ export class PurchaseOrderService {
             if (!result.success) {
                 return { success: false, error: result.error || "Failed to create payment journal entry" }
             }
+
+            const newPaidAmount = (po.paid_amount || 0) + amount
+            await getServiceSupabase().from(TABLES.PURCHASE_ORDERS).update({
+                paid_amount: newPaidAmount,
+                updated_at: new Date().toISOString()
+            }).eq("id", poId)
 
             console.log(`✅ Paid vendor ${po.vendor_name} EGP ${amount} via ${method}, JE: ${result.entryId}`)
             return { success: true, journalEntryId: result.entryId }

@@ -32,6 +32,7 @@ interface POItem {
 
 interface PurchaseOrder {
   id: string
+  po_number?: string
   vendor_id: string
   vendor_name: string
   items: POItem[]
@@ -39,6 +40,7 @@ interface PurchaseOrder {
   tax_amount: number
   shipping_cost: number
   total_amount: number
+  paid_amount?: number
   expected_delivery?: string
   shipping_address?: string
   notes?: string
@@ -81,6 +83,8 @@ export default function PurchaseOrdersPage() {
   })
 
   const handleAction = async (id: string, action: string) => {
+    if (action === "send" && !confirm("Send this purchase order to the vendor? This action cannot be undone.")) return
+    if (action === "cancel" && !confirm("Cancel this purchase order? This action cannot be undone.")) return
     try {
       const response = await fetch('/api/purchase-orders', {
         method: 'PUT',
@@ -306,7 +310,13 @@ export default function PurchaseOrdersPage() {
                               <ReceiveGoodsDialog poId={order.id} items={order.items} />
                             )}
                             {order.status === "received" && (
-                              <PayVendorDialog poId={order.id} vendorName={order.vendor_name} totalAmount={order.total_amount} />
+                              <PayVendorDialog poId={order.id} vendorName={order.vendor_name} totalAmount={order.total_amount} paidAmount={order.paid_amount || 0} />
+                            )}
+                            {order.status === "partial" && (
+                              <>
+                                <ReceiveGoodsDialog poId={order.id} items={order.items} />
+                                <PayVendorDialog poId={order.id} vendorName={order.vendor_name} totalAmount={order.total_amount} paidAmount={order.paid_amount || 0} />
+                              </>
                             )}
                           </div>
                         </TableCell>

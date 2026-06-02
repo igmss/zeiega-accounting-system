@@ -77,7 +77,7 @@ export async function PUT(request: NextRequest) {
 
 // DELETE /api/vendors - Deactivate a vendor
 export async function DELETE(request: NextRequest) {
-    const auth = await requirePermission("vendors:create")
+    const auth = await requirePermission("vendors:delete")
     if (!auth.authorized) return auth.response
     try {
         const { searchParams } = new URL(request.url)

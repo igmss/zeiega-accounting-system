@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -30,6 +30,7 @@ export function ReceiveGoodsDialog({ poId, items }: ReceiveGoodsDialogProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [receiving, setReceiving] = useState(false)
   const [notes, setNotes] = useState("")
+
   const [receiptItems, setReceiptItems] = useState(
     items.map(item => ({
       material_id: item.material_id,
@@ -39,6 +40,16 @@ export function ReceiveGoodsDialog({ poId, items }: ReceiveGoodsDialogProps) {
       unit: item.unit,
     }))
   )
+
+  useEffect(() => {
+    setReceiptItems(items.map(item => ({
+      material_id: item.material_id,
+      material_name: item.material_name,
+      quantity_received: Math.max(0, item.quantity - (item.received_quantity || 0)),
+      max: Math.max(0, item.quantity - (item.received_quantity || 0)),
+      unit: item.unit,
+    })))
+  }, [items])
 
   const handleSubmit = async () => {
     const itemsToReceive = receiptItems
