@@ -220,6 +220,65 @@ export class PurchaseOrderService {
                 return { success: false, error: "Can only receive goods for confirmed purchase orders" }
             }
 
+            // Auto-create any missing inventory items for raw materials / accessories
+            for (const recItem of receipt.items) {
+                if (!recItem.quantity_received || recItem.quantity_received <= 0) continue
+                const poItem = po.items.find(i => i.material_id === recItem.material_id)
+                const itype = poItem?.item_type || "inventory_raw"
+
+                if (itype === "inventory_raw" || itype === "inventory_accessory") {
+                    console.log(`[PO:INV-PRE] Checking if inventory item exists for material_id/sku=${recItem.material_id}`)
+                    const { data: invItem } = await getServiceSupabase()
+                        .from(TABLES.INVENTORY_ITEMS)
+                        .select("id, sku, name")
+                        .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
+                        .limit(1)
+                        .maybeSingle()
+
+                    if (!invItem) {
+                        console.log(`[PO:INV-PRE] NOT FOUND. Creating new inventory item for: ${poItem?.material_name || recItem.material_id}`)
+                        const cleanName = poItem?.material_name || recItem.material_id
+                        const generatedSku = poItem?.sku || cleanName.toUpperCase().replace(/[^A-Z0-9]/g, "-").replace(/-+/g, "-")
+
+                        const { data: newInv, error: insertError } = await getServiceSupabase()
+                            .from(TABLES.INVENTORY_ITEMS)
+                            .insert({
+                                name: cleanName,
+                                sku: generatedSku,
+                                type: "raw",
+                                unit: poItem?.unit || "pcs",
+                                quantity_on_hand: 0, // Will be updated in the main loop below
+                                cost_per_unit: recItem.actual_unit_cost || poItem?.unit_cost || 0,
+                                supplier: po.vendor_name || null,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            })
+                            .select("id, sku, name")
+                            .single()
+
+                        if (insertError) {
+                            console.error(`[PO:INV-PRE] Failed to create new inventory item:`, insertError)
+                        } else if (newInv) {
+                            console.log(`[PO:INV-PRE] Created new inventory item: ${newInv.name} (${newInv.id})`)
+                            // Update material_id in po.items and receipt.items to use the new UUID
+                            const oldId = recItem.material_id
+                            recItem.material_id = newInv.id
+                            if (poItem) {
+                                poItem.material_id = newInv.id
+                                poItem.sku = newInv.sku
+                            }
+                        }
+                    } else {
+                        // Ensure poItem and recItem use the verified ID from the database if they used SKU/name
+                        recItem.material_id = invItem.id
+                        if (poItem) {
+                            poItem.material_id = invItem.id
+                            poItem.sku = invItem.sku
+                        }
+                    }
+                }
+            }
+
             // Compute received amounts for THIS receipt, bucketed by item_type
             // For equipment items, track per-line account codes
             let receiptTotal = 0
