@@ -229,12 +229,19 @@ export class PurchaseOrderService {
 
                 if (itype === "inventory_raw" || itype === "inventory_accessory") {
                     console.log(`[PO:INV-PRE] Checking if inventory item exists for material_id/sku=${recItem.material_id}`)
-                    const { data: invItem } = await getServiceSupabase()
+                    let checkQuery = getServiceSupabase()
                         .from(TABLES.INVENTORY_ITEMS)
                         .select("id, sku, name")
-                        .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
-                        .limit(1)
-                        .maybeSingle()
+
+                    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recItem.material_id)
+                    if (isUuid) {
+                        checkQuery = checkQuery.eq("id", recItem.material_id)
+                    } else {
+                        const cleanName = poItem?.material_name || recItem.material_id
+                        const generatedSku = poItem?.sku || cleanName.toUpperCase().replace(/[^A-Z0-9]/g, "-").replace(/-+/g, "-")
+                        checkQuery = checkQuery.or(`sku.eq.${generatedSku},sku.eq.${recItem.material_id},name.ilike.${cleanName}`)
+                    }
+                    const { data: invItem } = await checkQuery.limit(1).maybeSingle()
 
                     if (!invItem) {
                         console.log(`[PO:INV-PRE] NOT FOUND. Creating new inventory item for: ${poItem?.material_name || recItem.material_id}`)
@@ -437,12 +444,19 @@ export class PurchaseOrderService {
 
                 if (itype === "inventory_raw" || itype === "inventory_accessory") {
                     console.log(`[PO:INV] Looking up inventory for material_id=${recItem.material_id}, qty=${recItem.quantity_received}`)
-                    const { data: invItem } = await getServiceSupabase()
+                    let mainQuery = getServiceSupabase()
                         .from(TABLES.INVENTORY_ITEMS)
                         .select("id, quantity_on_hand, sku, name")
-                        .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
-                        .limit(1)
-                        .maybeSingle()
+
+                    const isMainUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recItem.material_id)
+                    if (isMainUuid) {
+                        mainQuery = mainQuery.eq("id", recItem.material_id)
+                    } else {
+                        const cleanName = poItem?.material_name || recItem.material_id
+                        const generatedSku = poItem?.sku || cleanName.toUpperCase().replace(/[^A-Z0-9]/g, "-").replace(/-+/g, "-")
+                        mainQuery = mainQuery.or(`sku.eq.${generatedSku},sku.eq.${recItem.material_id},name.ilike.${cleanName}`)
+                    }
+                    const { data: invItem } = await mainQuery.limit(1).maybeSingle()
 
                     if (invItem) {
                         console.log(`[PO:INV] Found: ${invItem.name} (${invItem.id}), current qty=${invItem.quantity_on_hand}`)
