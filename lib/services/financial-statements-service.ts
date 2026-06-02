@@ -81,16 +81,18 @@ export interface TrialBalance {
 
 export class FinancialStatementsService {
 
-    public static async getAccountBalance(
-        accountCode: string,
+    public static async getAccountBalancesBatch(
+        accountCodes: string[],
         startDate?: Date,
         endDate?: Date
-    ): Promise<number> {
+    ): Promise<Record<string, number>> {
+        const result: Record<string, number> = {}
         try {
-            // Direct query on journal_entry_lines (most reliable)
+            if (accountCodes.length === 0) return result
+
             let query = getServiceSupabase().from(TABLES.JOURNAL_ENTRY_LINES)
-                .select("debit, credit, journal_entry_id")
-                .eq("account_code", accountCode)
+                .select("account_code, debit, credit, journal_entry_id")
+                .in("account_code", accountCodes)
 
             if (startDate || endDate) {
                 const { data: jeIds } = await getServiceSupabase()
@@ -98,28 +100,46 @@ export class FinancialStatementsService {
                     .select("id")
                     .gte("date", startDate ? startDate.toISOString().split("T")[0] : "2000-01-01")
                     .lte("date", endDate ? endDate.toISOString().split("T")[0] : "2099-12-31")
-                
+
                 const ids = (jeIds || []).map((j: any) => j.id)
-                if (ids.length === 0) return 0
+                if (ids.length === 0) {
+                    for (const code of accountCodes) result[code] = 0
+                    return result
+                }
                 query = query.in("journal_entry_id", ids)
             }
 
             const { data: lines, error } = await query
-            if (error) { console.error("Balance query error:", error); return 0 }
+            if (error) { console.error("Batch balance query error:", error); return result }
 
-            let totalDebits = 0
-            let totalCredits = 0
+            const totals: Record<string, { d: number; c: number }> = {}
+            for (const code of accountCodes) totals[code] = { d: 0, c: 0 }
+
             for (const line of (lines || [])) {
-                totalDebits += line.debit || 0
-                totalCredits += line.credit || 0
+                const code = line.account_code
+                if (!totals[code]) continue
+                totals[code].d += line.debit || 0
+                totals[code].c += line.credit || 0
             }
 
-            const isDebit = isDebitNormalBalance(accountCode)
-            return isDebit ? totalDebits - totalCredits : totalCredits - totalDebits
+            for (const code of accountCodes) {
+                const t = totals[code] || { d: 0, c: 0 }
+                const isDebit = isDebitNormalBalance(code)
+                result[code] = isDebit ? t.d - t.c : t.c - t.d
+            }
         } catch (error) {
-            console.error(`Error getting balance for ${accountCode}:`, error)
-            return 0
+            console.error("Error in batch balance query:", error)
         }
+        return result
+    }
+
+    public static async getAccountBalance(
+        accountCode: string,
+        startDate?: Date,
+        endDate?: Date
+    ): Promise<number> {
+        const result = await this.getAccountBalancesBatch([accountCode], startDate, endDate)
+        return result[accountCode] || 0
     }
 
     private static async getAccountBalancesByType(
@@ -128,16 +148,14 @@ export class FinancialStatementsService {
         endDate?: Date
     ): Promise<StatementLineItem[]> {
         const accounts = getAccountsByType(type)
+        const codes = accounts.map(a => a.code)
+        const balances = await this.getAccountBalancesBatch(codes, startDate, endDate)
         const items: StatementLineItem[] = []
 
         for (const account of accounts) {
-            const balance = await this.getAccountBalance(account.code, startDate, endDate)
-            if (balance !== 0) {
-                items.push({
-                    code: account.code,
-                    name: account.name,
-                    amount: balance,
-                })
+            const balance = balances[account.code] || 0
+            if (balance !== 0 || type === AccountType.EQUITY || type === AccountType.LIABILITY) {
+                items.push({ code: account.code, name: account.name, amount: balance })
             }
         }
 
@@ -278,12 +296,11 @@ export class FinancialStatementsService {
 
         const equityItems = await this.getAccountBalancesByType(AccountType.EQUITY, undefined, asOfDate)
 
-        const fiscalYearStart = new Date(asOfDate.getFullYear(), 0, 1)
-        const incomeStmt = await this.generateIncomeStatement(fiscalYearStart, asOfDate)
-        const currentYearNetIncome = incomeStmt.netIncome
+        // Read retained earnings directly from the GL instead of recomputing the full income statement
+        const retainedEarningsBal = (await this.getAccountBalancesBatch(["3100"], undefined, asOfDate))["3100"] || 0
 
         let equityTotal = equityItems.reduce((sum, item) => sum + item.amount, 0)
-        equityTotal += currentYearNetIncome
+        equityTotal += retainedEarningsBal
 
         const totalLiabilitiesAndEquity = totalLiabilities + equityTotal
         const balanceCheckFailed = Math.abs(totalAssets - totalLiabilitiesAndEquity) > 0.01
@@ -404,19 +421,7 @@ export class FinancialStatementsService {
 
     static async generateCashFlowStatement(startDate: Date, endDate: Date) {
         const balAsOf = async (code: string, asOf: Date) => {
-            const { data: snap } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
-                .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
-                .contains("account_ids", [code])
-                .lte("date", asOf.toISOString())
-            let d = 0, c = 0
-            for (const entry of (snap || [])) {
-                const lines = (entry as any).journal_entry_lines || []
-                for (const line of lines) {
-                    if (line.account_code === code) { d += line.debit || 0; c += line.credit || 0 }
-                }
-            }
-            const isDebit = isDebitNormalBalance(code)
-            return isDebit ? d - c : c - d
+            return (await this.getAccountBalancesBatch([code], undefined, asOf))[code] || 0
         }
 
         const openingDate = new Date(startDate.getTime() - 86400000)

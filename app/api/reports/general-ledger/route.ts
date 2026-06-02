@@ -26,7 +26,9 @@ export async function GET(request: NextRequest) {
 
         const { data: journalEntries, error } = await getServiceClient()
             .from(TABLES.JOURNAL_ENTRIES)
-            .select("*")
+            .select("id, date, description, entry_number")
+            .gte("date", fromDate)
+            .lte("date", toDate + "T23:59:59")
             .order("date", { ascending: true })
 
         if (error) throw error
@@ -81,8 +83,6 @@ export async function GET(request: NextRequest) {
             const entryDate = typeof entry.date === 'string'
                 ? entry.date.split("T")[0]
                 : entry.date
-
-            if (entryDate < fromDate || entryDate > toDate) return
 
             lines.forEach((line: any) => {
                 const accountCode = line.account_code || line.accountCode || ""

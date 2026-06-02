@@ -23,14 +23,14 @@ export async function GET(request: NextRequest) {
 
         // 2. Fetch live cash balances for beginning and ending
         const cashAccountCodes = ["1101", "1102", "1103", "1104", "1105", "1106", "1107"]
-        
-        let beginningCash = 0
-        let endingCash = 0
 
-        for (const code of cashAccountCodes) {
-            beginningCash += await FinancialStatementsService.getAccountBalance(code, undefined, start)
-            endingCash += await FinancialStatementsService.getAccountBalance(code, undefined, end)
-        }
+        const [begBals, endBals] = await Promise.all([
+            FinancialStatementsService.getAccountBalancesBatch(cashAccountCodes, undefined, start),
+            FinancialStatementsService.getAccountBalancesBatch(cashAccountCodes, undefined, end),
+        ])
+
+        const beginningCash = cashAccountCodes.reduce((s, code) => s + (begBals[code] || 0), 0)
+        const endingCash = cashAccountCodes.reduce((s, code) => s + (endBals[code] || 0), 0)
 
         // 3. Map to existing response schema
         return NextResponse.json({

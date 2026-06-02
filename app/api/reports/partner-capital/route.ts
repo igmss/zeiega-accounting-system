@@ -20,8 +20,16 @@ export async function GET() {
     }
 
     const getBal = async (code: string, asOf: Date) => {
-      return await FinancialStatementsService.getAccountBalance(code, undefined, asOf)
+      const balances = await FinancialStatementsService.getAccountBalancesBatch([code], undefined, asOf)
+      return balances[code] || 0
     }
+
+    // Fetch all partner balances in one batch
+    const allCodes = ["3011", "3012", "3013", "3021", "3022", "3023"]
+    const [openingBals, closingBals] = await Promise.all([
+      FinancialStatementsService.getAccountBalancesBatch(allCodes, undefined, new Date(yearStart.getTime() - 86400000)),
+      FinancialStatementsService.getAccountBalancesBatch(allCodes, undefined, now),
+    ])
 
     const incomeStmt = await FinancialStatementsService.generateIncomeStatement(yearStart, now)
     const netIncome = incomeStmt.netIncome
@@ -29,10 +37,10 @@ export async function GET() {
     const partnerData: any[] = []
 
     for (const [, p] of Object.entries(partners)) { const partner = p as any
-      const openingBal = await getBal(partner.code, new Date(yearStart.getTime() - 86400000))
-      const closingBal = await getBal(partner.code, now)
+      const openingBal = openingBals[partner.code] || 0
+      const closingBal = closingBals[partner.code] || 0
       const drawingsCode = partner.code.replace("301", "302")
-      const drawings = await getBal(drawingsCode, now)
+      const drawings = Math.abs(closingBals[drawingsCode] || 0)
       const profitShare = netIncome * (partner.share / 100)
 
       partnerData.push({
@@ -40,7 +48,7 @@ export async function GET() {
         share_percent: partner.share,
         opening_balance: Math.round(openingBal),
         profit_share: Math.round(profitShare),
-        drawings: Math.round(Math.abs(drawings)),
+        drawings: Math.round(drawings),
         closing_balance: Math.round(closingBal + profitShare - drawings),
       })
     }
