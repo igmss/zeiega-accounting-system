@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccuFinance — Complete User Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #e5e5e5;
+  --text: #171717;
+  --text-secondary: #525252;
+  --text-tertiary: #737373;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --accent-subtle: #eff6ff;
+  --green: #059669;
+  --green-bg: #ecfdf5;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --purple: #7c3aed;
+  --sidebar-bg: #0f172a;
+  --sidebar-text: #94a3b8;
+  --sidebar-active: #e2e8f0;
+  --sidebar-hover: #1e293b;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 4px 6px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.03);
+  --max-content: 800px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ─── SIDEBAR ─────────────────────────── */
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: 280px; background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  display: flex; flex-direction: column;
+  z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+.sidebar-brand {
+  padding: 28px 24px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.sidebar-brand h1 {
+  font-size: 1.25rem; font-weight: 700; color: #f8fafc;
+  letter-spacing: -0.02em;
+}
+.sidebar-brand span {
+  display: block; font-size: 0.75rem; font-weight: 500;
+  color: #64748b; margin-top: 4px; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-nav { padding: 16px 0; flex: 1; }
+.sidebar-section {
+  padding: 8px 24px;
+  font-size: 0.675rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #475569;
+  margin-top: 12px;
+}
+.sidebar-section:first-child { margin-top: 0; }
+
+.sidebar-link {
+  display: block; padding: 8px 24px;
+  font-size: 0.875rem; font-weight: 450;
+  color: var(--sidebar-text);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+.sidebar-link:hover {
+  color: var(--sidebar-active);
+  background: var(--sidebar-hover);
+}
+.sidebar-link.active {
+  color: var(--sidebar-active);
+  background: rgba(37,99,235,0.12);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.sidebar-sub { padding-left: 40px; font-size: 0.8rem; }
+
+.sidebar-footer {
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+/* ─── MAIN CONTENT ─────────────────────── */
+.main {
+  margin-left: 280px;
+  flex: 1;
+  min-width: 0;
+  padding: 48px 64px 80px;
+  max-width: calc(var(--max-content) + 128px);
+}
+
+@media (max-width: 1200px) {
+  .main { padding: 40px 32px 64px; }
+}
+@media (max-width: 860px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; padding: 32px 20px 64px; }
+}
+
+/* ─── HERO ─────────────────────────────── */
+.hero {
+  margin-bottom: 48px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--border);
+}
+.hero h2 {
+  font-size: 2.25rem; font-weight: 800; letter-spacing: -0.03em;
+  color: var(--text); margin-bottom: 8px;
+  line-height: 1.15;
+}
+.hero p {
+  font-size: 1.05rem; color: var(--text-secondary); max-width: 620px;
+}
+
+/* ─── SECTION HEADINGS ─────────────────── */
+h3 {
+  font-size: 1.625rem; font-weight: 700; letter-spacing: -0.02em;
+  margin: 56px 0 16px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  line-height: 1.3;
+}
+h3:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+
+h4 {
+  font-size: 1.2rem; font-weight: 600; letter-spacing: -0.015em;
+  margin: 36px 0 12px; color: var(--text);
+}
+h5 {
+  font-size: 1rem; font-weight: 600; letter-spacing: -0.01em;
+  margin: 28px 0 8px; color: var(--text-secondary);
+}
+
+/* ─── PARAGRAPHS ───────────────────────── */
+p { margin-bottom: 16px; color: var(--text-secondary); font-size: 0.975rem; }
+p strong { color: var(--text); font-weight: 600; }
+
+/* ─── LINKS ────────────────────────────── */
+a { color: var(--accent); text-decoration: none; font-weight: 500; }
+a:hover { text-decoration: underline; }
+
+/* ─── CALLOUTS ─────────────────────────── */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-subtle);
+  padding: 14px 20px;
+  margin: 20px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 0.925rem;
+  color: #1e40af;
+}
+.callout strong { color: #1e3a8a; }
+
+/* ─── TABLES ───────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.875rem;
+}
+thead { border-bottom: 2px solid var(--border); }
+thead th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600; font-size: 0.8rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  background: #fafafa;
+  white-space: nowrap;
+}
+tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #f5f5f5;
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #fafafa; }
+td strong, td code { color: var(--text); }
+td:first-child { font-weight: 500; color: var(--text); white-space: nowrap; }
+
+/* ─── CODE ─────────────────────────────── */
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.825rem;
+  background: #f4f4f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  font-weight: 500;
+}
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 20px 24px;
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  margin: 20px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.825rem;
+  line-height: 1.6;
+}
+pre code { background: none; padding: 0; color: inherit; font-weight: 400; }
+
+/* ─── STEPS / LISTS ────────────────────── */
+ol, ul { margin: 12px 0 20px 24px; color: var(--text-secondary); font-size: 0.95rem; }
+li { margin-bottom: 6px; }
+li strong { color: var(--text); }
+
+/* ─── STATUS BADGE ─────────────────────── */
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 100px;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-red { background: var(--red-bg); color: var(--red); }
+.badge-amber { background: var(--amber-bg); color: var(--amber); }
+.badge-blue { background: var(--accent-subtle); color: var(--accent); }
+
+/* ─── QUICK REF CARD ───────────────────── */
+.ref-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px; margin: 20px 0;
+}
+.ref-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+  transition: box-shadow 0.15s ease;
+}
+.ref-card:hover { box-shadow: var(--shadow); }
+.ref-card .ref-label {
+  font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 4px;
+}
+.ref-card .ref-value { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
+/* ─── SECTION NAV ──────────────────────── */
+.section-nav {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 32px 0;
+}
+.section-nav a {
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 0.825rem; font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+.section-nav a:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* ─── CHECKBOX ─────────────────────────── */
+.checklist { list-style: none; margin-left: 0; }
+.checklist li::before {
+  content: "☐"; margin-right: 10px;
+  color: var(--text-tertiary); font-size: 1rem;
+}
+
+/* ─── FLOW STEPS ───────────────────────── */
+.flow-steps {
+  counter-reset: step;
+  list-style: none; margin: 24px 0; padding: 0;
+}
+.flow-steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 16px 20px 16px 56px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.925rem;
+  transition: box-shadow 0.15s;
+}
+.flow-steps li:hover { box-shadow: var(--shadow); }
+.flow-steps li::before {
+  content: counter(step);
+  position: absolute; left: 16px; top: 14px;
+  width: 28px; height: 28px;
+  background: var(--accent); color: #fff;
+  border-radius: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; font-weight: 700;
+}
+.flow-steps li strong { display: block; margin-bottom: 2px; }
+
+/* ─── FOOTER ───────────────────────────── */
+footer {
+  margin-top: 64px; padding-top: 32px;
+  border-top: 1px solid var(--border);
+  color: var(--text-tertiary); font-size: 0.8rem;
+}
+
+/* ─── RESPONSIVE ───────────────────────── */
+@media (max-width: 860px) {
+  .ref-grid { grid-template-columns: repeat(2, 1fr); }
+  h3 { font-size: 1.4rem; }
+  .hero h2 { font-size: 1.75rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ─── SIDEBAR ─────────────────────────── -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h1>AccuFinance</h1>
+    <span>User Manual</span>
+  </div>
+  <div class="sidebar-nav">
+    <div class="sidebar-section">Getting Started</div>
+    <a class="sidebar-link active" href="#quick-start">Quick Start</a>
+    <a class="sidebar-link" href="#dashboard">Dashboard Overview</a>
+    <a class="sidebar-link" href="#setup">One-Time Setup</a>
+    <div class="sidebar-section">Workflow</div>
+    <a class="sidebar-link" href="#workflow">Manufacturing Workflow</a>
+    <div class="sidebar-section">Modules</div>
+    <a class="sidebar-link sidebar-sub" href="#customers">Customers</a>
+    <a class="sidebar-link sidebar-sub" href="#sales-orders">Sales Orders</a>
+    <a class="sidebar-link sidebar-sub" href="#work-orders">Work Orders</a>
+    <a class="sidebar-link sidebar-sub" href="#inventory">Inventory</a>
+    <a class="sidebar-link sidebar-sub" href="#purchase-orders">Purchase Orders</a>
+    <a class="sidebar-link sidebar-sub" href="#vendors">Vendors</a>
+    <a class="sidebar-link sidebar-sub" href="#designs">Designs &amp; BOM</a>
+    <a class="sidebar-link sidebar-sub" href="#invoices">Invoices</a>
+    <a class="sidebar-link sidebar-sub" href="#payments">Payments</a>
+    <a class="sidebar-link sidebar-sub" href="#expenses">Expenses</a>
+    <a class="sidebar-link sidebar-sub" href="#journal-entries">Journal Entries</a>
+    <a class="sidebar-link sidebar-sub" href="#variance">Variance &amp; Overhead</a>
+    <div class="sidebar-section">Reporting</div>
+    <a class="sidebar-link" href="#reports">Financial Reports</a>
+    <a class="sidebar-link" href="#year-end">Year-End Close</a>
+    <div class="sidebar-section">Reference</div>
+    <a class="sidebar-link" href="#users">Users &amp; Security</a>
+    <a class="sidebar-link" href="#best-practices">Best Practices</a>
+    <a class="sidebar-link" href="#troubleshooting">Troubleshooting</a>
+    <a class="sidebar-link" href="#glossary">Glossary</a>
+    <a class="sidebar-link" href="#quick-ref">Quick Reference</a>
+  </div>
+  <div class="sidebar-footer">TEL U ASEGH &mdash; Manufacturing ERP</div>
+</nav>
+
+<!-- ─── MAIN ────────────────────────────── -->
+<main class="main">
+
+<!-- Hero -->
+<div class="hero">
+  <h2>Complete User Manual</h2>
+  <p>For factory owners, accountants, warehouse managers, and production supervisors using <strong>AccuFinance</strong> &mdash; the manufacturing ERP for TEL U ASEGH garment production.</p>
+</div>
+
+<!-- Section Nav -->
+<div class="section-nav">
+  <a href="#quick-start">&#9889; Quick Start</a>
+  <a href="#setup">Setup</a>
+  <a href="#workflow">Workflow</a>
+  <a href="#customers">Customers</a>
+  <a href="#sales-orders">Orders</a>
+  <a href="#work-orders">Production</a>
+  <a href="#inventory">Inventory</a>
+  <a href="#reports">Reports</a>
+  <a href="#glossary">Glossary</a>
+  <a href="#quick-ref">Reference</a>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 1. QUICK START -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="quick-start">1. Quick Start: Your First 30 Minutes</h3>
+
+<h4>1.1 Log In</h4>
+<ol>
+  <li>Open your browser to your AccuFinance URL (e.g., <code>http://localhost:3000</code> or your production domain)</li>
+  <li>Enter your email and password</li>
+  <li>First login? Use admin credentials from your system administrator</li>
+</ol>
+<p>You&rsquo;ll land on the <strong>Dashboard</strong> with KPI cards, charts, and recent activity.</p>
+
+<h4>1.2 Understand the Layout</h4>
+<p>The sidebar groups features into 7 sections. Your role determines visibility:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Role</th><th>What You See</th></tr></thead>
+<tbody>
+<tr><td><strong>Everyone</strong></td><td>Dashboard, Reports</td></tr>
+<tr><td><strong>Sales</strong></td><td>Customers, Sales Orders, Designs</td></tr>
+<tr><td><strong>Production</strong></td><td>Work Orders, BOM, Designs</td></tr>
+<tr><td><strong>Warehouse</strong></td><td>Inventory, Purchase Orders, Vendors</td></tr>
+<tr><td><strong>Accountant</strong></td><td>Invoices, Payments, Expenses, Journal Entries, Chart of Accounts, Reports</td></tr>
+<tr><td><strong>Admin</strong></td><td>Everything plus Users, Settings, Year-End Close</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>1.3 First Actions (Brand New System)</h4>
+<ol>
+  <li><strong>Set Opening Balances</strong> &rarr; Section 3</li>
+  <li><strong>Add Customers</strong> &rarr; <code>Operations &gt; Customers</code></li>
+  <li><strong>Add Vendors</strong> &rarr; <code>Inventory &gt; Vendors</code></li>
+  <li><strong>Add Inventory Items</strong> &rarr; <code>Inventory &gt; Inventory</code></li>
+  <li><strong>Create Designs</strong> &rarr; <code>Operations &gt; Designs</code></li>
+</ol>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 2. DASHBOARD -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="dashboard">2. System Overview &mdash; The Dashboard</h3>
+<p>The dashboard is your home screen showing the factory&rsquo;s financial health at a glance.</p>
+
+<h4>2.1 KPI Cards</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Card</th><th>Shows</th><th>Why It Matters</th></tr></thead>
+<tbody>
+<tr><td><strong>Total Revenue</strong></td><td>Money from completed sales</td><td>Tracks income</td></tr>
+<tr><td><strong>COGS</strong></td><td>Cost of making what you sold</td><td>Higher % = lower margin</td></tr>
+<tr><td><strong>Gross Profit</strong></td><td>Revenue minus COGS</td><td>Money left to cover expenses</td></tr>
+<tr><td><strong>Work in Progress</strong></td><td>Value of unfinished production + active jobs count</td><td>Cash tied up in production</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>2.2 Charts &amp; Activity</h4>
+<ul>
+  <li><strong>Monthly Revenue Chart</strong> &mdash; Bar chart: revenue (blue) vs COGS (green). Hover for exact figures.</li>
+  <li><strong>Order Status Pie</strong> &mdash; Distribution: <span class="badge badge-amber">Pending</span> <span style="color:#0d9488;font-weight:600;">In Progress</span> <span class="badge badge-green">Completed</span> <span class="badge badge-red">Cancelled</span></li>
+  <li><strong>Recent Sales Orders</strong> &mdash; Last 4 orders with status badges</li>
+  <li><strong>Active Work Orders</strong> &mdash; Running jobs with progress bars</li>
+</ul>
+<p>Click <strong>View All</strong> to navigate to full lists. Click <strong>Refresh</strong> to update data.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 3. ONE-TIME SETUP -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="setup">3. One-Time Setup</h3>
+<div class="callout"><strong>Who:</strong> Accountant or Admin. Do this ONCE when first migrating to AccuFinance.</div>
+
+<h4>Opening Balances</h4>
+<p><strong>Path:</strong> <code>System &gt; Opening Balances</code></p>
+<p>This is the most critical setup step. It records all existing balances from your old system or paper records.</p>
+
+<h5>Section 1: General</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody><tr><td><strong>Cut-off Date</strong></td><td>The date you start using the system</td></tr></tbody>
+</table></div>
+
+<h5>Section 2: Cash &amp; Bank (OB-01)</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td><strong>Cash on Hand (1101)</strong></td><td>Physical cash in safe/register</td></tr>
+<tr><td><strong>Bank &ndash; Main (1103)</strong></td><td>Main business bank account balance</td></tr>
+</tbody>
+</table></div>
+
+<h5>Section 3: Receivables</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody><tr><td><strong>Accounts Receivable (1110)</strong></td><td>Total money customers owe you</td></tr></tbody>
+</table></div>
+
+<h5>Section 4: Inventory (OB-02)</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td><strong>Raw Materials (1201)</strong></td><td>Value of fabric, accessories, supplies in stock</td></tr>
+<tr><td><strong>WIP Inventory (1210)</strong></td><td>Partially completed garments in production</td></tr>
+<tr><td><strong>Finished Goods (1220)</strong></td><td>Completed garments ready to sell</td></tr>
+</tbody>
+</table></div>
+
+<h5>Section 5: Fixed Assets (OB-03)</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td><strong>Sewing Machines (1301)</strong></td><td>Current value (cost minus depreciation)</td></tr>
+<tr><td><strong>Production Equipment (1303)</strong></td><td>Cutting machines, ironing equipment</td></tr>
+<tr><td><strong>Office Equipment (1304)</strong></td><td>Printers, desks, office tools</td></tr>
+<tr><td><strong>Furniture &amp; Fixtures (1306)</strong></td><td>Desks, shelves, office furniture</td></tr>
+<tr><td><strong>Vehicles (1307)</strong></td><td>Delivery vehicles or company cars</td></tr>
+</tbody>
+</table></div>
+
+<h5>Section 7: Partner Capital (OB-05)</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Partner</th><th>Target</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td><strong>Ahmed Capital (3011)</strong></td><td>60%</td><td>Partner 1 invested capital</td></tr>
+<tr><td><strong>Ibrahim Capital (3012)</strong></td><td>25%</td><td>Partner 2 invested capital</td></tr>
+<tr><td><strong>Fathy Capital (3013)</strong></td><td>15%</td><td>Partner 3 invested capital</td></tr>
+</tbody>
+</table></div>
+<p><strong>Rebalancing Toggle:</strong> Enable if actual capital doesn&rsquo;t match the 60/25/15 split. The system creates an adjusting entry.</p>
+
+<h5>Section 8: Loans &amp; Liabilities (OB-04)</h5>
+<div class="table-wrap"><table>
+<thead><tr><th>Field</th><th>What to Enter</th></tr></thead>
+<tbody>
+<tr><td><strong>Accounts Payable (2101)</strong></td><td>Total you owe suppliers</td></tr>
+<tr><td><strong>Accrued Expenses (2140)</strong></td><td>Expenses incurred but not yet paid</td></tr>
+</tbody>
+</table></div>
+<p>Click <strong>Add Loan</strong> for each loan &mdash; enter lender name and amount.</p>
+
+<h5>Live Summary</h5>
+<p>As you fill amounts, the <strong>Live Summary</strong> updates in real-time. The <strong>Unallocated Difference must be close to zero</strong>. Adjust entries until Assets &minus; Liabilities &asymp; Partner Capital. Click <strong>Save Opening Balances</strong> to finish.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 4. MANUFACTURING WORKFLOW -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="workflow">4. The Manufacturing Workflow &mdash; Day by Day</h3>
+<p>This is the core flow. Follow it for every customer order.</p>
+
+<ol class="flow-steps">
+  <li><strong>Customer Places Order</strong> Enter manually or receive automatically from your e-commerce website</li>
+  <li><strong>Create Sales Order</strong> <code>Operations &gt; Sales Orders</code> &rarr; <strong>+ Manual Order</strong>. Select customer, add design items, set sale price. Status: <span class="badge badge-amber">Pending</span></li>
+  <li><strong>Start Production</strong> Click <strong>&#9654;</strong> on the pending order. A Work Order is created automatically. Status: Producing</li>
+  <li><strong>Issue Materials to WIP</strong> <code>Operations &gt; Work Orders</code> &rarr; click <strong>&#128295;</strong> icon. Add materials, labor hours, labor cost, overhead. Behind the scenes: value moves from Raw Materials (1201) to WIP (1710-1712)</li>
+  <li><strong>Apply Labor &amp; Overhead</strong> Record worker time and indirect cost allocation through the same update dialog</li>
+  <li><strong>Complete Production</strong> Click <strong>&#10003;</strong> on the work order. Costs transfer from WIP to Finished Goods (1220). Status: <span class="badge badge-green">Completed</span></li>
+  <li><strong>Create Invoice</strong> <code>Finance &gt; Invoices</code>. Creates journal: Debit AR (1110) / Credit Sales Revenue (4003) + COGS (5301)</li>
+  <li><strong>Record Payment</strong> <code>Finance &gt; Payments</code>. Creates journal: Debit Cash/Bank (1101/1103) / Credit AR (1110)</li>
+</ol>
+<p>The order is now complete &mdash; revenue recognized, costs tracked, profit visible in reports.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 5. MODULE REFERENCE -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="module-ref">5. Module Reference &mdash; Every Feature Explained</h3>
+
+<!-- 5.1 -->
+<h4 id="customers">5.1 Customers</h4>
+<p><strong>Path:</strong> <code>Operations &gt; Customers</code></p>
+<p>Manage your customer database. Stats cards show totals, breakdowns, and average order value. Table shows name, email, phone, type, status, orders, total spent.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Action</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>Add customer</td><td><strong>+ Add Customer</strong> &rarr; fill form &rarr; Save</td></tr>
+<tr><td>Edit customer</td><td><strong>&#9998; Edit</strong> on row &rarr; update &rarr; Save</td></tr>
+<tr><td>Delete customer</td><td><strong>&#128465; Trash</strong> on row</td></tr>
+</tbody>
+</table></div>
+
+<!-- 5.2 -->
+<h4 id="sales-orders">5.2 Sales Orders</h4>
+<p><strong>Path:</strong> <code>Operations &gt; Sales Orders</code></p>
+<p>Track every customer order from placement to delivery. Search by order ID, customer name, or website order ID. Filter by status.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Action</th><th>When Available</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>View details</td><td>Always</td><td>Click <strong>&#128065;</strong> icon</td></tr>
+<tr><td>Start production</td><td>Status = Pending</td><td>Click <strong>&#9654;</strong> &mdash; creates work order</td></tr>
+<tr><td>Complete order</td><td>Status = Producing</td><td>Click <strong>&#10003;</strong></td></tr>
+<tr><td>Create manual order</td><td>Always</td><td><strong>+ Manual Order</strong> button</td></tr>
+</tbody>
+</table></div>
+<p><strong>Status Flow:</strong> Pending &rarr; Producing &rarr; Completed &rarr; Invoiced (<em>cancelled</em> possible before invoiced).</p>
+
+<p><strong>Manual Order Form:</strong> Select customer &rarr; choose design &rarr; enter quantity &rarr; set sale price. Line total and profit margin calculate automatically.</p>
+
+<!-- 5.3 -->
+<h4 id="work-orders">5.3 Work Orders</h4>
+<p><strong>Path:</strong> <code>Operations &gt; Work Orders</code></p>
+<p>Track production jobs with 4 summary cards and a detailed 12-column table.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Progress %</td><td>How much of production is complete</td></tr>
+<tr><td>Material Cost</td><td><span class="badge badge-green">Green</span> = actual recorded; <span class="badge badge-blue">Blue</span> = estimated</td></tr>
+<tr><td>Labor Cost</td><td>Direct labor applied to this order</td></tr>
+<tr><td>Overhead</td><td>Indirect costs allocated (rent, utilities share)</td></tr>
+<tr><td>Total Cost</td><td>Materials + Labor + Overhead</td></tr>
+<tr><td>Labor Hours</td><td>Hours logged for this order</td></tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Action</th><th>When</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>View details</td><td>Always</td><td><strong>View</strong> button</td></tr>
+<tr><td>Start job</td><td>Pending</td><td><strong>&#9654;</strong> icon</td></tr>
+<tr><td>Complete job</td><td>In Progress</td><td><strong>&#10003;</strong> icon</td></tr>
+<tr><td>Update materials</td><td>Not completed</td><td><strong>&#128295;</strong> icon</td></tr>
+</tbody>
+</table></div>
+
+<!-- 5.4 -->
+<h4 id="inventory">5.4 Inventory</h4>
+<p><strong>Path:</strong> <code>Inventory &gt; Inventory</code></p>
+<div class="table-wrap"><table>
+<thead><tr><th>Category</th><th>Examples</th><th>Account Code</th></tr></thead>
+<tbody>
+<tr><td>Raw Materials - Fabric</td><td>Cotton, polyester, linen, wool</td><td>1201</td></tr>
+<tr><td>Raw Materials - Accessories</td><td>Buttons, zippers, thread, elastic</td><td>1202</td></tr>
+<tr><td>WIP - Control</td><td>Total value in production</td><td>1210</td></tr>
+<tr><td>Finished Goods</td><td>Completed garments ready to ship</td><td>1220</td></tr>
+</tbody>
+</table></div>
+
+<!-- 5.5 -->
+<h4 id="purchase-orders">5.5 Purchase Orders</h4>
+<p><strong>Path:</strong> <code>Inventory &gt; Purchase Orders</code></p>
+<p><strong>Status Flow:</strong> Draft &rarr; Sent &rarr; Confirmed &rarr; Partial/Received (cancelled possible from draft or sent).</p>
+<p>Create POs by selecting a vendor, adding line items with materials/quantities/costs, and setting expected delivery.</p>
+
+<h4 id="vendors">5.6 Vendors</h4>
+<p><strong>Path:</strong> <code>Inventory &gt; Vendors</code> &mdash; Manage supplier database. Fields: Name, Contact Person, Email, Phone, Address, Payment Terms (e.g., Net 30), Lead Time (days), Status.</p>
+
+<h4 id="designs">5.7 Designs &amp; BOM</h4>
+<p><strong>Path:</strong> <code>Operations &gt; Designs</code> and <code>Operations &gt; BOM Management</code></p>
+<p>A <strong>Design</strong> is a garment template defining materials needed and estimated cost. The <strong>BOM</strong> (Bill of Materials) lists exact raw materials, quantities, and unit measures. Selecting a design on a sales order auto-fills costs for consistent pricing. Multi-size designs (S, M, L, XL) have per-size material requirements calculated automatically.</p>
+
+<h4 id="invoices">5.8 Invoices</h4>
+<p><strong>Path:</strong> <code>Finance &gt; Invoices</code> &mdash; Create and manage customer invoices. Records what was sold, amount due, and payment status (unpaid, partially paid, paid).</p>
+
+<h4 id="payments">5.9 Payments</h4>
+<p><strong>Path:</strong> <code>Finance &gt; Payments</code> &mdash; Record payments by selecting customer, invoice(s), amount, payment method, and date. Creates accounting entries automatically.</p>
+
+<h4 id="expenses">5.10 Expenses</h4>
+<p><strong>Path:</strong> <code>Finance &gt; Expenses</code></p>
+<div class="table-wrap"><table>
+<thead><tr><th>Account</th><th>Code</th><th>Covers</th></tr></thead>
+<tbody>
+<tr><td>Office Salaries</td><td>6001</td><td>Admin staff wages</td></tr>
+<tr><td>Office Rent</td><td>6002</td><td>Office space rental</td></tr>
+<tr><td>Internet &amp; Telecom</td><td>6003</td><td>Internet and phone bills</td></tr>
+<tr><td>Software Subscriptions</td><td>6004</td><td>Monthly SaaS tools</td></tr>
+<tr><td>Marketing</td><td>6101</td><td>General marketing</td></tr>
+<tr><td>Advertising</td><td>6102</td><td>Paid ads and campaigns</td></tr>
+</tbody>
+</table></div>
+
+<h4 id="journal-entries">5.11 Journal Entries</h4>
+<p><strong>Path:</strong> <code>Accounting &gt; Journal Entries</code></p>
+<p>Complete audit trail of every financial transaction. Every system action creates a journal entry. Expand any entry to see the full debit/credit breakdown with color-coded type badges. Accountants and admins can create manual entries for adjustments.</p>
+
+<h4 id="variance">5.12 Variance Analysis &amp; Overhead</h4>
+<p><strong>Path:</strong> <code>Accounting &gt; Variance Analysis</code></p>
+<div class="table-wrap"><table>
+<thead><tr><th>Variance</th><th>What It Tells You</th></tr></thead>
+<tbody>
+<tr><td>Material Price</td><td>Paid more/less than expected for materials?</td></tr>
+<tr><td>Material Usage</td><td>Used more/less material than planned?</td></tr>
+<tr><td>Labor Rate</td><td>Paid workers more/less than standard rate?</td></tr>
+<tr><td>Labor Efficiency</td><td>Workers took more/less time than expected?</td></tr>
+<tr><td>OH Spending</td><td>Actual overhead higher/lower than budget?</td></tr>
+<tr><td>OH Volume</td><td>Production volume different from planned?</td></tr>
+</tbody>
+</table></div>
+<p><strong>Overhead Configuration:</strong> <code>Accounting &gt; Overhead Config</code>. Set up POHR = Estimated Annual Overhead &divide; Estimated Activity Base. Includes factory rent, utilities, maintenance, and equipment depreciation.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 6. FINANCIAL REPORTS -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="reports">6. Financial Reports</h3>
+<p><strong>Path:</strong> <code>Reports</code></p>
+<p>All reports are generated <strong>live</strong> from journal entries &mdash; no caching, every number traceable.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Report</th><th>Shows</th><th>Use For</th></tr></thead>
+<tbody>
+<tr><td><strong>Income Statement (P&amp;L)</strong></td><td>Revenue &minus; Expenses = Net Income</td><td>Monthly/quarterly review</td></tr>
+<tr><td><strong>Balance Sheet</strong></td><td>Assets = Liabilities + Equity</td><td>Financial position snapshot</td></tr>
+<tr><td><strong>Cash Flow</strong></td><td>Cash inflows and outflows</td><td>Understand cash movement</td></tr>
+<tr><td><strong>Trial Balance</strong></td><td>All account balances</td><td>Verify books are balanced</td></tr>
+<tr><td><strong>AR Aging</strong></td><td>Who owes you + how old the debt</td><td>Collections management</td></tr>
+<tr><td><strong>AP Aging</strong></td><td>Who you owe + payment timing</td><td>Cash planning</td></tr>
+<tr><td><strong>Job Profitability</strong></td><td>Profit per work order</td><td>Identify profitable products</td></tr>
+<tr><td><strong>Tax/VAT</strong></td><td>VAT payable and receivable</td><td>Tax filing preparation</td></tr>
+<tr><td><strong>Inventory Valuation</strong></td><td>Current stock value</td><td>Stock assessment</td></tr>
+<tr><td><strong>Sales by Customer</strong></td><td>Revenue per customer</td><td>Customer analysis</td></tr>
+</tbody>
+</table></div>
+
+<h4>Income Statement Structure</h4>
+<pre>Revenue
+  + Product Sales - Retail (4001)
+  + Product Sales - Wholesale (4002)
+  + Custom MTO Orders (4003)
+  + Online Sales (4011)
+  - Sales Returns (4091) / Discounts (4090)
+  = <strong>Net Revenue</strong>
+
+Cost of Goods Sold
+  + Raw Materials Used (5001)
+  + Direct Labor (5002)
+  + Manufacturing Overhead (5004)
+  = <strong>Total COGS</strong>
+
+<strong>GROSS PROFIT</strong> = Net Revenue - COGS
+
+Operating Expenses
+  + Salaries (6001) + Rent (6002) + Marketing (6101) + Depreciation (6007) ...
+  = <strong>Total OpEx</strong>
+
+<strong>OPERATING INCOME</strong> = Gross Profit - OpEx
+<strong>NET INCOME</strong> = Operating Income ± Other Items</pre>
+
+<h4>Balance Sheet Structure</h4>
+<pre>ASSETS
+  Current: Cash (1101-1107) + AR (1110) + Inventory (1201-1240) + Prepaid (1130)
+  Fixed: Equipment (1301-1307) - Accum Dep (1351-1354)
+  = <strong>Total Assets</strong>
+
+LIABILITIES
+  Current: AP (2101) + VAT Payable (2110) + Accrued (2140)
+  Long-term: Loans (2201-2210)
+  = <strong>Total Liabilities</strong>
+
+EQUITY
+  Partner Capital (3011-3013) + Retained Earnings (3100) + Current P&amp;L (3200)
+  = <strong>Total Equity</strong>
+
+<span style="color:var(--red);font-weight:700;">Total Assets MUST EQUAL Total Liabilities + Equity</span></pre>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 7. YEAR-END CLOSE -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="year-end">7. Year-End Close</h3>
+<p><strong>Path:</strong> <code>System &gt; Year-End Close</code> &mdash; Accountant or Admin only. Do once per year.</p>
+<p>The close calculates net income, transfers it to Retained Earnings (3100), resets revenue/expense accounts to zero, and creates closing entries.</p>
+
+<h5>Before Closing Checklist</h5>
+<ul class="checklist">
+  <li>All transactions for the year are recorded</li>
+  <li>Bank accounts are reconciled</li>
+  <li>Inventory has been counted and adjusted</li>
+  <li>All invoices are issued</li>
+  <li>All payments are recorded</li>
+  <li>Depreciation is recorded for the year</li>
+  <li>Reports have been reviewed and approved</li>
+</ul>
+<p>After closing, closed-period entries cannot be modified, protecting your audited financials.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 8. USER MANAGEMENT -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="users">8. User Management &amp; Security</h3>
+<p><strong>Path:</strong> <code>System &gt; Users</code> (Admin only)</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Role</th><th>Permissions</th></tr></thead>
+<tbody>
+<tr><td><strong>Admin</strong></td><td>Everything &mdash; full access, user management, settings</td></tr>
+<tr><td><strong>Accountant</strong></td><td>Journal entries, invoices, payments, reports, chart of accounts</td></tr>
+<tr><td><strong>Warehouse</strong></td><td>Inventory, purchase orders, vendors</td></tr>
+<tr><td><strong>Sales</strong></td><td>Customers, sales orders, designs</td></tr>
+<tr><td><strong>Production</strong></td><td>Work orders, BOM, designs</td></tr>
+<tr><td><strong>Viewer</strong></td><td>Read-only: dashboard and reports</td></tr>
+</tbody>
+</table></div>
+<p>Admin actions: Add user (email, password, name, role), edit user, deactivate user, reset password.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 9. BEST PRACTICES -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="best-practices">9. Best Practices &amp; Tips</h3>
+
+<h4>Daily Routine</h4>
+<ol>
+  <li><strong>Morning:</strong> Check dashboard KPIs and pending orders</li>
+  <li><strong>During day:</strong> Create sales orders; start production on pending</li>
+  <li><strong>End of day:</strong> Record all payments received and materials issued</li>
+  <li><strong>Weekly:</strong> Review AR Aging &mdash; follow up on overdue payments</li>
+  <li><strong>Monthly:</strong> Run Income Statement and Balance Sheet; review profitability</li>
+</ol>
+
+<h4>Data Entry Tips</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Tip</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Always select a design when creating orders</td><td>Ensures accurate cost tracking and margin calculation</td></tr>
+<tr><td>Record materials as they&rsquo;re issued</td><td>Keeps WIP valuation accurate in real-time</td></tr>
+<tr><td>Update labor costs per work order</td><td>Prevents understated production costs</td></tr>
+<tr><td>Reconcile bank monthly</td><td>Catch discrepancies early</td></tr>
+<tr><td>Enter expenses promptly</td><td>Avoid missing deductions at tax time</td></tr>
+<tr><td>Use descriptive notes on journal entries</td><td>Makes audits much easier</td></tr>
+</tbody>
+</table></div>
+
+<h4>True Production Cost</h4>
+<pre>Direct Materials (fabric, buttons, zippers)
++ Direct Labor (worker wages for that order)
++ Manufacturing Overhead (share of rent, utilities, maintenance)
+= <strong>Total Production Cost</strong></pre>
+<p>Track all three for accurate job profitability. Skipping overhead or labor makes profit look higher than reality.</p>
+
+<h4>Inventory Management</h4>
+<ul>
+  <li>Count inventory monthly &mdash; compare physical to system</li>
+  <li>Record adjustments via <code>Inventory &gt; Adjust</code></li>
+  <li>Track scrap separately (account 1205)</li>
+  <li>System uses FIFO (First-In-First-Out) &mdash; oldest stock used first</li>
+</ul>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 10. TROUBLESHOOTING -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="troubleshooting">10. Troubleshooting</h3>
+
+<h5>&ldquo;I can&rsquo;t see a module in the sidebar&rdquo;</h5>
+<p>Your role limits visibility. Ask admin to adjust your role. Viewers only see Dashboard and Reports.</p>
+
+<h5>&ldquo;The balance sheet doesn&rsquo;t balance&rdquo;</h5>
+<p>Check: (1) Opening balances Unallocated Difference was zero. (2) Run Trial Balance first &mdash; if balanced, reconstruct Balance Sheet step by step.</p>
+
+<h5>&ldquo;I created a sales order but no work order appeared&rdquo;</h5>
+<p>Work orders are only created when you click <strong>&#9654; Start Production</strong>. Pending orders don&rsquo;t have work orders yet.</p>
+
+<h5>&ldquo;My inventory quantity is wrong&rdquo;</h5>
+<ol>
+  <li>Check <code>Inventory &gt; Inventory Movements</code></li>
+  <li>Verify all material issuances and PO receipts were recorded</li>
+  <li>Use <code>Inventory &gt; Adjust</code> to correct</li>
+</ol>
+
+<h5>&ldquo;The dashboard shows no data&rdquo;</h5>
+<p>Click <strong>Refresh</strong>. Ensure you have opening balances, at least one customer, and one sales order. New systems start with zeros.</p>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 11. GLOSSARY -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="glossary">11. Glossary of Accounting Terms</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Term</th><th>Simple Definition</th></tr></thead>
+<tbody>
+<tr><td><strong>Accounts Payable (AP)</strong></td><td>Money you owe suppliers</td></tr>
+<tr><td><strong>Accounts Receivable (AR)</strong></td><td>Money customers owe you</td></tr>
+<tr><td><strong>Accrued Expense</strong></td><td>Expense used but not yet paid (e.g., electricity bill received later)</td></tr>
+<tr><td><strong>Asset</strong></td><td>Something you own with value (cash, inventory, equipment)</td></tr>
+<tr><td><strong>Balance Sheet</strong></td><td>Snapshot: what you own vs what you owe</td></tr>
+<tr><td><strong>COGM</strong></td><td>Cost of Goods Manufactured &mdash; total to make finished products</td></tr>
+<tr><td><strong>COGS</strong></td><td>Cost of Goods Sold &mdash; cost of products actually sold/delivered</td></tr>
+<tr><td><strong>Contra Account</strong></td><td>Account that reduces another (e.g., Accumulated Depreciation)</td></tr>
+<tr><td><strong>Credit</strong></td><td>Right side &mdash; increases revenue, liabilities, equity</td></tr>
+<tr><td><strong>Debit</strong></td><td>Left side &mdash; increases assets, expenses</td></tr>
+<tr><td><strong>Depreciation</strong></td><td>Spreading asset cost over useful life (10K machine / 5 yrs = 2K/yr)</td></tr>
+<tr><td><strong>Double-Entry</strong></td><td>Every transaction hits &ge;2 accounts; debits always = credits</td></tr>
+<tr><td><strong>Equity</strong></td><td>Owner/partner stake = Assets &minus; Liabilities</td></tr>
+<tr><td><strong>FIFO</strong></td><td>First-In, First-Out inventory costing (oldest stock sold first)</td></tr>
+<tr><td><strong>Gross Profit</strong></td><td>Revenue minus COGS (before operating expenses)</td></tr>
+<tr><td><strong>Journal Entry</strong></td><td>Record of a transaction with debited and credited accounts</td></tr>
+<tr><td><strong>Liability</strong></td><td>Something you owe (loans, payables, taxes)</td></tr>
+<tr><td><strong>Net Income</strong></td><td>Revenue minus ALL expenses &mdash; the bottom line</td></tr>
+<tr><td><strong>Overhead</strong></td><td>Indirect production costs (rent, utilities, maintenance)</td></tr>
+<tr><td><strong>POHR</strong></td><td>Predetermined Overhead Rate &mdash; formula allocating overhead per job</td></tr>
+<tr><td><strong>Retained Earnings</strong></td><td>Accumulated profits from prior years, reinvested</td></tr>
+<tr><td><strong>Revenue</strong></td><td>Money earned from selling products/services</td></tr>
+<tr><td><strong>Trial Balance</strong></td><td>All accounts with balances &mdash; debits must equal credits</td></tr>
+<tr><td><strong>WIP</strong></td><td>Work In Progress &mdash; partially completed goods in production</td></tr>
+<tr><td><strong>VAT</strong></td><td>Value Added Tax &mdash; collected from customers, paid to authority</td></tr>
+</tbody>
+</table></div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- QUICK REFERENCE -->
+<!-- ═══════════════════════════════════════ -->
+<h3 id="quick-ref">Quick Reference Card</h3>
+
+<h4>Key Pages</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Page</th><th>Use When You Need To&hellip;</th></tr></thead>
+<tbody>
+<tr><td><strong>Dashboard</strong></td><td>See overall business health</td></tr>
+<tr><td><strong>Customers</strong></td><td>Add/edit customer information</td></tr>
+<tr><td><strong>Sales Orders</strong></td><td>Create/track customer orders</td></tr>
+<tr><td><strong>Work Orders</strong></td><td>Manage production, record materials/labor</td></tr>
+<tr><td><strong>Inventory</strong></td><td>Check stock levels, adjust quantities</td></tr>
+<tr><td><strong>Purchase Orders</strong></td><td>Order supplies from vendors</td></tr>
+<tr><td><strong>Vendors</strong></td><td>Manage supplier information</td></tr>
+<tr><td><strong>Designs</strong></td><td>Create garment templates with costs</td></tr>
+<tr><td><strong>Invoices</strong></td><td>Bill customers</td></tr>
+<tr><td><strong>Payments</strong></td><td>Record money received</td></tr>
+<tr><td><strong>Expenses</strong></td><td>Record business costs</td></tr>
+<tr><td><strong>Journal Entries</strong></td><td>View audit trail, make adjustments</td></tr>
+<tr><td><strong>Reports</strong></td><td>Generate financial statements</td></tr>
+<tr><td><strong>Opening Balances</strong></td><td>First-time setup only</td></tr>
+<tr><td><strong>Users</strong></td><td>Manage system access (admin)</td></tr>
+<tr><td><strong>Year-End Close</strong></td><td>Close the fiscal year</td></tr>
+</tbody>
+</table></div>
+
+<h4>Chart of Accounts Quick Lookup</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Account</th><th>Code</th><th>Normal Balance</th></tr></thead>
+<tbody>
+<tr><td>Cash on Hand</td><td><code>1101</code></td><td>Debit</td></tr>
+<tr><td>Bank &ndash; Main</td><td><code>1103</code></td><td>Debit</td></tr>
+<tr><td>Accounts Receivable</td><td><code>1110</code></td><td>Debit</td></tr>
+<tr><td>Raw Materials &ndash; Fabric</td><td><code>1201</code></td><td>Debit</td></tr>
+<tr><td>WIP &ndash; Control</td><td><code>1210</code></td><td>Debit</td></tr>
+<tr><td>Finished Goods</td><td><code>1220</code></td><td>Debit</td></tr>
+<tr><td>Sewing Machines</td><td><code>1301</code></td><td>Debit</td></tr>
+<tr><td>Accumulated Depreciation</td><td><code>1351&ndash;1354</code></td><td>Credit</td></tr>
+<tr><td>Accounts Payable</td><td><code>2101</code></td><td>Credit</td></tr>
+<tr><td>VAT Payable</td><td><code>2110</code></td><td>Credit</td></tr>
+<tr><td>Partner Capital</td><td><code>3011&ndash;3013</code></td><td>Credit</td></tr>
+<tr><td>Retained Earnings</td><td><code>3100</code></td><td>Credit</td></tr>
+<tr><td>Sales Revenue</td><td><code>4001&ndash;4003</code></td><td>Credit</td></tr>
+<tr><td>COGS</td><td><code>5301</code></td><td>Debit</td></tr>
+<tr><td>Operating Expenses</td><td><code>6001&ndash;6107</code></td><td>Debit</td></tr>
+</tbody>
+</table></div>
+
+<h4>Recommended Users by Role</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Role</th><th>Recommended For</th></tr></thead>
+<tbody>
+<tr><td>Admin</td><td>1&ndash;2 people (owner + IT)</td></tr>
+<tr><td>Accountant</td><td>1&ndash;2 people (finance team)</td></tr>
+<tr><td>Warehouse</td><td>1&ndash;3 people (stock keepers)</td></tr>
+<tr><td>Sales</td><td>1&ndash;3 people (sales team)</td></tr>
+<tr><td>Production</td><td>1&ndash;5 people (supervisors)</td></tr>
+<tr><td>Viewer</td><td>Unlimited (investors, auditors)</td></tr>
+</tbody>
+</table></div>
+
+<footer>
+  <p>AccuFinance &mdash; TEL U ASEGH Manufacturing ERP. &copy; 2025. All rights reserved.</p>
+</footer>
+
+</main>
+
+<script>
+// Active sidebar link tracking
+const links = document.querySelectorAll('.sidebar-link');
+const sections = [...document.querySelectorAll('h3[id], h4[id]')].filter(el => {
+  const l = links.length;
+  for (let i = 0; i < l; i++) if (links[i].getAttribute('href') === '#' + el.id) return true;
+  return false;
+});
+
+function updateActive() {
+  let current = sections[0]?.id || '';
+  const scrollY = window.scrollY + 120;
+  for (const s of sections) {
+    if (s.offsetTop <= scrollY) current = s.id;
+    else break;
+  }
+  links.forEach(l => {
+    l.classList.toggle('active', l.getAttribute('href') === '#' + current);
+  });
+}
+
+window.addEventListener('scroll', updateActive, { passive: true });
+updateActive();
+</script>
+
+</body>
+</html>

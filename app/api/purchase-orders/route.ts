@@ -77,6 +77,23 @@ export async function PUT(request: NextRequest) {
             case "confirm":
                 result = await PurchaseOrderService.confirmPurchaseOrder(id)
                 break
+            case "receive":
+                if (!body.items || body.items.length === 0) {
+                    return createErrorResponse("Items are required for receiving goods", 400)
+                }
+                result = await PurchaseOrderService.receiveGoods({
+                    purchase_order_id: id,
+                    items: body.items,
+                    receipt_date: new Date().toISOString().split("T")[0],
+                    notes: body.notes
+                })
+                break
+            case "pay":
+                if (!body.amount || body.amount <= 0) {
+                    return createErrorResponse("Payment amount is required", 400)
+                }
+                result = await PurchaseOrderService.payVendor(id, body.amount, body.method || "bank", body.reference)
+                break
             case "cancel":
                 result = await PurchaseOrderService.cancelPurchaseOrder(id, body.reason)
                 break

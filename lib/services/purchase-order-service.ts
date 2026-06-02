@@ -81,6 +81,9 @@ export class PurchaseOrderService {
                 vendor_id: vendorId,
                 vendor_name: vendor.name,
                 items: processedItems as any,
+                subtotal,
+                tax_amount: taxAmount,
+                shipping_cost: shippingCost,
                 total_amount: totalAmount,
                 expected_delivery: options?.expectedDelivery?.toISOString().split("T")[0] || null,
                 shipping_address: options?.shippingAddress || null,
@@ -191,7 +194,7 @@ export class PurchaseOrderService {
         }
     }
 
-    static async receiveGoods(receipt: GoodsReceipt): Promise<{ success: boolean; error?: string }> {
+    static async receiveGoods(receipt: GoodsReceipt): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
         try {
             const po = await this.getPurchaseOrder(receipt.purchase_order_id)
             if (!po) {
@@ -202,82 +205,147 @@ export class PurchaseOrderService {
                 return { success: false, error: "Can only receive goods for confirmed purchase orders" }
             }
 
+            // Compute received amounts for THIS receipt only
+            let receiptTotal = 0
+            let receiptFabricCost = 0
+            let receiptAccessoryCost = 0
+
             let allReceived = true
             const updatedItems = po.items.map(item => {
                 const receivedItem = receipt.items.find(r => r.material_id === item.material_id)
-                const newReceivedQty = (item.received_quantity || 0) + (receivedItem?.quantity_received || 0)
+                const qtyReceived = receivedItem?.quantity_received || 0
+                const unitCost = receivedItem?.actual_unit_cost || item.unit_cost
+                const lineTotal = qtyReceived * unitCost
+                receiptTotal += lineTotal
+
+                const name = (item.material_name || "").toLowerCase()
+                if (name.includes("fabric") || name.includes("cloth") || name.includes("textile")) {
+                    receiptFabricCost += lineTotal
+                } else {
+                    receiptAccessoryCost += lineTotal
+                }
+
+                const newReceivedQty = (item.received_quantity || 0) + qtyReceived
 
                 if (newReceivedQty < item.quantity) {
                     allReceived = false
                 }
 
-                return {
-                    ...item,
-                    received_quantity: newReceivedQty
-                }
+                return { ...item, received_quantity: newReceivedQty }
             })
 
-            if (allReceived) {
-                const { data: existingEntries } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
+            // Proportional tax and shipping for this receipt
+            const ratio = po.subtotal > 0 ? receiptTotal / po.subtotal : 0
+            const receiptTax = (po.tax_amount || 0) * ratio
+            const receiptShipping = (po.shipping_cost || 0) * ratio
+            const totalAP = receiptTotal + receiptTax + receiptShipping
+
+            // Create MATERIAL_RECEIPT JE for THIS receipt (not just full receipt)
+            let journalEntryId: string | undefined
+
+            if (totalAP > 0) {
+                const { data: existingJE } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
                     .select("id")
-                    .eq("reference_id", receipt.purchase_order_id)
+                    .eq("reference_id", `${receipt.purchase_order_id}-${Date.now()}`)
                     .eq("type", JournalEntryType.MATERIAL_RECEIPT)
                     .limit(1)
 
-                if (!existingEntries || existingEntries.length === 0) {
-                    if (po.total_amount > 0) {
-                        let fabricCost = 0
-                        let accessoryCost = 0
+                if (!existingJE || existingJE.length === 0) {
+                    const lines: any[] = []
 
-                        po.items.forEach(item => {
-                            const name = (item.material_name || "").toLowerCase()
-                            if (name.includes("fabric") || name.includes("cloth") || name.includes("textile")) {
-                                fabricCost += item.total_cost
-                            } else {
-                                accessoryCost += item.total_cost
-                            }
-                        })
-
-                        const lines = []
-                        
-                        if (fabricCost > 0) {
-                            lines.push({
-                                accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,
-                                accountName: "Raw Materials - Fabric",
-                                debit: fabricCost,
-                                credit: 0,
-                                description: `RM Fabric received: PO ${receipt.purchase_order_id}`
-                            })
-                        }
-                        
-                        const accessoryTotal = accessoryCost + (po.tax_amount || 0) + (po.shipping_cost || 0)
-                        if (accessoryTotal > 0) {
-                            lines.push({
-                                accountCode: "1202",
-                                accountName: "Raw Materials - Accessories",
-                                debit: accessoryTotal,
-                                credit: 0,
-                                description: `RM Accessories/Tax/Shipping received: PO ${receipt.purchase_order_id}`
-                            })
-                        }
-
+                    if (receiptFabricCost > 0) {
                         lines.push({
-                            accountCode: ACCOUNTS.ACCOUNTS_PAYABLE,
-                            accountName: "Accounts Payable",
-                            debit: 0,
-                            credit: po.total_amount,
-                            description: `Liability for PO received: ${receipt.purchase_order_id}`
+                            accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,  // 1201
+                            accountName: "Raw Materials - Fabric",
+                            debit: receiptFabricCost,
+                            credit: 0,
+                            description: `Fabric received: PO ${receipt.purchase_order_id}`
                         })
-
-                        await EnhancedAccountingService.createJournalEntry(
-                            JournalEntryType.MATERIAL_RECEIPT,
-                            lines,
-                            receipt.purchase_order_id,
-                            `Materials received for PO: ${receipt.purchase_order_id}`
-                        )
                     }
-                } else {
-                    console.log(`[Idempotency] Skipping duplicate MATERIAL_RECEIPT for PO ${receipt.purchase_order_id}`)
+
+                    if (receiptAccessoryCost > 0) {
+                        lines.push({
+                            accountCode: "1202",
+                            accountName: "Raw Materials - Accessories",
+                            debit: receiptAccessoryCost,
+                            credit: 0,
+                            description: `Accessories received: PO ${receipt.purchase_order_id}`
+                        })
+                    }
+
+                    if (receiptTax > 0) {
+                        lines.push({
+                            accountCode: "1120",
+                            accountName: "VAT Receivable (Input VAT)",
+                            debit: receiptTax,
+                            credit: 0,
+                            description: `Input VAT on PO ${receipt.purchase_order_id} receipt`
+                        })
+                    }
+
+                    if (receiptShipping > 0) {
+                        lines.push({
+                            accountCode: "6106",
+                            accountName: "Delivery & Shipping Expense",
+                            debit: receiptShipping,
+                            credit: 0,
+                            description: `Shipping on PO ${receipt.purchase_order_id} receipt`
+                        })
+                    }
+
+                    lines.push({
+                        accountCode: ACCOUNTS.ACCOUNTS_PAYABLE,  // 2101
+                        accountName: "Accounts Payable",
+                        debit: 0,
+                        credit: totalAP,
+                        description: `Liability for PO ${receipt.purchase_order_id} receipt`
+                    })
+
+                    const jeRef = `${receipt.purchase_order_id}-${Date.now()}`
+                    const jeResult = await EnhancedAccountingService.createJournalEntry(
+                        JournalEntryType.MATERIAL_RECEIPT,
+                        lines,
+                        jeRef,
+                        `Materials received for PO: ${receipt.purchase_order_id}`
+                    )
+
+                    if (jeResult.success) {
+                        journalEntryId = jeResult.entryId
+                    } else {
+                        console.error(`Material receipt JE failed: ${jeResult.error}`)
+                    }
+                }
+            }
+
+            // Update inventory quantities and create movement records
+            for (const recItem of receipt.items) {
+                if (!recItem.quantity_received || recItem.quantity_received <= 0) continue
+
+                const { data: invItem } = await getServiceSupabase()
+                    .from(TABLES.INVENTORY_ITEMS)
+                    .select("id, quantity_on_hand, sku, name")
+                    .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
+                    .limit(1)
+                    .maybeSingle()
+
+                if (invItem) {
+                    const newQty = (invItem.quantity_on_hand || 0) + recItem.quantity_received
+                    await getServiceSupabase()
+                        .from(TABLES.INVENTORY_ITEMS)
+                        .update({ quantity_on_hand: newQty, updated_at: new Date().toISOString() })
+                        .eq("id", invItem.id)
+
+                    await getServiceSupabase()
+                        .from(TABLES.INVENTORY_MOVEMENTS)
+                        .insert({
+                            item_id: invItem.id,
+                            sku: invItem.sku || recItem.material_id,
+                            qty: recItem.quantity_received,
+                            type: "receipt",
+                            related_doc: receipt.purchase_order_id,
+                            notes: `PO receipt: ${invItem.name || recItem.material_id} × ${recItem.quantity_received}`,
+                            created_at: new Date().toISOString()
+                        })
                 }
             }
 
@@ -294,8 +362,8 @@ export class PurchaseOrderService {
                 await VendorService.recordOrder(po.vendor_id, po.total_amount)
             }
 
-            console.log(`✅ Received goods for PO ${receipt.purchase_order_id}`)
-            return { success: true }
+            console.log(`✅ Received goods for PO ${receipt.purchase_order_id}, JE: ${journalEntryId || 'none'}`)
+            return { success: true, journalEntryId }
         } catch (error) {
             console.error("Error receiving goods:", error)
             return { success: false, error: error instanceof Error ? error.message : "Failed to receive goods" }
@@ -327,6 +395,62 @@ export class PurchaseOrderService {
         } catch (error) {
             console.error("Error cancelling PO:", error)
             return { success: false, error: error instanceof Error ? error.message : "Failed to cancel PO" }
+        }
+    }
+
+    static async payVendor(
+        poId: string,
+        amount: number,
+        method: "cash" | "bank" = "bank",
+        reference?: string
+    ): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
+        try {
+            const po = await this.getPurchaseOrder(poId)
+            if (!po) {
+                return { success: false, error: "Purchase order not found" }
+            }
+
+            if (amount <= 0) {
+                return { success: false, error: "Payment amount must be positive" }
+            }
+
+            const paymentAccount = method === "cash" ? "1101" : "1103"
+            const paymentName = method === "cash" ? "Cash on Hand" : "Bank Account"
+            const ref = reference || `PAY-PO-${poId.slice(0, 8)}`
+
+            const lines: any[] = [
+                {
+                    accountCode: ACCOUNTS.ACCOUNTS_PAYABLE,  // 2101
+                    accountName: "Accounts Payable",
+                    debit: amount,
+                    credit: 0,
+                    description: `Payment to vendor ${po.vendor_name} - PO ${poId}`
+                },
+                {
+                    accountCode: paymentAccount,
+                    accountName: paymentName,
+                    debit: 0,
+                    credit: amount,
+                    description: `Vendor payment via ${method} - PO ${poId}${ref ? ` (${ref})` : ''}`
+                }
+            ]
+
+            const result = await EnhancedAccountingService.createJournalEntry(
+                JournalEntryType.PAYMENT_MADE,
+                lines,
+                ref,
+                `Vendor payment: ${po.vendor_name} - PO ${poId}`
+            )
+
+            if (!result.success) {
+                return { success: false, error: result.error || "Failed to create payment journal entry" }
+            }
+
+            console.log(`✅ Paid vendor ${po.vendor_name} EGP ${amount} via ${method}, JE: ${result.entryId}`)
+            return { success: true, journalEntryId: result.entryId }
+        } catch (error) {
+            console.error("Error paying vendor:", error)
+            return { success: false, error: error instanceof Error ? error.message : "Failed to pay vendor" }
         }
     }
 

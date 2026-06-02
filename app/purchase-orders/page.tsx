@@ -10,13 +10,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Plus, Eye, Send, CheckCircle, XCircle, Truck, ChevronsUpDown, Check } from "lucide-react"
+import { Search, Plus, Eye, Send, CheckCircle, XCircle, Truck, ChevronsUpDown, Check, DollarSign } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useState, useEffect } from "react"
 import { formatCurrency } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { ReceiveGoodsDialog } from "@/components/receive-goods-dialog"
+import { PayVendorDialog } from "@/components/pay-vendor-dialog"
 
 interface POItem {
   material_id: string
@@ -286,7 +288,10 @@ export default function PurchaseOrdersPage() {
                               <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "cancel")} title="Cancel"><XCircle className="h-4 w-4 text-red-500" /></Button>
                             )}
                             {(order.status === "confirmed" || order.status === "partial") && (
-                              <Button size="sm" variant="outline" onClick={() => toast.info("Goods receipt coming soon")} title="Receive"><Truck className="h-4 w-4" /></Button>
+                              <ReceiveGoodsDialog poId={order.id} items={order.items} />
+                            )}
+                            {order.status === "received" && (
+                              <PayVendorDialog poId={order.id} vendorName={order.vendor_name} totalAmount={order.total_amount} />
                             )}
                           </div>
                         </TableCell>

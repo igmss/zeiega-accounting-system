@@ -52,15 +52,21 @@ export async function PUT(
                 result = await PurchaseOrderService.receiveGoods({
                     purchase_order_id: params.id,
                     items: body.items,
-                    receipt_date: new Date().toISOString(),
+                    receipt_date: new Date().toISOString().split("T")[0],
                     notes: body.notes
                 })
+                break
+            case "pay":
+                if (!body.amount || body.amount <= 0) {
+                    return createErrorResponse("Payment amount is required", 400)
+                }
+                result = await PurchaseOrderService.payVendor(params.id, body.amount, body.method || "bank", body.reference)
                 break
             case "cancel":
                 result = await PurchaseOrderService.cancelPurchaseOrder(params.id, body.reason)
                 break
             default:
-                return createErrorResponse("Invalid action. Use: send, confirm, receive, or cancel", 400)
+                return createErrorResponse("Invalid action. Use: send, confirm, receive, pay, or cancel", 400)
         }
 
         if (result.success) {
