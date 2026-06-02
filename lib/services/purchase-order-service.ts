@@ -5,10 +5,13 @@ import { EnhancedAccountingService, ACCOUNTS, JournalEntryType } from "./enhance
 export interface PurchaseOrderItem {
     material_id: string
     material_name: string
+    item_type: "inventory_raw" | "inventory_accessory" | "equipment" | "supplies"
     quantity: number
     unit: string
     unit_cost: number
     total_cost: number
+    asset_account?: string       // for equipment POs: 1301-1307 or 1401+
+    supplies_account?: string    // for supplies POs: 6001-6012
     received_quantity?: number
 }
 
@@ -50,7 +53,11 @@ export class PurchaseOrderService {
 
     static async createPurchaseOrder(
         vendorId: string,
-        items: Omit<PurchaseOrderItem, "total_cost" | "received_quantity">[],
+        items: (Omit<PurchaseOrderItem, "total_cost" | "received_quantity" | "item_type" | "asset_account" | "supplies_account"> & {
+            item_type?: PurchaseOrderItem["item_type"]
+            asset_account?: string
+            supplies_account?: string
+        })[],
         options?: {
             expectedDelivery?: Date
             shippingAddress?: string
@@ -67,6 +74,7 @@ export class PurchaseOrderService {
 
             const processedItems: PurchaseOrderItem[] = items.map(item => ({
                 ...item,
+                item_type: item.item_type || "inventory_raw",
                 total_cost: item.quantity * item.unit_cost,
                 received_quantity: 0
             }))
@@ -207,10 +215,21 @@ export class PurchaseOrderService {
                 return { success: false, error: "Can only receive goods for confirmed purchase orders" }
             }
 
-            // Compute received amounts for THIS receipt only
+            // Compute received amounts for THIS receipt, bucketed by item_type
             let receiptTotal = 0
-            let receiptFabricCost = 0
-            let receiptAccessoryCost = 0
+            const receiptByType: Record<string, { cost: number; lines: any[][]; items: Array<{ material_id: string; material_name: string; qty: number; unit_cost: number; account: string }> }> = {
+                inventory_raw:       { cost: 0, lines: [], items: [] },
+                inventory_accessory: { cost: 0, lines: [], items: [] },
+                equipment:           { cost: 0, lines: [], items: [] },
+                supplies:            { cost: 0, lines: [], items: [] },
+            }
+
+            const ACCOUNT_MAP: Record<string, { code: string; name: string }> = {
+                inventory_raw:       { code: "1201", name: "Raw Materials - Fabric" },
+                inventory_accessory: { code: "1202", name: "Raw Materials - Accessories" },
+                equipment:           { code: "1304", name: "Production Equipment" },
+                supplies:            { code: "6001", name: "Administrative Expenses" },
+            }
 
             let allReceived = true
             const updatedItems = po.items.map(item => {
@@ -220,15 +239,12 @@ export class PurchaseOrderService {
                 const lineTotal = qtyReceived * unitCost
                 receiptTotal += lineTotal
 
-                const name = (item.material_name || "").toLowerCase()
-                if (name.includes("fabric") || name.includes("cloth") || name.includes("textile")) {
-                    receiptFabricCost += lineTotal
-                } else {
-                    receiptAccessoryCost += lineTotal
+                const itype = item.item_type || "inventory_raw"
+                if (receiptByType[itype]) {
+                    receiptByType[itype].cost += lineTotal
                 }
 
                 const newReceivedQty = (item.received_quantity || 0) + qtyReceived
-
                 if (newReceivedQty < item.quantity) {
                     allReceived = false
                 }
@@ -242,7 +258,6 @@ export class PurchaseOrderService {
             const receiptShipping = (po.shipping_cost || 0) * ratio
             const totalAP = receiptTotal + receiptTax + receiptShipping
 
-            // Create MATERIAL_RECEIPT JE for THIS receipt (not just full receipt)
             let journalEntryId: string | undefined
 
             if (totalAP > 0) {
@@ -256,23 +271,15 @@ export class PurchaseOrderService {
                 if (!existingJE || existingJE.length === 0) {
                     const lines: any[] = []
 
-                    if (receiptFabricCost > 0) {
+                    for (const [itype, bucket] of Object.entries(receiptByType)) {
+                        if (bucket.cost <= 0) continue
+                        const acct = ACCOUNT_MAP[itype] || ACCOUNT_MAP.inventory_raw
                         lines.push({
-                            accountCode: ACCOUNTS.INVENTORY_RAW_MATERIALS,  // 1201
-                            accountName: "Raw Materials - Fabric",
-                            debit: receiptFabricCost,
+                            accountCode: acct.code,
+                            accountName: acct.name,
+                            debit: bucket.cost,
                             credit: 0,
-                            description: `Fabric received: PO ${receipt.purchase_order_id}`
-                        })
-                    }
-
-                    if (receiptAccessoryCost > 0) {
-                        lines.push({
-                            accountCode: "1202",
-                            accountName: "Raw Materials - Accessories",
-                            debit: receiptAccessoryCost,
-                            credit: 0,
-                            description: `Accessories received: PO ${receipt.purchase_order_id}`
+                            description: `${acct.name} received: PO ${receipt.purchase_order_id}`
                         })
                     }
 
@@ -297,57 +304,59 @@ export class PurchaseOrderService {
                     }
 
                     lines.push({
-                        accountCode: ACCOUNTS.ACCOUNTS_PAYABLE,  // 2101
+                        accountCode: ACCOUNTS.ACCOUNTS_PAYABLE,
                         accountName: "Accounts Payable",
                         debit: 0,
                         credit: totalAP,
                         description: `Liability for PO ${receipt.purchase_order_id} receipt`
                     })
 
-                    const jeRef = `${receipt.purchase_order_id}-${Date.now()}`
                     const jeResult = await EnhancedAccountingService.createJournalEntry(
                         JournalEntryType.MATERIAL_RECEIPT,
                         lines,
                         jeRef,
+                        `Materials received for PO: ${receipt.purchase_order_id}`
                     )
 
                     if (jeResult.success) {
                         journalEntryId = jeResult.entryId
-                    } else {
-                        console.error(`Material receipt JE failed: ${jeResult.error}`)
                     }
                 }
             }
 
-            // Update inventory quantities and create movement records
+            // Update inventory quantities ONLY for inventory-type items
             for (const recItem of receipt.items) {
                 if (!recItem.quantity_received || recItem.quantity_received <= 0) continue
+                const poItem = po.items.find(i => i.material_id === recItem.material_id)
+                const itype = poItem?.item_type || "inventory_raw"
 
-                const { data: invItem } = await getServiceSupabase()
-                    .from(TABLES.INVENTORY_ITEMS)
-                    .select("id, quantity_on_hand, sku, name")
-                    .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
-                    .limit(1)
-                    .maybeSingle()
-
-                if (invItem) {
-                    const newQty = (invItem.quantity_on_hand || 0) + recItem.quantity_received
-                    await getServiceSupabase()
+                if (itype === "inventory_raw" || itype === "inventory_accessory") {
+                    const { data: invItem } = await getServiceSupabase()
                         .from(TABLES.INVENTORY_ITEMS)
-                        .update({ quantity_on_hand: newQty, updated_at: new Date().toISOString() })
-                        .eq("id", invItem.id)
+                        .select("id, quantity_on_hand, sku, name")
+                        .or(`id.eq.${recItem.material_id},sku.eq.${recItem.material_id}`)
+                        .limit(1)
+                        .maybeSingle()
 
-                    await getServiceSupabase()
-                        .from(TABLES.INVENTORY_MOVEMENTS)
-                        .insert({
-                            item_id: invItem.id,
-                            sku: invItem.sku || recItem.material_id,
-                            qty: recItem.quantity_received,
-                            type: "receipt",
-                            related_doc: receipt.purchase_order_id,
-                            notes: `PO receipt: ${invItem.name || recItem.material_id} × ${recItem.quantity_received}`,
-                            created_at: new Date().toISOString()
-                        })
+                    if (invItem) {
+                        const newQty = (invItem.quantity_on_hand || 0) + recItem.quantity_received
+                        await getServiceSupabase()
+                            .from(TABLES.INVENTORY_ITEMS)
+                            .update({ quantity_on_hand: newQty, updated_at: new Date().toISOString() })
+                            .eq("id", invItem.id)
+
+                        await getServiceSupabase()
+                            .from(TABLES.INVENTORY_MOVEMENTS)
+                            .insert({
+                                item_id: invItem.id,
+                                sku: invItem.sku || recItem.material_id,
+                                qty: recItem.quantity_received,
+                                type: "receipt",
+                                related_doc: receipt.purchase_order_id,
+                                notes: `PO receipt: ${invItem.name || recItem.material_id} × ${recItem.quantity_received}`,
+                                created_at: new Date().toISOString()
+                            })
+                    }
                 }
             }
 

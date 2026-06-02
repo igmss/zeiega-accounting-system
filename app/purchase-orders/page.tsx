@@ -23,10 +23,13 @@ import { PayVendorDialog } from "@/components/pay-vendor-dialog"
 interface POItem {
   material_id: string
   material_name: string
+  item_type: "inventory_raw" | "inventory_accessory" | "equipment" | "supplies"
   quantity: number
   unit: string
   unit_cost: number
   total_cost: number
+  asset_account?: string
+  supplies_account?: string
   received_quantity?: number
 }
 
@@ -273,6 +276,7 @@ export default function PurchaseOrdersPage() {
                                         <TableHeader>
                                           <TableRow>
                                             <TableHead>Material</TableHead>
+                                            <TableHead>Type</TableHead>
                                             <TableHead>Qty</TableHead>
                                             <TableHead>Unit Cost</TableHead>
                                             <TableHead>Total</TableHead>
@@ -283,6 +287,15 @@ export default function PurchaseOrdersPage() {
                                           {(order.items || []).map((item, i) => (
                                             <TableRow key={i}>
                                               <TableCell>{item.material_name || item.material_id}</TableCell>
+                                              <TableCell>
+                                                <span className="text-xs">
+                                                  {(item as any).item_type === "inventory_raw" ? "Raw Mat"
+                                                   : (item as any).item_type === "inventory_accessory" ? "Accessory"
+                                                   : (item as any).item_type === "equipment" ? "Equipment"
+                                                   : (item as any).item_type === "supplies" ? "Supplies"
+                                                   : "—"}
+                                                </span>
+                                              </TableCell>
                                               <TableCell>{item.quantity} {item.unit}</TableCell>
                                               <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
                                               <TableCell>{formatCurrency(item.total_cost)}</TableCell>
@@ -340,7 +353,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
   const [formData, setFormData] = useState({
     vendor_id: "",
     vendor_name: "",
-    items: [{ material_name: "", quantity: 1, unit: "pcs", unit_cost: 0 }],
+    items: [{ material_name: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }],
     expected_delivery: "",
     shipping_address: "",
     shipping_cost: "0",
@@ -370,7 +383,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: formData.vendor_id,
-          items: formData.items.map(i => ({ material_id: i.material_name, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
+          items: formData.items.map(i => ({ material_id: i.material_name, material_name: i.material_name, item_type: i.item_type, asset_account: i.asset_account || undefined, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
           expected_delivery: formData.expected_delivery || undefined,
           shipping_address: formData.shipping_address || undefined,
           shipping_cost: shipping || undefined,
@@ -436,6 +449,42 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
                 </Button>
               )}
             </div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1">
+                <Label className="text-xs">Type</Label>
+                <Select value={(item as any).item_type || "inventory_raw"} onValueChange={(val) => {
+                  const items = [...formData.items]; (items[idx] as any).item_type = val
+                  setFormData({ ...formData, items })
+                }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inventory_raw">Raw Material (1201)</SelectItem>
+                    <SelectItem value="inventory_accessory">Accessories (1202)</SelectItem>
+                    <SelectItem value="equipment">Equipment/Asset (130x)</SelectItem>
+                    <SelectItem value="supplies">Supplies/Expense (600x)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(item as any).item_type === "equipment" && (
+                <div className="flex-1">
+                  <Label className="text-xs">Asset Account</Label>
+                  <Select value={(item as any).asset_account || ""} onValueChange={(val) => {
+                    const items = [...formData.items]; (items[idx] as any).asset_account = val
+                    setFormData({ ...formData, items })
+                  }}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1301">1301 - Land</SelectItem>
+                      <SelectItem value="1302">1302 - Buildings</SelectItem>
+                      <SelectItem value="1304">1304 - Production Equipment</SelectItem>
+                      <SelectItem value="1305">1305 - Office Equipment</SelectItem>
+                      <SelectItem value="1306">1306 - Vehicles</SelectItem>
+                      <SelectItem value="1307">1307 - Computers</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-4 gap-2">
               <div>
                 <Label className="text-xs">Material</Label>
@@ -470,7 +519,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
           </div>
         ))}
         <Button type="button" size="sm" variant="outline" onClick={() =>
-          setFormData({ ...formData, items: [...formData.items, { material_name: "", quantity: 1, unit: "pcs", unit_cost: 0 }] })
+          setFormData({ ...formData, items: [...formData.items, { material_name: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }] })
         }>
           <Plus className="h-3 w-3 mr-1" /> Add Item
         </Button>
