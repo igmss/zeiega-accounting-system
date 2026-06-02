@@ -1,6 +1,7 @@
 import { supabase, TABLES, getServiceSupabase } from "../supabase"
 import { VendorService } from "./vendor-service"
 import { EnhancedAccountingService, ACCOUNTS, JournalEntryType } from "./enhanced-accounting-service"
+import { InventoryLayerService } from "./inventory-layer-service"
 
 export interface PurchaseOrderItem {
     material_id: string
@@ -462,6 +463,14 @@ export class PurchaseOrderService {
                                 notes: `PO receipt: ${invItem.name || recItem.material_id} × ${recItem.quantity_received}`,
                                 created_at: new Date().toISOString()
                             })
+
+                        console.log(`[PO:INV] Recording FIFO layer for: ${invItem.sku}`)
+                        await InventoryLayerService.recordReceipt(
+                            invItem.sku || recItem.material_id,
+                            recItem.quantity_received,
+                            recItem.actual_unit_cost || poItem?.unit_cost || 0,
+                            receipt.purchase_order_id
+                        )
                     } else {
                         console.warn(`[PO:INV] NOT FOUND: material_id=${recItem.material_id} — no inventory item matched by id or sku`)
                     }
