@@ -181,11 +181,87 @@ export async function PUT(request: Request) {
   const auth = await requirePermission("sales-orders:create")
   if (!auth.authorized) return auth.response
   try {
-    const { orderId, status } = await request.json()
+    const body = await request.json()
+    const { orderId, status, action } = body
 
-    if (!orderId || !status) {
+    if (!orderId) {
       return NextResponse.json(
-        { error: "Order ID and status are required" },
+        { error: "Order ID is required" },
+        { status: 400 }
+      )
+    }
+
+    if (action === "update") {
+      const { customer_name, customer_email, items, total, notes, shipping_address } = body
+      
+      const { data: currentOrder, error: getError } = await getServiceClient()
+        .from(TABLES.SALES_ORDERS)
+        .select("status")
+        .eq("id", orderId)
+        .single()
+      
+      if (getError || !currentOrder) {
+        return NextResponse.json({ error: "Order not found" }, { status: 404 })
+      }
+      
+      if (currentOrder.status !== "pending") {
+        return NextResponse.json({ error: "Only pending sales orders can be edited" }, { status: 400 })
+      }
+      
+      const now = new Date().toISOString()
+      
+      await getServiceClient()
+        .from(TABLES.MANUAL_ORDERS)
+        .update({
+          customer_name: customer_name,
+          customer_email: customer_email,
+          items: items?.map((item: any) => ({
+            adjustedPrice: item.total_price || item.unit_price,
+            basePrice: item.unit_price,
+            category: item.category || "Manual",
+            color: item.color || "",
+            costPrice: item.cost_price,
+            quantity: item.quantity,
+            sku: item.product_id,
+            size: item.size || "",
+            title: item.product_name || item.product_id
+          })),
+          shipping_address: {
+            city: shipping_address?.city || "",
+            fullName: customer_name || "Manual Customer",
+            phone: shipping_address?.phone || "",
+            state: shipping_address?.state || "",
+            street: shipping_address?.street || "",
+            zipCode: shipping_address?.zipCode || ""
+          },
+          total: total || 0,
+          notes: notes || null,
+          updated_at: now
+        })
+        .eq("id", orderId)
+        
+      await getServiceClient()
+        .from(TABLES.SALES_ORDERS)
+        .update({
+          customer_name: customer_name,
+          customer_email: customer_email,
+          items: items?.map((item: any) => ({
+            sku: item.product_id,
+            name: item.product_name || item.product_id,
+            qty: item.quantity,
+            unit_price: item.unit_price
+          })) || [],
+          total_amount: total || 0,
+          updated_at: now
+        })
+        .eq("id", orderId)
+
+      return NextResponse.json({ success: true })
+    }
+
+    if (!status) {
+      return NextResponse.json(
+        { error: "Status is required" },
         { status: 400 }
       )
     }

@@ -132,10 +132,10 @@ export class RevenueRecognitionService {
         return { success: false, error: "Total estimated cost must be positive" }
       }
 
-      contract.costsIncurredToDate += costsIncurredThisPeriod
-
+      // Compute new values without mutating the contract until journal entries succeed
+      const newCostsIncurred = contract.costsIncurredToDate + costsIncurredThisPeriod
       const pctComplete = Math.min(
-        (contract.costsIncurredToDate / contract.totalEstimatedCost) * 100,
+        (newCostsIncurred / contract.totalEstimatedCost) * 100,
         100
       )
 
@@ -155,22 +155,6 @@ export class RevenueRecognitionService {
             grossProfitThisPeriod: -costsIncurredThisPeriod,
           },
           contract,
-        }
-      }
-
-      contract.percentageComplete = pctComplete
-      contract.revenueRecognizedToDate = revenueToDate
-      contract.contractAsset = Math.max(0, revenueToDate - contract.amountsBilledToDate)
-      contract.contractLiability = Math.max(0, contract.amountsBilledToDate - revenueToDate)
-
-      if (pctComplete >= 100 || contract.costsIncurredToDate > contract.totalEstimatedCost) {
-        if (contract.totalEstimatedCost > contract.contractPrice && !contract.lossProvisionRecognized) {
-          contract.isOnerous = true
-          contract.expectedLoss = contract.totalEstimatedCost - contract.contractPrice
-        }
-        if (pctComplete >= 100) {
-          contract.status = "completed"
-          contract.actualCompletionDate = new Date().toISOString()
         }
       }
 
@@ -230,6 +214,24 @@ export class RevenueRecognitionService {
 
       if (!cogsResult.success) {
         console.warn(`Revenue JE posted but COGS JE failed: ${cogsResult.error}`)
+      }
+
+      // Mutate the contract object only after both JEs have been posted
+      contract.costsIncurredToDate = newCostsIncurred
+      contract.percentageComplete = pctComplete
+      contract.revenueRecognizedToDate = revenueToDate
+      contract.contractAsset = Math.max(0, revenueToDate - contract.amountsBilledToDate)
+      contract.contractLiability = Math.max(0, contract.amountsBilledToDate - revenueToDate)
+
+      if (pctComplete >= 100 || newCostsIncurred > contract.totalEstimatedCost) {
+        if (contract.totalEstimatedCost > contract.contractPrice && !contract.lossProvisionRecognized) {
+          contract.isOnerous = true
+          contract.expectedLoss = contract.totalEstimatedCost - contract.contractPrice
+        }
+        if (pctComplete >= 100) {
+          contract.status = "completed"
+          contract.actualCompletionDate = now
+        }
       }
 
       contract.updatedAt = now

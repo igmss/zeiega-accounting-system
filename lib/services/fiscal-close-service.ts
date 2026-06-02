@@ -124,11 +124,12 @@ export class FiscalCloseService {
       for (const acct of cogsAccounts) {
         const bal = await getBal(acct.code)
         if (Math.abs(bal) > 0.01) {
+          // COGS are debit-normal: getBal returns c-d (negative). Credit the account to close it.
           closeCOGSLines.push({
             account_id: acct.code,
             account_name: acct.name,
-            debit: bal < 0 ? Math.abs(bal) : 0,
-            credit: bal > 0 ? bal : 0,
+            debit: bal > 0 ? bal : 0,
+            credit: bal < 0 ? Math.abs(bal) : 0,
             description: `Close ${acct.name} to P&L`,
           })
           totalCOGS += bal
@@ -157,11 +158,12 @@ export class FiscalCloseService {
       for (const acct of expenseAccounts) {
         const bal = await getBal(acct.code)
         if (Math.abs(bal) > 0.01) {
+          // Expenses are debit-normal: getBal returns c-d (negative). Credit the account to close it.
           closeExpLines.push({
             account_id: acct.code,
             account_name: acct.name,
-            debit: bal < 0 ? Math.abs(bal) : 0,
-            credit: bal > 0 ? bal : 0,
+            debit: bal > 0 ? bal : 0,
+            credit: bal < 0 ? Math.abs(bal) : 0,
             description: `Close ${acct.name} to P&L`,
           })
           totalExpenses += bal
@@ -226,17 +228,20 @@ export class FiscalCloseService {
         `Close P&L to Retained Earnings: Net ${netIncome >= 0 ? "Income" : "Loss"} EGP ${absNI}`,
         [
           {
+            // P&L has a net credit balance for profit, debit balance for loss.
+            // DR to close the credit balance (profit); CR to close the debit balance (loss).
             account_id: ACCOUNT_CODES.CURRENT_YEAR_PL,
             account_name: getAccountName(ACCOUNT_CODES.CURRENT_YEAR_PL),
-            debit: netIncome < 0 ? absNI : 0,
-            credit: netIncome >= 0 ? absNI : 0,
+            debit: netIncome >= 0 ? absNI : 0,
+            credit: netIncome < 0 ? absNI : 0,
             description: `Close P&L account`,
           },
           {
+            // Profit increases RE (credit); loss decreases RE (debit).
             account_id: ACCOUNT_CODES.RETAINED_EARNINGS,
             account_name: getAccountName(ACCOUNT_CODES.RETAINED_EARNINGS),
-            debit: netIncome < 0 ? 0 : absNI,
-            credit: netIncome < 0 ? absNI : 0,
+            debit: netIncome < 0 ? absNI : 0,
+            credit: netIncome >= 0 ? absNI : 0,
             description: `Net ${netIncome >= 0 ? "income" : "loss"} for FY${fiscalYear}`,
           },
         ]
@@ -256,17 +261,19 @@ export class FiscalCloseService {
             JournalEntryType.CLOSING_ENTRY,
             [
               {
+                // Drawings always reduce capital: DR capital
                 accountCode: capital,
                 accountName: getAccountName(capital),
-                debit: drawBal > 0 ? absDraw : 0,
-                credit: drawBal < 0 ? absDraw : 0,
+                debit: absDraw,
+                credit: 0,
                 description: `Close drawings to capital`,
               },
               {
+                // Drawings account has debit balance: CR to zero it out
                 accountCode: drawings,
                 accountName: getAccountName(drawings),
-                debit: drawBal < 0 ? absDraw : 0,
-                credit: drawBal > 0 ? absDraw : 0,
+                debit: 0,
+                credit: absDraw,
                 description: `Close drawings account`,
               },
             ],

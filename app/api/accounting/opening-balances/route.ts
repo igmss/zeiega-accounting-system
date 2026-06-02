@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { requirePermission } from "@/lib/auth"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
 import { getAccountName } from "@/lib/accounting/account-types"
+import { getServiceSupabase, TABLES } from "@/lib/supabase"
 
 export async function POST(request: Request) {
     try {
@@ -141,6 +142,18 @@ export async function POST(request: Request) {
             return NextResponse.json({
                 error: "At least 2 accounts with non-zero amounts are required. Please enter opening balance values."
             }, { status: 400 })
+        }
+
+        const { data: existingOB } = await getServiceSupabase()
+            .from(TABLES.JOURNAL_ENTRIES)
+            .select("id")
+            .eq("reference_id", "OB-INIT")
+            .limit(1)
+        if (existingOB && existingOB.length > 0) {
+            return NextResponse.json({
+                error: "Opening balances have already been recorded. Use the edit function to modify them.",
+                existingEntryId: existingOB[0].id,
+            }, { status: 409 })
         }
 
         const result = await EnhancedAccountingService.createJournalEntry(

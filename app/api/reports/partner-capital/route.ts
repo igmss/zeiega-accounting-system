@@ -5,13 +5,17 @@ import { FinancialStatementsService } from "@/lib/services/financial-statements-
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    const now = new Date()
-    const yearStart = new Date(now.getFullYear(), 0, 1)
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
+
+    const now = to ? new Date(to) : new Date()
+    const yearStart = from ? new Date(from) : new Date(now.getFullYear(), 0, 1)
 
     const partners: any = {
       ahmed: { code: "3011", name: "Ahmed", share: 60 },

@@ -4,12 +4,24 @@ import { requirePermission } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    const { data: workOrders } = await getServiceClient().from(TABLES.WORK_ORDERS).select("*")
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
+
+    let dbQuery = getServiceClient().from(TABLES.WORK_ORDERS).select("*")
+    if (from) {
+      dbQuery = dbQuery.gte("created_at", from)
+    }
+    if (to) {
+      dbQuery = dbQuery.lte("created_at", to)
+    }
+
+    const { data: workOrders } = await dbQuery
 
     const consumption: Record<string, { name: string; totalQty: number; totalCost: number; woCount: number }> = {}
     for (const wo of (workOrders || [])) {

@@ -4,10 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency } from "@/lib/utils"
 
-export function DepreciationReport() {
+export function DepreciationReport({ dateRange }: { dateRange?: { from: string; to: string } }) {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => { fetch("/api/reports/depreciation-schedule").then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false)) }, [])
+  useEffect(() => {
+    const query = dateRange ? `?from=${dateRange.from}&to=${dateRange.to}` : ""
+    fetch(`/api/reports/depreciation-schedule${query}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [dateRange])
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>
   if (!data?.schedule?.length) return <div className="p-8 text-center text-muted-foreground">No fixed assets found.</div>
 

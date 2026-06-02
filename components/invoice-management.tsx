@@ -23,15 +23,35 @@ export function InvoiceManagement() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null)
 
+  // Pagination states
+  const [cursors, setCursors] = useState<string[]>([])
+  const [currentCursor, setCurrentCursor] = useState<string | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      const q = params.get("id") || params.get("search")
+      if (q) {
+        setSearchTerm(q)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     async function fetchInvoices() {
       try {
-        const response = await fetch('/api/invoices')
+        setLoading(true)
+        const cursorParam = currentCursor ? `&cursor=${currentCursor}` : ""
+        const response = await fetch(`/api/invoices?limit=50${cursorParam}`)
         if (!response.ok) {
           throw new Error('Failed to fetch invoices')
         }
         const result = await response.json()
         setInvoices(result.data || [])
+        setNextCursor(result.nextCursor || null)
+        setHasMore(result.hasMore || false)
       } catch (error) {
         console.error("Error loading invoices:", error)
         setInvoices([])
@@ -51,7 +71,7 @@ export function InvoiceManagement() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [currentCursor])
 
   useEffect(() => {
     let filtered = invoices
@@ -222,10 +242,12 @@ export function InvoiceManagement() {
                   </TableCell>
                   <TableCell>
                     <div>
-                       <div className="font-medium">{formatCurrency(invoice.total_amount || invoice.amount || 0)}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {formatCurrency(invoice.amount || invoice.total_amount || 0)} + {formatCurrency(invoice.tax_amount || 0)} tax
-                      </div>
+                      <div className="font-medium">{formatCurrency(invoice.total_amount || invoice.amount || 0)}</div>
+                      {(invoice.tax_amount || 0) > 0.01 && (
+                        <div className="text-sm text-muted-foreground">
+                          {formatCurrency(invoice.amount || 0)} + {formatCurrency(invoice.tax_amount || 0)} tax
+                        </div>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -280,6 +302,40 @@ export function InvoiceManagement() {
               ))}
             </TableBody>
           </Table>
+          
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between border-t p-4">
+            <div className="text-xs text-muted-foreground">
+              Page {cursors.length + 1}
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const prevCursor = cursors[cursors.length - 2] || null
+                  setCursors(prev => prev.slice(0, -1))
+                  setCurrentCursor(prevCursor)
+                }}
+                disabled={cursors.length === 0}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (nextCursor) {
+                    setCursors(prev => [...prev, nextCursor])
+                    setCurrentCursor(nextCursor)
+                  }
+                }}
+                disabled={!hasMore}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
             </div>
           )}
         </CardContent>

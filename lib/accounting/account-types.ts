@@ -663,11 +663,11 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         name: "Cryptocurrency Holdings",
         nameAr: "حيازات العملات الرقمية",
         type: AccountType.ASSET,
-        subType: AccountSubType.CASH,
+        subType: AccountSubType.INTANGIBLE,
         normalBalance: "debit",
         isActive: true,
         isSystemAccount: false,
-        isCashFlowTracked: true,
+        isCashFlowTracked: false,
         description: "Business crypto holdings (BTC, ETH, etc.)",
     },
     "1455": {
@@ -675,7 +675,7 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         name: "NFT Assets",
         nameAr: "الأصول الرقمية NFT",
         type: AccountType.ASSET,
-        subType: AccountSubType.CASH,
+        subType: AccountSubType.INTANGIBLE,
         normalBalance: "debit",
         isActive: true,
         isSystemAccount: false,
@@ -729,13 +729,13 @@ export const CHART_OF_ACCOUNTS: Record<string, Account> = {
         code: "2102",
         name: "Supplier Advances",
         nameAr: "دفعات مقدمة للموردين",
-        type: AccountType.LIABILITY,
-        subType: AccountSubType.PAYABLE,
-        normalBalance: "credit",
+        type: AccountType.ASSET,
+        subType: AccountSubType.PREPAID,
+        normalBalance: "debit",
         isActive: true,
         isSystemAccount: false,
         isCashFlowTracked: false,
-        description: "Prepayments to suppliers",
+        description: "Prepayments to suppliers (asset — money owed to us by supplier as goods)",
     },
     "2105": {
         code: "2105",
@@ -1936,7 +1936,7 @@ export const ACCOUNT_CODES = {
     WAGES_PAYABLE_PRODUCTION: "2120",
     TAX_PAYABLE: "2130",
     ACCRUED_EXPENSES: "2140",
-    DEFERRED_REVENUE: "2150",
+    DEFERRED_REVENUE: "2105",
     PROVISION_ONEROUS_CONTRACTS: "2155",
     SHORT_TERM_LOANS: "2201",
     LONG_TERM_LOANS: "2210",
@@ -2075,7 +2075,7 @@ export function getAccountsByCategory(): Record<string, Account[]> {
         const code = parseInt(account.code)
 
         if (code >= 1101 && code <= 1104) categories["Cash & Bank"].push(account)
-        else if (code >= 1110 && code <= 1120 || code === 1505) categories["Receivables"].push(account)
+        else if (code >= 1110 && code <= 1121) categories["Receivables"].push(account)
         else if (code >= 1130 && code <= 1140) categories["Receivables"].push(account)
         else if (code >= 1201 && code <= 1240) categories["Inventory"].push(account)
         else if (code >= 1301 && code <= 1307) categories["Fixed Assets"].push(account)

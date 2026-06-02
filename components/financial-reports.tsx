@@ -174,33 +174,24 @@ export function FinancialReports() {
 
       {/* Report Tabs */}
       <Tabs defaultValue="profit-loss" className="space-y-4">
-        <div className="space-y-2">
-          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
-            <TabsTrigger value="profit-loss">P&L</TabsTrigger>
-            <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
-            <TabsTrigger value="trial-balance">Trial Balance</TabsTrigger>
-            <TabsTrigger value="general-ledger">General Ledger</TabsTrigger>
-            <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
-          </TabsList>
-          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
-            <TabsTrigger value="cogm">COGM</TabsTrigger>
-            <TabsTrigger value="inventory">Inventory</TabsTrigger>
-            <TabsTrigger value="ar-aging">AR Aging</TabsTrigger>
-            <TabsTrigger value="tax-vat">Tax/VAT</TabsTrigger>
-            <TabsTrigger value="job-profitability">Job Profit</TabsTrigger>
-          </TabsList>
-          <TabsList className="grid w-full grid-cols-2 *:cursor-pointer">
-            <TabsTrigger value="variance">Variance Analysis</TabsTrigger>
-            <TabsTrigger value="income-statement">Income Statement</TabsTrigger>
-          </TabsList>
-          <TabsList className="grid w-full grid-cols-5 *:cursor-pointer">
-            <TabsTrigger value="ap-aging">AP Aging</TabsTrigger>
-            <TabsTrigger value="depreciation">Depreciation</TabsTrigger>
-            <TabsTrigger value="partner-capital">Partner Capital</TabsTrigger>
-            <TabsTrigger value="sales-by-customer">Sales/Customer</TabsTrigger>
-            <TabsTrigger value="material-consumption">Materials</TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="flex flex-wrap h-auto w-full gap-1.5 p-1.5 justify-start bg-muted rounded-lg *:cursor-pointer">
+          <TabsTrigger value="profit-loss" className="flex-1 min-w-[100px] sm:flex-initial">P&L</TabsTrigger>
+          <TabsTrigger value="balance-sheet" className="flex-1 min-w-[100px] sm:flex-initial">Balance Sheet</TabsTrigger>
+          <TabsTrigger value="trial-balance" className="flex-1 min-w-[100px] sm:flex-initial">Trial Balance</TabsTrigger>
+          <TabsTrigger value="general-ledger" className="flex-1 min-w-[100px] sm:flex-initial">General Ledger</TabsTrigger>
+          <TabsTrigger value="cash-flow" className="flex-1 min-w-[100px] sm:flex-initial">Cash Flow</TabsTrigger>
+          <TabsTrigger value="cogm" className="flex-1 min-w-[100px] sm:flex-initial">COGM</TabsTrigger>
+          <TabsTrigger value="inventory" className="flex-1 min-w-[100px] sm:flex-initial">Inventory</TabsTrigger>
+          <TabsTrigger value="ar-aging" className="flex-1 min-w-[100px] sm:flex-initial">AR Aging</TabsTrigger>
+          <TabsTrigger value="tax-vat" className="flex-1 min-w-[100px] sm:flex-initial">Tax/VAT</TabsTrigger>
+          <TabsTrigger value="job-profitability" className="flex-1 min-w-[100px] sm:flex-initial">Job Profit</TabsTrigger>
+          <TabsTrigger value="variance" className="flex-1 min-w-[100px] sm:flex-initial">Variance Analysis</TabsTrigger>
+          <TabsTrigger value="ap-aging" className="flex-1 min-w-[100px] sm:flex-initial">AP Aging</TabsTrigger>
+          <TabsTrigger value="depreciation" className="flex-1 min-w-[100px] sm:flex-initial">Depreciation</TabsTrigger>
+          <TabsTrigger value="partner-capital" className="flex-1 min-w-[100px] sm:flex-initial">Partner Capital</TabsTrigger>
+          <TabsTrigger value="sales-by-customer" className="flex-1 min-w-[100px] sm:flex-initial">Sales/Customer</TabsTrigger>
+          <TabsTrigger value="material-consumption" className="flex-1 min-w-[100px] sm:flex-initial">Materials</TabsTrigger>
+        </TabsList>
 
         <TabsContent value="profit-loss">
           <ProfitLossReport key={`pl-${refreshKey}`} dateRange={activeDateRange} />
@@ -233,25 +224,22 @@ export function FinancialReports() {
           <JobProfitabilityReport key={`jp-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="variance">
-          <VarianceReport key={`var-${refreshKey}`} />
-        </TabsContent>
-        <TabsContent value="income-statement">
-          <ProfitLossReport key={`is-${refreshKey}`} dateRange={activeDateRange} />
+          <VarianceReport key={`var-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="ap-aging">
-          <APAgingReport />
+          <APAgingReport key={`ap-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="depreciation">
-          <DepreciationReport />
+          <DepreciationReport key={`dep-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="partner-capital">
-          <PartnerCapitalReport />
+          <PartnerCapitalReport key={`pc-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="sales-by-customer">
-          <SalesByCustomerReport />
+          <SalesByCustomerReport key={`sbc-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
         <TabsContent value="material-consumption">
-          <MaterialConsumptionReport />
+          <MaterialConsumptionReport key={`mc-${refreshKey}`} dateRange={activeDateRange} />
         </TabsContent>
       </Tabs>
     </div>

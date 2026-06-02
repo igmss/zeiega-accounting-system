@@ -92,7 +92,7 @@ export class VarianceService {
         return { success: false, error: "Work order not found" }
       }
 
-      const quantity = 1
+      const quantity = wo.quantity || 1
       const sq = standard
 
       const materialsIssued = wo.materials_issued || []

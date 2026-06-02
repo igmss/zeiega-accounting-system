@@ -5,14 +5,26 @@ import { CHART_OF_ACCOUNTS } from "@/lib/accounting/account-types"
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    const { data: assets } = await getServiceClient().from(TABLES.ASSETS).select("*")
-    const { data: journalEntries } = await getServiceClient().from(TABLES.JOURNAL_ENTRIES)
-      .select("*").order("date", { ascending: false })
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
+
+    let assetQuery = getServiceClient().from(TABLES.ASSETS).select("*")
+    if (to) {
+      assetQuery = assetQuery.lte("purchase_date", to)
+    }
+    const { data: assets } = await assetQuery
+
+    let jeQuery = getServiceClient().from(TABLES.JOURNAL_ENTRIES).select("*").order("date", { ascending: false })
+    if (to) {
+      jeQuery = jeQuery.lte("date", to)
+    }
+    const { data: journalEntries } = await jeQuery
 
     const entryIds = (journalEntries || []).map((e: any) => e.id)
     const { data: lines } = entryIds.length > 0

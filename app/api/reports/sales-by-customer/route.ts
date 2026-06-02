@@ -4,12 +4,24 @@ import { requirePermission } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    const { data: invoices } = await getServiceClient().from(TABLES.INVOICES).select("*")
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
+
+    let dbQuery = getServiceClient().from(TABLES.INVOICES).select("*")
+    if (from) {
+      dbQuery = dbQuery.gte("created_at", from)
+    }
+    if (to) {
+      dbQuery = dbQuery.lte("created_at", to)
+    }
+
+    const { data: invoices } = await dbQuery
 
     const byCustomer = new Map<string, { name: string; revenue: number; orders: number; paid: number; unpaid: number }>()
     for (const inv of (invoices || [])) {

@@ -101,7 +101,7 @@ function isProtectedPage(pathname: string): boolean {
         "/background-jobs",
         "/expenses",
         "/assets",
-        "/liabilities",
+        "/loans",
         "/accounting/setup/opening-balances",
         "/journal-entries",
         "/vendors",
@@ -110,7 +110,7 @@ function isProtectedPage(pathname: string): boolean {
         "/contracts",
         "/variance",
         "/overhead",
-        "/year-end-close",
+        "/fiscal",
         "/users",
         "/settings",
     ]

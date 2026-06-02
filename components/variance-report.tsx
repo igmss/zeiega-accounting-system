@@ -50,7 +50,7 @@ function VarianceRow({ label, amount }: { label: string; amount: number }) {
   )
 }
 
-export function VarianceReport() {
+export function VarianceReport({ dateRange }: { dateRange?: { from: string; to: string } }) {
   const [workOrderId, setWorkOrderId] = useState("")
   const [designId, setDesignId] = useState("")
   const [variance, setVariance] = useState<VarianceData | null>(null)

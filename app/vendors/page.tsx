@@ -273,10 +273,10 @@ export default function VendorsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(vendor)}>
+                            <Button variant="outline" size="sm" onClick={() => handleEdit(vendor)} aria-label="Edit vendor">
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => handleDelete(vendor.id)}>
+                            <Button variant="outline" size="sm" onClick={() => handleDelete(vendor.id)} aria-label="Delete vendor">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>

@@ -613,7 +613,8 @@ export class EnhancedAccountingService {
                     if (entryDate.getMonth() === date.getMonth() && entryDate.getFullYear() === date.getFullYear()) {
                         const lines = (entry as any).journal_entry_lines || []
                         for (const line of lines) {
-                            if (line.account_code === ACCOUNTS.SALES_REVENUE) {
+                            const codeNum = parseInt(line.account_code || "0")
+                            if (codeNum >= 4001 && codeNum <= 4089) {
                                 monthRevenue += (line.credit || 0) - (line.debit || 0)
                             }
                             if (line.account_code === ACCOUNTS.COGS) {
@@ -792,17 +793,7 @@ export class EnhancedAccountingService {
                 return { success: false, error: "Asset is non-depreciable or missing useful life" }
             }
 
-            const totalDebits = (lines || []).reduce((sum: any, l: any) => sum + l.debit, 0)
-
-            const cost = totalDebits
-            const salvageValue = metadata.salvage_value || 0
-            const usefulLifeMonths = metadata.useful_life_years * 12
-            const monthlyAmount = Math.round(((cost - salvageValue) / usefulLifeMonths) * 100) / 100
-
-            if (monthlyAmount <= 0) {
-                return { success: false, error: "Calculated depreciation amount is zero or negative" }
-            }
-
+            // Identify the asset account line first to use its debit as the cost basis
             const assetLine = (lines || []).find((l: any) => {
                 const code = l.account_code || ""
                 return code.startsWith("13") || code.startsWith("14")
@@ -811,10 +802,21 @@ export class EnhancedAccountingService {
             if (!assetAccount) {
                 return { success: false, error: "Could not identify asset account for depreciation" }
             }
+            // Use only the asset line debit as cost basis, not the sum of all debits
+            const cost = assetLine.debit || 0
+
+            const salvageValue = metadata.salvage_value || 0
+            const usefulLifeMonths = metadata.useful_life_years * 12
+            const monthlyAmount = Math.round(((cost - salvageValue) / usefulLifeMonths) * 100) / 100
+
+            if (monthlyAmount <= 0) {
+                return { success: false, error: "Calculated depreciation amount is zero or negative" }
+            }
 
             let accumDepAccount = "1352"
             if (assetAccount === "1301" || assetAccount === "1302") accumDepAccount = "1351"
-            else if (assetAccount === "1304" || assetAccount === "1305" || assetAccount === "1306") accumDepAccount = "1353"
+            else if (assetAccount === "1306") accumDepAccount = "1353"
+            else if (assetAccount === "1304" || assetAccount === "1305") accumDepAccount = "1352"
             else if (assetAccount === "1307") accumDepAccount = "1354"
             else if (assetAccount.startsWith("14")) accumDepAccount = "1491"
 

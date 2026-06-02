@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
     if (!auth.authenticated) return auth.response
     try {
         const searchParams = request.nextUrl.searchParams
-        const limit = parseInt(searchParams.get("limit") || "50")
+        const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200)
+        const cursor = searchParams.get("cursor")
         const startDate = searchParams.get("startDate")
         const endDate = searchParams.get("endDate")
         const type = searchParams.get("type")
@@ -22,6 +23,19 @@ export async function GET(request: NextRequest) {
             .from(TABLES.JOURNAL_ENTRIES)
             .select("*")
             .order("date", { ascending: false })
+            .limit(limit + 1)
+
+        if (cursor) {
+            const { data: cursorDoc } = await getServiceClient()
+                .from(TABLES.JOURNAL_ENTRIES)
+                .select("date")
+                .eq("id", cursor)
+                .maybeSingle()
+            
+            if (cursorDoc?.date) {
+                query = query.lt("date", cursorDoc.date)
+            }
+        }
 
         if (startDate) {
             query = query.gte("date", startDate)
@@ -33,7 +47,7 @@ export async function GET(request: NextRequest) {
             query = query.eq("type", type)
         }
 
-        const { data, error } = await query.limit(limit)
+        const { data, error } = await query
 
         if (error) throw error
 
@@ -76,10 +90,17 @@ export async function GET(request: NextRequest) {
             }
         })
 
+        const hasMore = entries.length > limit
+        const paginatedEntries = hasMore ? entries.slice(0, limit) : entries
+        const lastVisible = paginatedEntries[paginatedEntries.length - 1]
+        const nextCursor = (hasMore && lastVisible) ? lastVisible.id : null
+
         return NextResponse.json({
             success: true,
-            entries,
-            count: entries.length,
+            entries: paginatedEntries,
+            count: paginatedEntries.length,
+            nextCursor,
+            hasMore
         })
     } catch (error) {
         console.error("Error fetching journal entries:", error instanceof Error ? error.message : error)

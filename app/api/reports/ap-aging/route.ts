@@ -4,15 +4,27 @@ import { requirePermission } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await requirePermission("reports:view")
     if (!auth.authorized) return auth.response
 
-    const { data: vendors } = await getServiceClient().from(TABLES.VENDORS).select("*")
-    const { data: purchaseOrders } = await getServiceClient().from(TABLES.PURCHASE_ORDERS).select("*")
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
 
-    const now = new Date()
+    const { data: vendors } = await getServiceClient().from(TABLES.VENDORS).select("*")
+
+    let dbQuery = getServiceClient().from(TABLES.PURCHASE_ORDERS).select("*")
+    if (from) {
+      dbQuery = dbQuery.gte("created_at", from)
+    }
+    if (to) {
+      dbQuery = dbQuery.lte("created_at", to)
+    }
+    const { data: purchaseOrders } = await dbQuery
+
+    const now = to ? new Date(to) : new Date()
     const apByVendor: any[] = []
 
     for (const po of (purchaseOrders || [])) {

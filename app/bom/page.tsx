@@ -245,7 +245,7 @@ export default function BOMPage() {
                           <div className="flex gap-1">
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => setSelectedBOM(bom)}><Eye className="h-4 w-4" /></Button>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedBOM(bom)} aria-label="View BOM"><Eye className="h-4 w-4" /></Button>
                               </DialogTrigger>
                               <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
                                 <DialogHeader><DialogTitle>{bom.name} (v{bom.version})</DialogTitle></DialogHeader>
@@ -253,7 +253,7 @@ export default function BOMPage() {
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                       <div><Label className="text-xs text-muted-foreground">Design</Label><p className="font-medium">{selectedBOM.design_name}</p></div>
-                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>{getStatusBadge(selectedBOM.status)}</div></div>
+                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>getStatusBadge(selectedBOM.status)</div></div>
                                       <div><Label className="text-xs text-muted-foreground">Labor</Label><p>{selectedBOM.labor_hours}h @ {formatCurrency(selectedBOM.labor_rate)}/hr = {formatCurrency(selectedBOM.total_labor_cost)}</p></div>
                                       <div><Label className="text-xs text-muted-foreground">Overhead</Label><p>{selectedBOM.overhead_percentage}% = {formatCurrency(selectedBOM.total_overhead_cost)}</p></div>
                                     </div>
@@ -295,13 +295,13 @@ export default function BOMPage() {
                               </DialogContent>
                             </Dialog>
                             {bom.status === "draft" && (
-                              <Button size="sm" variant="outline" onClick={() => handleAction(bom.id, "activate")} title="Activate"><CheckCircle className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => handleAction(bom.id, "activate")} title="Activate" aria-label="Activate BOM"><CheckCircle className="h-4 w-4" /></Button>
                             )}
                             {bom.status === "active" && (
-                              <Button size="sm" variant="outline" onClick={() => handleAction(bom.id, "archive")} title="Archive"><Archive className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => handleAction(bom.id, "archive")} title="Archive" aria-label="Archive BOM"><Archive className="h-4 w-4" /></Button>
                             )}
                             {bom.status === "draft" && (
-                              <Button size="sm" variant="outline" onClick={() => { if (confirm("Delete this BOM?")) handleAction(bom.id, "delete") }} title="Delete"><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => { if (confirm("Delete this BOM?")) handleAction(bom.id, "delete") }} title="Delete" aria-label="Delete BOM"><Trash2 className="h-4 w-4 text-red-500" /></Button>
                             )}
                           </div>
                         </TableCell>

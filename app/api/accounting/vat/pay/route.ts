@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       lines,
       `VAT-${Date.now()}`,
       `Recorded VAT settlement for period: ${periodDescription || "Business Taxes"}`,
-      "admin"
+      auth.user?.id || null
     )
 
     if (!result.success) {

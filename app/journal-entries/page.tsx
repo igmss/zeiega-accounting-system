@@ -39,19 +39,29 @@ export default function JournalEntriesPage() {
   const [showForm, setShowForm] = useState(false)
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set())
 
+  // Pagination states
+  const [cursors, setCursors] = useState<string[]>([])
+  const [currentCursor, setCurrentCursor] = useState<string | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+
   const fetchEntries = useCallback(async () => {
     try {
-      const response = await fetch("/api/journal-entries?limit=100")
+      setLoading(true)
+      const cursorParam = currentCursor ? `&cursor=${currentCursor}` : ""
+      const response = await fetch(`/api/journal-entries?limit=50${cursorParam}`)
       if (response.ok) {
         const data = await response.json()
         setEntries(data.entries || [])
+        setNextCursor(data.nextCursor || null)
+        setHasMore(data.hasMore || false)
       }
     } catch (err) {
       console.error("Error fetching journal entries:", err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentCursor])
 
   useEffect(() => {
     fetchEntries()
@@ -68,6 +78,8 @@ export default function JournalEntriesPage() {
 
   const handleFormSuccess = () => {
     setShowForm(false)
+    setCursors([])
+    setCurrentCursor(null)
     fetchEntries()
   }
 
@@ -236,6 +248,40 @@ export default function JournalEntriesPage() {
                     </div>
                   )
                 })}
+                
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between border-t pt-4 mt-4">
+                  <div className="text-xs text-muted-foreground">
+                    Page {cursors.length + 1}
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const prevCursor = cursors[cursors.length - 2] || null
+                        setCursors(prev => prev.slice(0, -1))
+                        setCurrentCursor(prevCursor)
+                      }}
+                      disabled={cursors.length === 0}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (nextCursor) {
+                          setCursors(prev => [...prev, nextCursor])
+                          setCurrentCursor(nextCursor)
+                        }
+                      }}
+                      disabled={!hasMore}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>

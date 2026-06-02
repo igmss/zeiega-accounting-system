@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +17,7 @@ import { toast } from "sonner"
 import { WorkOrderDetails } from "./work-order-details"
 
 export function WorkOrdersList() {
+  const router = useRouter()
   const [workOrders, setWorkOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filteredOrders, setFilteredOrders] = useState<any[]>([])
@@ -200,7 +202,12 @@ export function WorkOrdersList() {
       if (response.ok) {
         const result = await response.json()
         if (result.invoiceId) {
-          toast.success(`Work order completed — invoice ${result.invoiceId.slice(0, 8)} created!`)
+          toast.success(`Work order completed — invoice ${result.invoiceId.slice(0, 8)} created!`, {
+            action: {
+              label: "View Invoice",
+              onClick: () => router.push(`/invoices?search=${result.invoiceId}`)
+            }
+          })
         } else {
           toast.success('Work order completed and WIP transferred to Finished Goods!')
         }

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import {
@@ -60,7 +60,7 @@ const navigation: NavItem[] = [
   { name: "Payments", href: "/payments", icon: CreditCard, permission: "payments:view", section: "Finance" },
   { name: "Expenses", href: "/expenses", icon: Receipt, permission: "accounting:view", section: "Finance" },
   { name: "Assets", href: "/assets", icon: Landmark, permission: "accounting:view", section: "Finance" },
-  { name: "Liabilities", href: "/liabilities", icon: Gavel, permission: "accounting:view", section: "Finance" },
+  { name: "Loans", href: "/loans", icon: Gavel, permission: "accounting:view", section: "Finance" },
   { name: "IFRS 15 Contracts", href: "/contracts", icon: FileText, permission: "accounting:*", section: "Finance" },
   { name: "Journal Entries", href: "/journal-entries", icon: PenLine, permission: "journal-entries:view", section: "Accounting" },
   { name: "Chart of Accounts", href: "/chart-of-accounts", icon: BookOpen, permission: "chart-of-accounts:view", section: "Accounting" },
@@ -68,7 +68,7 @@ const navigation: NavItem[] = [
   { name: "Overhead Config", href: "/overhead", icon: Calculator, permission: "accounting:*", section: "Accounting" },
   { name: "Reports", href: "/reports", icon: BarChart3, permission: "reports:view", section: "Reports" },
   { name: "Opening Balances", href: "/accounting/setup/opening-balances", icon: Settings, permission: "accounting:*", section: "System" },
-  { name: "Year-End Close", href: "/year-end-close", icon: Lock, permission: "accounting:*", section: "System" },
+  { name: "Fiscal Close", href: "/fiscal", icon: Lock, permission: "accounting:*", section: "System" },
   { name: "Users", href: "/users", icon: Users, permission: "admin", section: "System" },
   { name: "Background Jobs", href: "/background-jobs", icon: Activity, permission: "admin", section: "System" },
 ]
@@ -80,6 +80,23 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [companyName, setCompanyName] = useState("TEL U ASEGH")
+
+  useEffect(() => {
+    const updateCompanyName = () => {
+      const saved = localStorage.getItem("settings_company_name")
+      if (saved) {
+        setCompanyName(saved)
+      }
+    }
+    updateCompanyName()
+    window.addEventListener("storage", updateCompanyName)
+    window.addEventListener("settings-updated", updateCompanyName)
+    return () => {
+      window.removeEventListener("storage", updateCompanyName)
+      window.removeEventListener("settings-updated", updateCompanyName)
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-background">
@@ -91,20 +108,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
-          <Sidebar />
+          <Sidebar companyName={companyName} />
         </SheetContent>
       </Sheet>
 
       {/* Desktop sidebar */}
       <div className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col">
-        <Sidebar />
+        <Sidebar companyName={companyName} />
       </div>
 
       {/* Main content */}
       <div className="md:pl-64">
         <header className="sticky top-0 z-30 bg-card border-b border-border px-4 py-4 md:px-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-card-foreground">TEL U ASEGH — Manufacturing ERP</h1>
+            <div className="text-2xl font-bold text-card-foreground">{companyName} — Manufacturing ERP</div>
             <div className="flex items-center gap-4">
               <Link href="/settings">
                 <Button variant="outline" size="sm">
@@ -124,7 +141,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   )
 }
 
-function Sidebar() {
+function Sidebar({ companyName }: { companyName: string }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const userRole = (session?.user as any)?.role
@@ -213,7 +230,7 @@ function Sidebar() {
           <LogOut className="h-4 w-4 mr-2" />
           Logout
         </Button>
-        <div className="text-xs text-sidebar-foreground/60">TEL U ASEGH — Manufacturing ERP</div>
+        <div className="text-xs text-sidebar-foreground/60">{companyName} — Manufacturing ERP</div>
       </div>
     </div>
   )

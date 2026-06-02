@@ -149,11 +149,15 @@ export class ManufacturingAccountingService {
             }
         } catch {}
 
+        // Derive FG debit from actual WO component costs so debits equal credits
+        const actualTotalCost = matCost + labCost + ohCost
+        const fgDebit = actualTotalCost > 0 ? actualTotalCost : totalCost
+
         const lines: JournalLine[] = [
             {
                 accountCode: ACCOUNTS.INVENTORY_FINISHED_GOODS,
                 accountName: "Finished Goods Inventory",
-                debit: totalCost,
+                debit: fgDebit,
                 credit: 0,
                 description: `Completed production from WO: ${workOrderId}`,
             },

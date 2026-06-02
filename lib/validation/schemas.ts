@@ -107,7 +107,7 @@ export const workOrderSchema = z.object({
 })
 
 export const workOrderUpdateSchema = z.object({
-    status: z.enum(["pending", "in_progress", "completed"]).optional(),
+    status: z.enum(["pending", "in_progress", "completed", "cancelled"]).optional(),
     completionPercentage: z.number().min(0).max(100).optional(),
     labor_hours: z.number().min(0).optional(),
     assigned_worker: z.string().max(255).optional(),

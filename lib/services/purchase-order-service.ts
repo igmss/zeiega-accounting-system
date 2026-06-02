@@ -234,7 +234,7 @@ export class PurchaseOrderService {
                 inventory_raw:       { code: "1201", name: "Raw Materials - Fabric" },
                 inventory_accessory: { code: "1202", name: "Raw Materials - Accessories" },
                 equipment:           { code: "1304", name: "Production Equipment" },
-                supplies:            { code: "6001", name: "Administrative Expenses" },
+                supplies:            { code: "6005", name: "Office Supplies" },
             }
 
             let allReceived = true

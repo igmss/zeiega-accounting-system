@@ -117,7 +117,12 @@ export async function batchInsert<T extends Record<string, unknown>>(
   return data
 }
 
-/** Run a function within a database transaction via RPC */
+/**
+ * NOT a real database transaction — no BEGIN/COMMIT/ROLLBACK.
+ * Multi-step operations are NOT atomic; a failure mid-way cannot be rolled back.
+ * Ensure each step is idempotent and individually reversible.
+ * To implement true atomicity, use a Supabase RPC that runs inside a PostgreSQL function.
+ */
 export async function runTransaction<T>(fn: (client: ReturnType<typeof getServiceSupabase>) => Promise<T>): Promise<T> {
   return fn(getServiceSupabase())
 }

@@ -52,10 +52,14 @@ export class InventoryAccountingService {
             const currentQty = inventoryDoc.quantity_on_hand || 0
             const newQty = type === "issue" ? currentQty - quantity : currentQty + quantity
 
+            if (type === "issue" && newQty < 0) {
+                throw new Error(`Insufficient inventory for SKU ${sku}: available ${currentQty}, requested ${quantity}`)
+            }
+
             await getServiceSupabase()
                 .from(TABLES.INVENTORY_ITEMS)
                 .update({
-                    quantity_on_hand: Math.max(0, newQty),
+                    quantity_on_hand: newQty,
                     updated_at: new Date().toISOString(),
                 })
                 .eq("sku", sku)
@@ -67,7 +71,7 @@ export class InventoryAccountingService {
                     sku,
                     type,
                     qty: quantity,
-                    notes: `${type} of ${quantity} units (was ${currentQty}, now ${Math.max(0, newQty)})`,
+                    notes: `${type} of ${quantity} units (was ${currentQty}, now ${newQty})`,
                 })
         }
     }
@@ -168,7 +172,7 @@ export class InventoryAccountingService {
 
         const isOpeningBalance = reason.toLowerCase().includes('opening') || reason.toLowerCase().includes('initial')
 
-        let contraAccountId = "5301"
+        let contraAccountId = "1240"
         if (isOpeningBalance) {
             contraAccountId = "3100"
         } else if (actualAdjustment < 0) {

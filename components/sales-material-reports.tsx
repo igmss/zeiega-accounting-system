@@ -4,9 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency } from "@/lib/utils"
 
-export function SalesByCustomerReport() {
+export function SalesByCustomerReport({ dateRange }: { dateRange?: { from: string; to: string } }) {
   const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true)
-  useEffect(() => { fetch("/api/reports/sales-by-customer").then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false)) }, [])
+  useEffect(() => {
+    const query = dateRange ? `?from=${dateRange.from}&to=${dateRange.to}` : ""
+    fetch(`/api/reports/sales-by-customer${query}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [dateRange])
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>
   if (!data?.customers?.length) return <div className="p-8 text-center text-muted-foreground">No sales data found.</div>
 
@@ -26,9 +32,15 @@ export function SalesByCustomerReport() {
   )
 }
 
-export function MaterialConsumptionReport() {
+export function MaterialConsumptionReport({ dateRange }: { dateRange?: { from: string; to: string } }) {
   const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true)
-  useEffect(() => { fetch("/api/reports/material-consumption").then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false)) }, [])
+  useEffect(() => {
+    const query = dateRange ? `?from=${dateRange.from}&to=${dateRange.to}` : ""
+    fetch(`/api/reports/material-consumption${query}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [dateRange])
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>
   if (!data?.items?.length) return <div className="p-8 text-center text-muted-foreground">No material consumption data found.</div>
 

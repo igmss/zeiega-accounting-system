@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Plus, Eye, Send, CheckCircle, XCircle, Truck, ChevronsUpDown, Check, DollarSign } from "lucide-react"
+import { Search, Plus, Eye, Send, CheckCircle, XCircle, Truck, ChevronsUpDown, Check, DollarSign, Edit } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useState, useEffect } from "react"
@@ -58,6 +58,7 @@ export default function PurchaseOrdersPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null)
 
   useEffect(() => {
     fetchOrders()
@@ -140,16 +141,18 @@ export default function PurchaseOrdersPage() {
             <h1 className="text-3xl font-bold">Purchase Orders</h1>
             <p className="text-muted-foreground">Manage supplier purchase orders</p>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />New PO</Button>
-            </DialogTrigger>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) setEditingPO(null); }}>
+            <Button onClick={() => { setEditingPO(null); setIsCreateOpen(true); }}><Plus className="h-4 w-4 mr-2" />New PO</Button>
             <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Create Purchase Order</DialogTitle>
-                <DialogDescription>Select a vendor and add line items</DialogDescription>
+                <DialogTitle>{editingPO ? "Edit Purchase Order" : "Create Purchase Order"}</DialogTitle>
+                <DialogDescription>{editingPO ? "Modify draft purchase order details" : "Select a vendor and add line items"}</DialogDescription>
               </DialogHeader>
-              <POForm onClose={() => setIsCreateOpen(false)} onCreated={() => { setIsCreateOpen(false); fetchOrders() }} />
+              <POForm
+                editingPO={editingPO}
+                onClose={() => { setIsCreateOpen(false); setEditingPO(null); }}
+                onCreated={() => { setIsCreateOpen(false); setEditingPO(null); fetchOrders() }}
+              />
             </DialogContent>
           </Dialog>
         </div>
@@ -258,7 +261,7 @@ export default function PurchaseOrdersPage() {
                           <div className="flex gap-1">
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)}><Eye className="h-4 w-4" /></Button>
+                                <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)} aria-label="View PO details"><Eye className="h-4 w-4" /></Button>
                               </DialogTrigger>
                               <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
                                 <DialogHeader><DialogTitle>PO {order.po_number || order.id?.slice(0, 8)}</DialogTitle></DialogHeader>
@@ -311,13 +314,16 @@ export default function PurchaseOrdersPage() {
                               </DialogContent>
                             </Dialog>
                             {order.status === "draft" && (
-                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "send")} title="Send"><Send className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => { setEditingPO(order); setIsCreateOpen(true); }} title="Edit" aria-label="Edit PO"><Edit className="h-4 w-4" /></Button>
+                            )}
+                            {order.status === "draft" && (
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "send")} title="Send" aria-label="Send PO"><Send className="h-4 w-4" /></Button>
                             )}
                             {order.status === "sent" && (
-                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "confirm")} title="Confirm"><CheckCircle className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "confirm")} title="Confirm" aria-label="Confirm PO"><CheckCircle className="h-4 w-4" /></Button>
                             )}
                             {(order.status === "draft" || order.status === "sent") && (
-                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "cancel")} title="Cancel"><XCircle className="h-4 w-4 text-red-500" /></Button>
+                              <Button size="sm" variant="outline" onClick={() => handleAction(order.id, "cancel")} title="Cancel" aria-label="Cancel PO"><XCircle className="h-4 w-4 text-red-500" /></Button>
                             )}
                             {(order.status === "confirmed" || order.status === "partial") && (
                               <ReceiveGoodsDialog poId={order.id} items={order.items} />
@@ -346,7 +352,7 @@ export default function PurchaseOrdersPage() {
   )
 }
 
-function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function POForm({ onClose, onCreated, editingPO }: { onClose: () => void; onCreated: () => void; editingPO?: any }) {
   const [vendors, setVendors] = useState<any[]>([])
   const [inventoryItems, setInventoryItems] = useState<any[]>([])
   const [vendorOpen, setVendorOpen] = useState(false)
@@ -355,15 +361,23 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
   const [materialOpen, setMaterialOpen] = useState<Record<number, boolean>>({})
   const [materialSearch, setMaterialSearch] = useState<Record<number, string>>({})
   const [formData, setFormData] = useState({
-    vendor_id: "",
-    vendor_name: "",
-    items: [{ material_name: "", material_id: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }],
-    expected_delivery: "",
-    shipping_address: "",
-    shipping_cost: "0",
-    apply_tax: true,
-    tax_rate: "14",
-    notes: ""
+    vendor_id: editingPO?.vendor_id || "",
+    vendor_name: editingPO?.vendor_name || "",
+    items: editingPO?.items?.map((item: any) => ({
+      material_name: item.material_name || "",
+      material_id: item.material_id || "",
+      quantity: item.quantity || 1,
+      unit: item.unit || "pcs",
+      unit_cost: item.unit_cost || 0,
+      item_type: item.item_type || "inventory_raw",
+      asset_account: item.asset_account || ""
+    })) || [{ material_name: "", material_id: "", quantity: 1, unit: "pcs", unit_cost: 0, item_type: "inventory_raw" as const, asset_account: "" }],
+    expected_delivery: editingPO?.expected_delivery ? new Date(editingPO.expected_delivery).toISOString().split("T")[0] : "",
+    shipping_address: editingPO?.shipping_address || "",
+    shipping_cost: editingPO?.shipping_cost?.toString() || "0",
+    apply_tax: editingPO ? (editingPO.tax_amount > 0) : true,
+    tax_rate: editingPO ? (editingPO.subtotal > 0 ? Math.round((editingPO.tax_amount / editingPO.subtotal) * 100).toString() : "14") : "14",
+    notes: editingPO?.notes || ""
   })
 
   useEffect(() => {
@@ -371,7 +385,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
     fetch('/api/inventory/items').then(r => r.json()).then(d => setInventoryItems(Array.isArray(d) ? d : (d.data || []))).catch(() => {})
   }, [])
 
-  const subtotal = formData.items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0)
+  const subtotal = formData.items.reduce((sum: number, i: any) => sum + i.quantity * i.unit_cost, 0)
   const taxAmount = formData.apply_tax ? subtotal * (parseFloat(formData.tax_rate) / 100) : 0
   const shipping = parseFloat(formData.shipping_cost) || 0
   const total = subtotal + taxAmount + shipping
@@ -383,37 +397,47 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
       return
     }
     try {
-      const response = await fetch('/api/purchase-orders', {
-        method: 'POST',
+      const url = '/api/purchase-orders'
+      const method = editingPO ? 'PUT' : 'POST'
+      
+      const payload: any = {
+        vendor_id: formData.vendor_id,
+        items: formData.items.map((i: any) => ({ 
+          material_id: (i as any).material_id || (i as any).sku || i.material_name, 
+          material_name: i.material_name, 
+          sku: (i as any).sku,
+          item_type: i.item_type, 
+          asset_account: (i as any).asset_account || undefined, 
+          quantity: i.quantity, 
+          unit: i.unit, 
+          unit_cost: i.unit_cost 
+        })),
+        expected_delivery: formData.expected_delivery || undefined,
+        shipping_address: formData.shipping_address || undefined,
+        shipping_cost: shipping || undefined,
+        tax_rate: formData.apply_tax ? parseFloat(formData.tax_rate) / 100 : 0,
+        notes: formData.notes || undefined
+      }
+
+      if (editingPO) {
+        payload.id = editingPO.id
+        payload.action = 'update'
+      }
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vendor_id: formData.vendor_id,
-          items: formData.items.map(i => ({ 
-            material_id: (i as any).material_id || (i as any).sku || i.material_name, 
-            material_name: i.material_name, 
-            sku: (i as any).sku,
-            item_type: i.item_type, 
-            asset_account: (i as any).asset_account || undefined, 
-            quantity: i.quantity, 
-            unit: i.unit, 
-            unit_cost: i.unit_cost 
-          })),
-          expected_delivery: formData.expected_delivery || undefined,
-          shipping_address: formData.shipping_address || undefined,
-          shipping_cost: shipping || undefined,
-          tax_rate: formData.apply_tax ? parseFloat(formData.tax_rate) / 100 : 0,
-          notes: formData.notes || undefined
-        })
+        body: JSON.stringify(payload)
       })
       if (response.ok) {
-        toast.success("Purchase order created")
+        toast.success(editingPO ? "Purchase order updated" : "Purchase order created")
         onCreated()
       } else {
         const err = await response.json()
-        toast.error(err.error || "Failed to create PO")
+        toast.error(err.error || `Failed to ${editingPO ? 'update' : 'create'} PO`)
       }
     } catch {
-      toast.error("Failed to create PO")
+      toast.error(`Failed to ${editingPO ? 'update' : 'create'} PO`)
     }
   }
 
@@ -452,13 +476,13 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
 
       <div>
         <div className="flex items-center justify-between mb-2"><Label>Line Items</Label></div>
-        {formData.items.map((item, idx) => (
+        {formData.items.map((item: any, idx: number) => (
           <div key={idx} className="border rounded-lg p-3 mb-2 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Item {idx + 1}</span>
               {formData.items.length > 1 && (
                 <Button type="button" variant="ghost" size="sm" className="text-red-500 h-6"
-                  onClick={() => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) })}>
+                  onClick={() => setFormData({ ...formData, items: formData.items.filter((_: any, i: number) => i !== idx) })}>
                   Remove
                 </Button>
               )}

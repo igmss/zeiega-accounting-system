@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,12 +14,22 @@ export default function SettingsPage() {
   const [fiscalYearStart, setFiscalYearStart] = useState("01-01")
   const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    const savedName = localStorage.getItem("settings_company_name")
+    const savedCurrency = localStorage.getItem("settings_currency")
+    const savedFiscalStart = localStorage.getItem("settings_fiscal_year_start")
+    if (savedName) setCompanyName(savedName)
+    if (savedCurrency) setCurrency(savedCurrency)
+    if (savedFiscalStart) setFiscalYearStart(savedFiscalStart)
+  }, [])
+
   const handleSave = async () => {
     setSaving(true)
     try {
       localStorage.setItem("settings_company_name", companyName)
       localStorage.setItem("settings_currency", currency)
       localStorage.setItem("settings_fiscal_year_start", fiscalYearStart)
+      window.dispatchEvent(new Event("settings-updated"))
       toast.success("Settings saved successfully")
     } catch {
       toast.error("Failed to save settings")

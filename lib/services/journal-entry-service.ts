@@ -40,6 +40,34 @@ export interface JournalLine {
     description: string
 }
 
+const REFERENCE_TYPE_MAP: Partial<Record<JournalEntryType, string>> = {
+    [JournalEntryType.MATERIAL_RECEIPT]: "purchase_order",
+    [JournalEntryType.MATERIAL_ISSUE_TO_WIP]: "work_order",
+    [JournalEntryType.LABOR_APPLIED]: "work_order",
+    [JournalEntryType.OVERHEAD_APPLIED]: "work_order",
+    [JournalEntryType.WIP_TO_FINISHED_GOODS]: "work_order",
+    [JournalEntryType.WIP_OPENING]: "work_order",
+    [JournalEntryType.SALES_INVOICE]: "sales_order",
+    [JournalEntryType.SALES_COGS]: "sales_order",
+    [JournalEntryType.SALES_RETURN]: "sales_order",
+    [JournalEntryType.PAYMENT_RECEIVED]: "payment",
+    [JournalEntryType.PAYMENT_MADE]: "payment",
+    [JournalEntryType.INVENTORY_ADJUSTMENT]: "inventory",
+    [JournalEntryType.DEPRECIATION]: "asset",
+    [JournalEntryType.ASSET_PURCHASE]: "asset",
+    [JournalEntryType.TAX_PAYMENT]: "tax",
+    [JournalEntryType.INCOME_TAX_ACCRUAL]: "tax",
+    [JournalEntryType.CLOSING_ENTRY]: "closing",
+    [JournalEntryType.OPENING_BALANCE]: "opening_balance",
+    [JournalEntryType.INVENTORY_WRITEDOWN]: "inventory",
+    [JournalEntryType.RETENTION_INVOICE]: "sales_order",
+    [JournalEntryType.RETENTION_RELEASE]: "sales_order",
+    [JournalEntryType.LIABILITY_INCURRED]: "liability",
+    [JournalEntryType.LIABILITY_REPAYMENT]: "liability",
+    [JournalEntryType.SCRAP_RECORD]: "work_order",
+    [JournalEntryType.REWORK_COSTS]: "work_order",
+}
+
 export class JournalEntryService {
     static async createJournalEntry(
         entryType: JournalEntryType,
@@ -121,7 +149,7 @@ export class JournalEntryService {
                     date: entryDate.toISOString().split("T")[0],
                     type: entryType,
                     reference_id: referenceDoc,
-                    reference_type: "sales_order",
+                    reference_type: REFERENCE_TYPE_MAP[entryType] || "general",
                     description: notes || `Journal entry for ${referenceDoc}`,
                     account_ids: accountIds,
                     created_by: userId,

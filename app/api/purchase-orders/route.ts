@@ -71,6 +71,55 @@ export async function PUT(request: NextRequest) {
 
         let result
         switch (action) {
+            case "update": {
+                if (!body.vendor_id || !body.items?.length) {
+                    return createErrorResponse("vendor_id and items are required", 400)
+                }
+                const po = await PurchaseOrderService.getPurchaseOrder(id)
+                if (!po) {
+                    return createErrorResponse("Purchase order not found", 404)
+                }
+                if (po.status !== "draft") {
+                    return createErrorResponse("Only draft purchase orders can be edited", 400)
+                }
+                
+                const processedItems = body.items.map((item: any) => ({
+                    ...item,
+                    item_type: item.item_type || "inventory_raw",
+                    total_cost: item.quantity * item.unit_cost,
+                    received_quantity: 0
+                }))
+                const subtotal = processedItems.reduce((sum: number, item: any) => sum + item.total_cost, 0)
+                const taxRate = body.tax_rate ?? 0.14
+                const taxAmount = subtotal * taxRate
+                const shippingCost = body.shipping_cost ?? 0
+                const totalAmount = subtotal + taxAmount + shippingCost
+
+                const { getServiceClient, TABLES } = await import("@/lib/supabase")
+                const updateData = {
+                    vendor_id: body.vendor_id,
+                    items: processedItems,
+                    subtotal,
+                    tax_amount: taxAmount,
+                    shipping_cost: shippingCost,
+                    total_amount: totalAmount,
+                    expected_delivery: body.expected_delivery ? new Date(body.expected_delivery).toISOString().split("T")[0] : null,
+                    shipping_address: body.shipping_address || null,
+                    notes: body.notes || null,
+                    updated_at: new Date().toISOString()
+                }
+                
+                const { error: updateErr } = await getServiceClient()
+                    .from(TABLES.PURCHASE_ORDERS)
+                    .update(updateData)
+                    .eq("id", id)
+
+                if (updateErr) {
+                    return createErrorResponse(updateErr.message, 400)
+                }
+                result = { success: true }
+                break
+            }
             case "send":
                 result = await PurchaseOrderService.sendPurchaseOrder(id)
                 break

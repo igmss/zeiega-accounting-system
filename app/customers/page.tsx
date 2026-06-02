@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Search, Edit, Trash2, Mail, Phone, MapPin } from "lucide-react"
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 
 interface Customer {
@@ -68,15 +69,22 @@ export default function CustomersPage() {
   }
 
   const handleDeleteCustomer = async (customerId: string) => {
+    if (!confirm("Are you sure you want to delete this customer? This action is destructive and cannot be undone.")) {
+      return
+    }
     try {
       const response = await fetch(`/api/customers?id=${customerId}`, {
         method: 'DELETE'
       })
       if (response.ok) {
         setCustomers(customers.filter(c => c.id !== customerId))
+        toast.success("Customer deleted successfully")
+      } else {
+        toast.error("Failed to delete customer")
       }
     } catch (error) {
       console.error('Error deleting customer:', error)
+      toast.error("Failed to delete customer")
     }
   }
 
@@ -298,6 +306,7 @@ export default function CustomersPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleEditCustomer(customer)}
+                            aria-label="Edit customer"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -305,6 +314,7 @@ export default function CustomersPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteCustomer(customer.id)}
+                            aria-label="Delete customer"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

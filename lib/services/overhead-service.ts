@@ -266,8 +266,8 @@ export class OverheadService {
       ACCOUNT_CODES.MACHINE_MAINTENANCE,
       ACCOUNT_CODES.DEPRECIATION_FACTORY,
     ]
-    const start = startDate.toISOString()
-    const end = endDate.toISOString()
+    const start = startDate.toISOString().split("T")[0]
+    const end = endDate.toISOString().split("T")[0]
     let total = 0
     const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRY_LINES)
       .select(`account_code, debit, credit, journal_entries!inner(id, date)`)
@@ -281,8 +281,8 @@ export class OverheadService {
   }
 
   static async getAppliedOverhead(startDate: Date, endDate: Date): Promise<number> {
-    const start = startDate.toISOString()
-    const end = endDate.toISOString()
+    const start = startDate.toISOString().split("T")[0]
+    const end = endDate.toISOString().split("T")[0]
     const { data } = await getServiceSupabase().from(TABLES.JOURNAL_ENTRIES)
       .select(`id, date, type, ${TABLES.JOURNAL_ENTRY_LINES}(account_code, account_name, debit, credit, description)`)
       .contains("account_ids", [ACCOUNT_CODES.OH_APPLIED])
@@ -325,7 +325,8 @@ export class OverheadService {
       await JournalEntryService.createJournalEntry(
         JournalEntryType.GENERAL,
         [
-          { accountCode: ACCOUNT_CODES.OH_VARIANCE, accountName: getAccountName(ACCOUNT_CODES.OH_VARIANCE), debit: isOver ? 0 : absV, credit: isOver ? absV : 0, description: "OH variance isolated" },
+          // Over-applied: DR OH_VARIANCE / CR COGS. Under-applied: CR OH_VARIANCE / DR COGS.
+          { accountCode: ACCOUNT_CODES.OH_VARIANCE, accountName: getAccountName(ACCOUNT_CODES.OH_VARIANCE), debit: isOver ? absV : 0, credit: isOver ? 0 : absV, description: "OH variance isolated" },
           { accountCode: ACCOUNT_CODES.COST_OF_GOODS_SOLD, accountName: getAccountName(ACCOUNT_CODES.COST_OF_GOODS_SOLD), debit: isOver ? 0 : absV, credit: isOver ? absV : 0, description: `Dispose ${isOver ? "over" : "under"}-applied OH to COGS` },
         ],
         refDoc, `${isOver ? "Over" : "Under"}-applied OH ${formatCurrency(absV)} -> COGS`, userId, endDate
@@ -379,7 +380,8 @@ export class OverheadService {
               if (line.account_code === code) { d += line.debit || 0; c += line.credit || 0 }
             }
           }
-          return Math.abs(ACCOUNT_CODES.INVENTORY_WIP === code ? d - c : c - d)
+          // WIP, Finished Goods, and COGS are all debit-normal accounts
+          return Math.abs(d - c)
         }
         const wipBal = await getBal(ACCOUNT_CODES.INVENTORY_WIP)
         const fgBal = await getBal(ACCOUNT_CODES.INVENTORY_FINISHED_GOODS)
