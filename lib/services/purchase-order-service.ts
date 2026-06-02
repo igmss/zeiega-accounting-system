@@ -88,7 +88,10 @@ export class PurchaseOrderService {
 
             const now = new Date().toISOString()
 
+            const poNumber = `PO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+
             const poData = {
+                po_number: poNumber,
                 vendor_id: vendorId,
                 vendor_name: vendor.name,
                 items: processedItems as any,

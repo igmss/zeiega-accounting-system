@@ -235,7 +235,7 @@ export default function PurchaseOrdersPage() {
                   ) : (
                     filteredOrders.map((order) => (
                       <TableRow key={order.id}>
-                        <TableCell className="font-medium">{order.id?.slice(0, 8)}</TableCell>
+                        <TableCell className="font-medium">{order.po_number || order.id?.slice(0, 8)}</TableCell>
                         <TableCell>{order.vendor_name}</TableCell>
                         <TableCell>{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</TableCell>
                         <TableCell>{formatCurrency(order.subtotal || 0)}</TableCell>
@@ -261,7 +261,7 @@ export default function PurchaseOrdersPage() {
                                 <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)}><Eye className="h-4 w-4" /></Button>
                               </DialogTrigger>
                               <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-                                <DialogHeader><DialogTitle>PO {order.id?.slice(0, 8)}</DialogTitle></DialogHeader>
+                                <DialogHeader><DialogTitle>PO {order.po_number || order.id?.slice(0, 8)}</DialogTitle></DialogHeader>
                                 <div className="space-y-4">
                                   <div className="grid grid-cols-2 gap-4">
                                     <div><Label className="text-xs text-muted-foreground">Vendor</Label><p className="font-medium">{order.vendor_name}</p></div>
@@ -554,6 +554,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
                     </Command>
                   </PopoverContent>
                 </Popover>
+                <p className="text-[10px] text-muted-foreground mt-1">Pick from inventory or type a new name + Enter</p>
               </div>
               <div>
                 <Label className="text-xs">Qty</Label>

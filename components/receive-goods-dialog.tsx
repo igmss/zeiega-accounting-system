@@ -71,11 +71,11 @@ export function ReceiveGoodsDialog({ poId, items }: ReceiveGoodsDialogProps) {
 
       const data = await res.json()
       if (res.ok) {
-        toast.success("Goods received successfully! Journal entry created.")
+        toast.success("Goods received! Inventory updated, journal entry created.")
         setIsOpen(false)
         router.refresh()
       } else {
-        toast.error(data.error || "Failed to receive goods")
+        toast.error(data.error || data.message || "Failed to receive goods")
       }
     } catch {
       toast.error("Failed to receive goods")
