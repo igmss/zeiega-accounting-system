@@ -348,8 +348,12 @@ export default function PurchaseOrdersPage() {
 
 function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [vendors, setVendors] = useState<any[]>([])
+  const [inventoryItems, setInventoryItems] = useState<any[]>([])
   const [vendorOpen, setVendorOpen] = useState(false)
   const [vendorSearch, setVendorSearch] = useState("")
+  // Per-item material picker state: index → open/val pairs
+  const [materialOpen, setMaterialOpen] = useState<Record<number, boolean>>({})
+  const [materialSearch, setMaterialSearch] = useState<Record<number, string>>({})
   const [formData, setFormData] = useState({
     vendor_id: "",
     vendor_name: "",
@@ -364,6 +368,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
 
   useEffect(() => {
     fetch('/api/vendors').then(r => r.json()).then(d => setVendors(d.data || [])).catch(() => {})
+    fetch('/api/inventory/items').then(r => r.json()).then(d => setInventoryItems(Array.isArray(d) ? d : (d.data || []))).catch(() => {})
   }, [])
 
   const subtotal = formData.items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0)
@@ -383,7 +388,7 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: formData.vendor_id,
-          items: formData.items.map(i => ({ material_id: i.material_name, material_name: i.material_name, item_type: i.item_type, asset_account: i.asset_account || undefined, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
+          items: formData.items.map(i => ({ material_id: (i as any).material_id || i.material_name, material_name: i.material_name, item_type: i.item_type, asset_account: (i as any).asset_account || undefined, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
           expected_delivery: formData.expected_delivery || undefined,
           shipping_address: formData.shipping_address || undefined,
           shipping_cost: shipping || undefined,
@@ -488,10 +493,57 @@ function POForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => 
             <div className="grid grid-cols-4 gap-2">
               <div>
                 <Label className="text-xs">Material</Label>
-                <Input value={item.material_name} onChange={(e) => {
-                  const items = [...formData.items]; items[idx].material_name = e.target.value
-                  setFormData({ ...formData, items })
-                }} required />
+                <Popover open={materialOpen[idx] || false} onOpenChange={(open) => setMaterialOpen(prev => ({ ...prev, [idx]: open }))}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-9 text-xs px-2">
+                      {item.material_name || "Select or type..."}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[360px] p-0">
+                    <Command>
+                      <CommandInput
+                        placeholder="Search inventory or type custom name..."
+                        value={materialSearch[idx] || ""}
+                        onValueChange={(val) => {
+                          setMaterialSearch(prev => ({ ...prev, [idx]: val }))
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (materialSearch[idx] || "").trim()) {
+                            const items = [...formData.items] as any[]
+                            items[idx].material_name = (materialSearch[idx] || "").trim()
+                            items[idx].material_id = (materialSearch[idx] || "").trim()
+                            setFormData({ ...formData, items })
+                            setMaterialOpen(prev => ({ ...prev, [idx]: false }))
+                          }
+                        }}
+                      />
+                      <CommandList>
+                        <CommandEmpty>No matches. Press Enter to use &ldquo;{materialSearch[idx] || '...'}&rdquo;</CommandEmpty>
+                        <CommandGroup heading="Inventory Items">
+                          {inventoryItems
+                            .filter((inv: any) => !materialSearch[idx] || inv.name?.toLowerCase().includes((materialSearch[idx] || "").toLowerCase()) || inv.sku?.toLowerCase().includes((materialSearch[idx] || "").toLowerCase()))
+                            .slice(0, 15)
+                            .map((inv: any) => (
+                              <CommandItem key={inv.id} value={inv.name} onSelect={() => {
+                                const items = [...formData.items] as any[]
+                                items[idx].material_id = inv.id
+                                items[idx].material_name = inv.name
+                                items[idx].unit = inv.unit || items[idx].unit
+                                items[idx].unit_cost = inv.cost_per_unit || items[idx].unit_cost
+                                setFormData({ ...formData, items })
+                                setMaterialOpen(prev => ({ ...prev, [idx]: false }))
+                              }}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{inv.name}</span>
+                                  <span className="text-xs text-muted-foreground">{inv.sku} · EGP {inv.cost_per_unit} · Stock: {inv.quantity_on_hand}</span>
+                                </div>
+                              </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <Label className="text-xs">Qty</Label>
