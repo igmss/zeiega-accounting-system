@@ -117,6 +117,8 @@ export async function POST(request: Request) {
       customer_name,
       invoice_number: invoiceNumber,
       amount: amount || 0,
+      tax_amount: tax_amount || 0,
+      total_amount: total_amount || (amount || 0),
       sales_order_id: body.sales_order_id || null,
       due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       notes: body.notes || null,

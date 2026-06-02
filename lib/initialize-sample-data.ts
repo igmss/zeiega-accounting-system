@@ -111,7 +111,7 @@ const sampleInvoices = [
     customer_name: "Acme Corporation",
     customer_email: "billing@acme.com",
     amount: 14250,
-    tax_amount: 1425,
+    tax_amount: 1995,
     total: 15675,
     due_date: new Date("2025-02-10").toISOString(),
     status: "unpaid",

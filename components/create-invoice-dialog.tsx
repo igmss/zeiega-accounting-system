@@ -22,7 +22,7 @@ export function CreateInvoiceDialog() {
     customer_name: "",
     sales_order_id: "",
     due_date: "",
-    tax_rate: "10",
+    tax_rate: "14",
     items: [{ sku: "", description: "", qty: 1, unit_price: 0 }],
   })
 
@@ -68,7 +68,7 @@ export function CreateInvoiceDialog() {
           customer_name: "",
           sales_order_id: "",
           due_date: "",
-          tax_rate: "10",
+          tax_rate: "14",
           items: [{ sku: "", description: "", qty: 1, unit_price: 0 }],
         })
         router.refresh()

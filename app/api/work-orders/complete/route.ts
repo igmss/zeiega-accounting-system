@@ -107,6 +107,11 @@ export async function POST(request: Request) {
           || workOrder.total_amount
           || 0
 
+        // Egyptian VAT 14% — split gross into net + tax (VAT-inclusive pricing)
+        const VAT_RATE = 0.14
+        const netAmount = totalAmount / (1 + VAT_RATE)
+        const taxAmount = totalAmount - netAmount
+
         // Resolve customer UUID: migrate 00007 added FK constraint on customer_id → customers.id
         // Only insert a valid customer UUID, otherwise pass null to satisfy FK
         let resolvedCustomerId: string | null = null
@@ -119,6 +124,14 @@ export async function POST(request: Request) {
           if (cust?.id) resolvedCustomerId = cust.id
         }
 
+        // Also update sales_orders with tax breakdown
+        await serviceDb.from(TABLES.SALES_ORDERS).update({
+          subtotal: netAmount,
+          tax_amount: taxAmount,
+          total_amount: totalAmount,
+          updated_at: new Date().toISOString()
+        }).eq("id", soId)
+
         const invoiceNumber = generateInvoiceNumber()
 
         const { data: newInvoice, error: invoiceError } = await serviceDb
@@ -128,7 +141,8 @@ export async function POST(request: Request) {
             invoice_number: invoiceNumber,
             customer_id: resolvedCustomerId,
             customer_name: customerName,
-            amount: totalAmount,
+            amount: netAmount,
+            tax_amount: taxAmount,
             total_amount: totalAmount,
             due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             status: "pending",
@@ -143,17 +157,21 @@ export async function POST(request: Request) {
 
         invoiceId = newInvoice?.id || null
 
-        // Sales Invoice JE — AR + Revenue (one-shot: use the already-imported module)
+        // Sales Invoice JE — AR + Revenue + VAT (Egyptian 14%)
         const { EnhancedAccountingService, JournalEntryType } = await import("@/lib/services/enhanced-accounting-service")
         const invoiceRef = invoiceId || `INV-${String(soId).slice(-8)}`
 
         if (totalAmount > 0) {
+          const jeLines: any[] = [
+            { accountCode: "1110", accountName: "Accounts Receivable", debit: totalAmount, credit: 0, description: `Invoice ${invoiceRef}` },
+            { accountCode: "4001", accountName: "Sales Revenue", debit: 0, credit: netAmount, description: `Net sales ${invoiceRef} (14% VAT)` }
+          ]
+          if (taxAmount > 0.01) {
+            jeLines.push({ accountCode: "2110", accountName: "VAT Payable - Output", debit: 0, credit: taxAmount, description: `Output VAT 14% on ${invoiceRef}` })
+          }
           const arResult = await EnhancedAccountingService.createJournalEntry(
             JournalEntryType.SALES_INVOICE,
-            [
-              { accountCode: "1110", accountName: "Accounts Receivable", debit: totalAmount, credit: 0, description: `Invoice ${invoiceRef}` },
-              { accountCode: "4001", accountName: "Sales Revenue", debit: 0, credit: totalAmount, description: `Sales revenue ${invoiceRef}` }
-            ],
+            jeLines,
             invoiceRef,
             `Invoice ${invoiceRef}`
           )

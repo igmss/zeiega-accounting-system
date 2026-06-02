@@ -156,7 +156,7 @@ export function InvoiceDetails({ invoice }: { invoice: any }) {
               <span>{formatCurrency(invoice.amount || 0)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Tax (10%):</span>
+              <span>VAT (14%):</span>
               <span>{formatCurrency(invoice.tax_amount || 0)}</span>
             </div>
             <Separator />

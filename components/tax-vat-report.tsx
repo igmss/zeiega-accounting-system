@@ -68,7 +68,7 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
         )
     }
 
-    const netVAT = reportData.output_vat - reportData.input_vat
+    const netVAT = reportData.output_vat_posted - reportData.input_vat_posted
 
     return (
         <div className="space-y-6">
@@ -78,7 +78,7 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
                     <CardContent className="pt-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <div className="text-2xl font-bold">{formatCurrency(reportData.output_vat_posted)}</div>
+                                <div className="text-2xl font-bold">{formatCurrency(reportData.output_vat_posted_posted)}</div>
                                 <div className="text-sm text-muted-foreground">Output VAT (Posted)</div>
                             </div>
                             <Receipt className="h-8 w-8 text-red-500" />
@@ -90,7 +90,7 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
                     <CardContent className="pt-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <div className="text-2xl font-bold">{formatCurrency(reportData.input_vat_posted)}</div>
+                                <div className="text-2xl font-bold">{formatCurrency(reportData.input_vat_posted_posted)}</div>
                                 <div className="text-sm text-muted-foreground">Input VAT (Posted)</div>
                             </div>
                             <Building2 className="h-8 w-8 text-green-500" />
@@ -162,7 +162,7 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
                                 <TableRow>
                                     <TableCell className="pl-6">Output VAT (Actual Posted)</TableCell>
                                     <TableCell></TableCell>
-                                    <TableCell className="text-right font-bold">{formatCurrency(reportData.output_vat_posted)}</TableCell>
+                                    <TableCell className="text-right font-bold">{formatCurrency(reportData.output_vat_posted_posted)}</TableCell>
                                 </TableRow>
 
                                 {/* Input VAT Section */}
@@ -179,7 +179,7 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
                                 <TableRow>
                                     <TableCell className="pl-6">Input VAT (Actual Posted)</TableCell>
                                     <TableCell></TableCell>
-                                    <TableCell className="text-right font-bold text-green-600">({formatCurrency(reportData.input_vat_posted)})</TableCell>
+                                    <TableCell className="text-right font-bold text-green-600">({formatCurrency(reportData.input_vat_posted_posted)})</TableCell>
                                 </TableRow>
 
                                 {/* Net VAT */}
@@ -223,15 +223,11 @@ export function TaxVATReport({ dateRange }: TaxVATReportProps) {
                                 <TableBody>
                                     <TableRow>
                                         <TableCell>VAT Receivable (1120)</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(reportData.vat_receivable_balance)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(reportData.input_vat_posted)}</TableCell>
                                     </TableRow>
                                     <TableRow>
                                         <TableCell>VAT Payable (2110)</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(reportData.vat_payable_balance)}</TableCell>
-                                    </TableRow>
-                                    <TableRow>
-                                        <TableCell>Tax Payable (2130)</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(reportData.tax_payable_balance)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(reportData.output_vat_posted)}</TableCell>
                                     </TableRow>
                                 </TableBody>
                             </Table>
