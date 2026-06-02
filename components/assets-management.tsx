@@ -91,6 +91,7 @@ export function AssetsManagement() {
             if (response.ok) {
                 setIsAddDialogOpen(false)
                 fetchAssets()
+                toast.success("Asset recorded successfully")
                 setNewAsset({
                     date: new Date().toISOString().split('T')[0],
                     description: "",
@@ -100,9 +101,13 @@ export function AssetsManagement() {
                     useful_life_years: "",
                     salvage_value: "0"
                 })
+            } else {
+                const err = await response.json().catch(() => ({}))
+                toast.error(err.error || "Failed to add asset")
             }
         } catch (error) {
             console.error("Failed to add asset:", error)
+            toast.error("Failed to add asset")
         }
     }
 
@@ -124,8 +129,8 @@ export function AssetsManagement() {
                 setIsDepreciationDialogOpen(false)
                 toast.success("Depreciation recorded successfully")
             } else {
-                const error = await response.json()
-                toast.error("Failed to record depreciation")
+                const err = await response.json()
+                toast.error(err.error || "Failed to record depreciation")
             }
         } catch (error) {
             console.error("Failed to record depreciation:", error)

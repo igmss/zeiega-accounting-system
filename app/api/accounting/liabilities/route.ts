@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { supabase, TABLES, getServiceClient } from "@/lib/supabase"
 import { requirePermission, requireAuth } from "@/lib/auth"
 import { EnhancedAccountingService, JournalEntryType } from "@/lib/services/enhanced-accounting-service"
+import { getAccountName } from "@/lib/accounting/account-types"
 
 export async function POST(request: Request) {
     try {
@@ -10,7 +11,6 @@ export async function POST(request: Request) {
 
         const body = await request.json()
         const { amount, description, liabilityAccount, offsetAccount, transactionType } = body
-        // transactionType: 'incur' (New Loan/Payable) or 'repay' (Repayment)
 
         if (!amount || amount <= 0) {
             return NextResponse.json({ error: "Valid amount is required" }, { status: 400 })
@@ -21,31 +21,30 @@ export async function POST(request: Request) {
 
         const isRepayment = transactionType === 'repay'
         const desc = description || (isRepayment ? "Liability Repayment" : "New Liability Record")
-
-        // Default Offset if missing
-        // If Incurring (Credit Liability), Debit Offset (Bank/Cash)
-        // If Repaying (Debit Liability), Credit Offset (Bank/Cash)
         const offsetAcc = offsetAccount || "1101"
 
+        const liabName = getAccountName(liabilityAccount)
+        const offsetName = getAccountName(offsetAcc)
+
         const result = await EnhancedAccountingService.createJournalEntry(
-            JournalEntryType.GENERAL,
+            isRepayment ? JournalEntryType.LIABILITY_REPAYMENT : JournalEntryType.LIABILITY_INCURRED,
             [
                 {
                     accountCode: liabilityAccount,
-                    accountName: desc,
+                    accountName: liabName,
                     debit: isRepayment ? amount : 0,
                     credit: isRepayment ? 0 : amount,
                     description: desc,
                 },
                 {
                     accountCode: offsetAcc,
-                    accountName: offsetAcc,
+                    accountName: offsetName,
                     debit: isRepayment ? 0 : amount,
                     credit: isRepayment ? amount : 0,
                     description: desc,
                 },
             ],
-            `LIAB-${Math.floor(Math.random() * 10000)}`,
+            `LIAB-${Date.now()}`,
             desc,
             auth.user?.id
         )
@@ -55,7 +54,6 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, message: "Liability recorded", journalEntryId: result.entryId })
-
     } catch (error) {
         console.error("Error recording liability:", error)
         return NextResponse.json({ error: "Failed to record liability" }, { status: 500 })
@@ -70,21 +68,18 @@ export async function GET() {
         const { data, error } = await getServiceClient()
             .from(TABLES.JOURNAL_ENTRIES)
             .select("*")
-            .in('type', ['LIABILITY_INCURED', 'LIABILITY_REPAYMENT', 'OPENING_BALANCE'])
+            .in('type', ['LIABILITY_INCURRED', 'LIABILITY_REPAYMENT'])
             .order('date', { ascending: false })
 
         if (error) throw error
 
-        const liabilities: any[] = []
-        ;(data || []).forEach((row: Record<string, any>) => {
-            liabilities.push({
-                id: row.id,
-                date: row.date || null,
-                description: row.description,
-                amount: row.total_credits || row.total_debits,
-                type: row.type
-            })
-        })
+        const liabilities: any[] = (data || []).map((row: Record<string, any>) => ({
+            id: row.id,
+            date: row.date || null,
+            description: row.description,
+            amount: row.total_credits || row.total_debits || 0,
+            type: row.type
+        }))
 
         return NextResponse.json({ success: true, liabilities })
     } catch (error) {

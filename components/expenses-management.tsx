@@ -249,7 +249,7 @@ export function ExpensesManagement() {
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     {newExpense.paymentMethod === 'cash' && "Paid from Petty Cash (1101)"}
-                                    {newExpense.paymentMethod === 'bank' && "Paid from Bank Account (1105)"}
+                                    {newExpense.paymentMethod === 'bank' && "Paid from Bank Account (1103)"}
                                     {newExpense.paymentMethod === 'payable' && "Credit / Accounts Payable (2101)"}
                                 </p>
                             </div>

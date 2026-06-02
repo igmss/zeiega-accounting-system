@@ -92,6 +92,10 @@ export enum JournalEntryType {
     INVENTORY_WRITEDOWN = "INVENTORY_WRITEDOWN",
     RETENTION_INVOICE = "RETENTION_INVOICE",
     RETENTION_RELEASE = "RETENTION_RELEASE",
+    ASSET_PURCHASE = "ASSET_PURCHASE",
+    LIABILITY_INCURRED = "LIABILITY_INCURRED",
+    LIABILITY_REPAYMENT = "LIABILITY_REPAYMENT",
+    OPENING_BALANCE = "OPENING_BALANCE",
 }
 
 interface ReturnItem {
@@ -799,7 +803,11 @@ export class EnhancedAccountingService {
                 return { success: false, error: "Calculated depreciation amount is zero or negative" }
             }
 
-            const assetAccount = assetEntry.account_ids?.find((id: string) => id.startsWith("13") || id.startsWith("14"))
+            const assetLine = (lines || []).find((l: any) => {
+                const code = l.account_code || ""
+                return code.startsWith("13") || code.startsWith("14")
+            })
+            const assetAccount = assetLine?.account_code
             if (!assetAccount) {
                 return { success: false, error: "Could not identify asset account for depreciation" }
             }

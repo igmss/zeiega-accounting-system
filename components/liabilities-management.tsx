@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Plus, Search, DollarSign, TrendingUp, TrendingDown, Building2, Wallet } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { toast } from "sonner"
 import { CHART_OF_ACCOUNTS, AccountType, AccountSubType } from "@/lib/accounting/account-types"
 
 interface Liability {
@@ -81,19 +82,29 @@ export function LiabilitiesManagement() {
     }
 
     async function handleSubmit() {
+        const amountNum = parseFloat(newLiability.amount)
+        if (!amountNum || amountNum <= 0) {
+            toast.error("Enter a valid amount")
+            return
+        }
+        if (!newLiability.liabilityAccount) {
+            toast.error("Select a liability account")
+            return
+        }
         try {
             const response = await fetch('/api/accounting/liabilities', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...newLiability,
-                    amount: parseFloat(newLiability.amount)
+                    amount: amountNum
                 })
             })
 
             if (response.ok) {
                 setIsAddDialogOpen(false)
                 fetchLiabilities()
+                toast.success("Liability recorded successfully")
                 setNewLiability({
                     description: "",
                     amount: "",
@@ -101,9 +112,13 @@ export function LiabilitiesManagement() {
                     offsetAccount: "1103",
                     transactionType: "incur"
                 })
+            } else {
+                const err = await response.json().catch(() => ({}))
+                toast.error(err.error || "Failed to record liability")
             }
         } catch (error) {
             console.error(error)
+            toast.error("Failed to record liability")
         }
     }
 
@@ -112,7 +127,7 @@ export function LiabilitiesManagement() {
     )
 
     const totalIncurred = liabilities
-        .filter(l => l.type === 'LIABILITY_INCURED')
+        .filter(l => l.type === 'LIABILITY_INCURRED')
         .reduce((s, l) => s + (l.amount || 0), 0)
     const totalRepaid = liabilities
         .filter(l => l.type === 'LIABILITY_REPAYMENT')
