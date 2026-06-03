@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Package, Search, Filter, Loader2 } from "lucide-react";
+import { Package, Search, Filter, Loader2, Upload } from "lucide-react";
 import type { Design, DesignFilter, DesignStats } from "@/lib/types/designs";
 
 export default function DesignsManagement() {
@@ -26,6 +26,7 @@ export default function DesignsManagement() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [bomMap, setBomMap] = useState<Record<string, any>>({});
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     loadDesigns();
@@ -85,6 +86,26 @@ export default function DesignsManagement() {
     } catch {}
   };
 
+  const handleImportDesigns = async () => {
+    if (isImporting) return;
+    try {
+      setIsImporting(true);
+      const res = await fetch("/api/designs/import", { method: "POST" });
+      const result = await res.json();
+      if (result.success) {
+        toast.success(result.message || "Designs imported successfully");
+        loadDesigns();
+        loadStats();
+      } else {
+        toast.error(result.error || "Import failed");
+      }
+    } catch {
+      toast.error("Import failed");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const filteredDesigns = designs.filter(d =>
     searchTerm === "" ||
     d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -103,6 +124,9 @@ export default function DesignsManagement() {
           <h1 className="text-3xl font-bold">Designs</h1>
           <p className="text-muted-foreground">Product designs synced from the website</p>
         </div>
+        <Button onClick={handleImportDesigns} variant="outline" disabled={isImporting}>
+          {isImporting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing...</> : <><Upload className="h-4 w-4 mr-2" />Import from Products</>}
+        </Button>
       </div>
 
       {stats && (
