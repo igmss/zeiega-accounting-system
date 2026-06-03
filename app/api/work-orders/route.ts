@@ -169,6 +169,22 @@ export async function PUT(request: Request) {
           }
         } else {
           console.log(`[DEBUG:PUT:SKIP] no materials to auto-issue — design_id=${wo.design_id || 'none'}, raw_materials_used=${wo.raw_materials_used ? JSON.stringify(wo.raw_materials_used).substring(0, 100) : 'none'}, items=${JSON.stringify(wo.items).substring(0, 100)}`)
+          
+          // Fallback: use WO's material_cost as lump-sum material issue
+          const fallbackMatCost = Number(wo.material_cost) || 0;
+          if (fallbackMatCost > 0) {
+            console.log(`[DEBUG:PUT:FALLBACK] using WO material_cost=${fallbackMatCost} as lump-sum issue`)
+            const accResult = await EnhancedAccountingService.recordMaterialIssue(id, [
+              { itemId: "WO-MAT", itemName: `Materials for ${wo.wo_number || id}`, quantity: 1, unitCost: fallbackMatCost }
+            ]);
+            if (accResult.success) {
+              await serviceDb.from(TABLES.WORK_ORDERS).update({
+                total_cost: fallbackMatCost + (wo.labor_cost || 0) + (wo.overhead_cost || 0),
+                updated_at: new Date().toISOString()
+              }).eq("id", id)
+              console.log(`[DEBUG:PUT:FALLBACK] posted lump-sum material JE`)
+            }
+          }
         }
         console.log(`[DEBUG:PUT:END] WO ${id} — material issue done`)
 
