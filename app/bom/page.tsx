@@ -9,10 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Eye, CheckCircle, Archive, Trash2, Box, Plus } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Search, Eye, CheckCircle, Archive, Trash2, Box, Plus, ChevronsUpDown, Check } from "lucide-react"
 import { useState, useEffect } from "react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 interface BOMItem {
   material_id: string
@@ -54,6 +57,8 @@ export default function BOMPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [designs, setDesigns] = useState<any[]>([])
   const [inventoryItems, setInventoryItems] = useState<any[]>([])
+  const [designSearch, setDesignSearch] = useState("")
+  const [designSelectOpen, setDesignSelectOpen] = useState(false)
   const [newBOM, setNewBOM] = useState({
     design_id: "",
     name: "",
@@ -84,6 +89,20 @@ export default function BOMPage() {
   useEffect(() => {
     fetchBOMs()
   }, [statusFilter])
+
+  const filteredDesigns = designSearch
+    ? designs.filter((d: any) =>
+        d.name?.toLowerCase().includes(designSearch.toLowerCase()) ||
+        d.category?.toLowerCase().includes(designSearch.toLowerCase()) ||
+        d.id?.toString().includes(designSearch)
+      )
+    : designs
+
+  const getSelectedDesignName = () => {
+    if (!newBOM.design_id) return ""
+    const d = designs.find((d: any) => d.id === newBOM.design_id)
+    return d?.name || ""
+  }
 
   const filteredBOMs = boms.filter(b =>
     searchTerm === "" ||
@@ -147,8 +166,8 @@ export default function BOMPage() {
           <Button onClick={async () => {
             setIsCreateOpen(true)
             if (designs.length === 0) {
-              fetch("/api/designs").then(r => r.json()).then(d => setDesigns(d.data || d || [])).catch(() => {})
-              fetch("/api/inventory/items").then(r => r.json()).then(d => setInventoryItems(d.data || d || [])).catch(() => {})
+              fetch("/api/designs?pageSize=1000").then(r => r.json()).then(d => setDesigns(d.data || d || [])).catch(() => {})
+              fetch("/api/inventory/items?limit=1000").then(r => r.json()).then(d => setInventoryItems(d.data || d || [])).catch(() => {})
             }
           }}>
             <Plus className="h-4 w-4 mr-2" />
@@ -323,14 +342,47 @@ export default function BOMPage() {
             <div className="space-y-4">
               <div>
                 <Label>Design</Label>
-                <Select value={newBOM.design_id} onValueChange={(v) => setNewBOM({...newBOM, design_id: v})}>
-                  <SelectTrigger><SelectValue placeholder="Select a design..." /></SelectTrigger>
-                  <SelectContent>
-                    {designs.map((d: any) => (
-                      <SelectItem key={d.id} value={d.id}>{d.name} ({d.category || "—"})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={designSelectOpen} onOpenChange={setDesignSelectOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" aria-expanded={designSelectOpen} className="w-full justify-between mt-1.5">
+                      {getSelectedDesignName() || "Select a design..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[450px] p-0" align="start">
+                    <Command shouldFilter={false}>
+                      <CommandInput placeholder="Search designs by name or category..." value={designSearch} onValueChange={setDesignSearch} />
+                      <CommandList>
+                        <CommandEmpty>No design found.</CommandEmpty>
+                        <CommandGroup>
+                          {filteredDesigns.map((d: any) => (
+                            <CommandItem
+                              key={d.id}
+                              value={d.id}
+                              onSelect={() => {
+                                setNewBOM({
+                                  ...newBOM,
+                                  design_id: d.id,
+                                  name: !newBOM.name || newBOM.name === getSelectedDesignName()
+                                    ? `BOM - ${d.name}`
+                                    : newBOM.name
+                                })
+                                setDesignSelectOpen(false)
+                                setDesignSearch("")
+                              }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", newBOM.design_id === d.id ? "opacity-100" : "opacity-0")} />
+                              <div className="flex flex-col">
+                                <span>{d.name}</span>
+                                <span className="text-xs text-muted-foreground">{d.category || "—"} · ID: {d.id?.toString().slice(0, 8)}</span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <Label htmlFor="bom-name">BOM Name</Label>
