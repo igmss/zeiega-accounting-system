@@ -475,6 +475,7 @@ export function SalesOrdersList() {
             <TableHeader>
               <TableRow>
                 <TableHead>Order ID</TableHead>
+                <TableHead>Source Order</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead>Total</TableHead>
@@ -496,6 +497,11 @@ export function SalesOrdersList() {
                   {filteredOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium">{order.order_number || order.id?.slice(0, 8)}</TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {order.website_order_id ? order.website_order_id.slice(0, 8) + "..." : "—"}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">{order.customer_name}</div>
