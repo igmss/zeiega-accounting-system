@@ -165,85 +165,38 @@ export async function POST(request: NextRequest) {
     // If status is "processing", create work order immediately
     if (status === "processing") {
       try {
-        // Check if work order already exists
         const { data: existingWorkOrders } = await serviceDb
           .from(TABLES.WORK_ORDERS)
           .select("*")
           .eq("sales_order_id", orderId)
 
         if (!existingWorkOrders || existingWorkOrders.length === 0) {
-          console.log(`Creating work order for web order ${orderId} with automatic cost calculation...`);
+          console.log(`🔄 Creating work order for web order ${orderId} using shared auto-costs engine...`);
 
-          console.log(`🔄 Calculating costs for ${orderItems.length} order items...`);
-          const costCalculation = await OrderItemDesignService.calculateOrderCostsFromDesigns(orderItems);
+          const result = await OrderItemDesignService.createWorkOrderWithAutoCosts(
+            orderId,
+            orderItems,
+            { order_source: "web" }
+          );
 
-          if (costCalculation.success) {
-            console.log(`✅ Cost calculation successful: ${formatCurrency(costCalculation.totalEstimatedCost)}`);
-            
-            const enrichedItems = orderItems.map((item: any) => {
-              const match = costCalculation.itemCosts.find(
-                (ic: any) => ic.designId && (ic.item?.productId === item.productId || ic.item?.name === item.name)
-              );
-              return match?.image ? { ...item, image: match.image } : item;
-            });
+          if (result.success && result.workOrderId) {
+            console.log(`✅ Created work order ${result.workOrderId} with estimated cost ${formatCurrency(result.totalEstimatedCost || 0)}`);
 
-            if (costCalculation.warnings && costCalculation.warnings.length > 0) {
-              console.warn(`⚠️ Cost calculation warnings for order ${orderId}:`, costCalculation.warnings);
-            }
-
-            let notes = `Work order created with automatic cost calculation (${formatCurrency(costCalculation.totalEstimatedCost)})`;
-            if (costCalculation.warnings && costCalculation.warnings.length > 0) {
-              notes += `\n⚠️ Unmatched items: ${costCalculation.warnings.map((w: string) => w.split(': ')[1] || w).join(', ')}`;
-            }
-
-            const workOrder = {
-              wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-              sales_order_id: orderId,
-              status: "pending",
-              completion_percentage: 0,
-              raw_materials_used: [],
-              materials_issued: [],
-              overhead_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.overheadCost || 0), 0),
-              labor_cost: costCalculation.itemCosts.reduce((sum: number, item: any) => sum + (item.laborCost || 0), 0),
-              total_cost: 0,
-              estimated_cost: costCalculation.totalEstimatedCost,
-              created_at: now,
-              updated_at: now,
-              estimated_completion: null,
-              completed_at: null,
-              notes: notes,
-              items: enrichedItems,
-              item_costs: costCalculation.itemCosts,
-              order_source: "web"
-            };
-
-            const { data: insertedWorkOrder } = await serviceDb
-              .from(TABLES.WORK_ORDERS)
-              .insert(workOrder)
-              .select("id")
-              .single();
-
-            const workOrderId = insertedWorkOrder?.id;
-            console.log(`✅ Created work order ${workOrderId} with cost ${formatCurrency(costCalculation.totalEstimatedCost)}`);
-
-            if (costCalculation.totalEstimatedCost > 0 && workOrderId) {
+            if (result.totalEstimatedCost && result.totalEstimatedCost > 0 && result.workOrderId) {
               const wipResult = await EnhancedAccountingService.recordWIPOpening(
-                workOrderId,
-                costCalculation.totalEstimatedCost
+                result.workOrderId,
+                result.totalEstimatedCost
               );
               if (wipResult.success) {
                 console.log(`✅ Posted WIP opening journal entry ${wipResult.entryId}`);
               } else {
                 console.error(`❌ Failed to post WIP journal: ${wipResult.error}`);
               }
-            } else {
-              const warningMsg = costCalculation.warnings ? "Unmatched designs" : "Zero estimated cost";
-              console.warn(`⚠️ Skipping WIP journal entry for ${orderId}: ${warningMsg}`);
             }
           } else {
-            console.error(`❌ Cost calculation failed: ${costCalculation.error}`);
-
-            const basicWorkOrder = {
+            console.error(`❌ Cost calculation failed: ${result.error}`);
+            const fallbackWo = {
+              wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
               sales_order_id: orderId,
               status: "pending",
               completion_percentage: 0,
@@ -251,52 +204,42 @@ export async function POST(request: NextRequest) {
               materials_issued: [],
               overhead_cost: 0,
               labor_cost: 0,
+              material_cost: 0,
               total_cost: 0,
               estimated_cost: 0,
               created_at: now,
               updated_at: now,
-              estimated_completion: null,
-              completed_at: null,
-              notes: `Basic work order for web order ${orderId} (cost calculation failed: ${costCalculation.error})`,
+              notes: `Basic work order (cost calc failed: ${result.error})`,
               items: orderItems,
               order_source: "web"
             };
-
-            const { data: basicWorkOrderResult } = await serviceDb
-              .from(TABLES.WORK_ORDERS)
-              .insert(basicWorkOrder)
-              .select("id")
-              .single();
-            console.log(`⚠️ Created basic work order ${basicWorkOrderResult?.id} without costs - manual update required`);
+            await serviceDb.from(TABLES.WORK_ORDERS).insert(fallbackWo);
+            console.log(`⚠️ Created basic work order without costs`);
           }
         } else {
           console.log(`ℹ️ Work order already exists for order ${orderId}`)
         }
       } catch (innerError) {
-        console.error("❌ Critical failure in work order creation block:", innerError);
-        try {
-          await serviceDb.from(TABLES.WORK_ORDERS).insert({
-            sales_order_id: orderId,
-            status: "pending",
-            completion_percentage: 0,
-            raw_materials_used: [],
-            materials_issued: [],
-            overhead_cost: 0,
-            labor_cost: 0,
-            total_cost: 0,
-            estimated_cost: 0,
-            created_at: now,
-            updated_at: now,
-            estimated_completion: null,
-            completed_at: null,
-            notes: `Fallback work order (critical error: ${innerError})`,
-            items: orderItems,
-            order_source: "web"
-          });
-          console.log(`✅ Created fallback work order for ${orderId} after critical failure`);
-        } catch (fallbackError) {
-          console.error("❌ Failed to even create fallback work order:", fallbackError);
-        }
+        console.error("❌ Critical failure in work order creation:", innerError);
+        await serviceDb.from(TABLES.WORK_ORDERS).insert({
+          wo_number: `WO-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+          sales_order_id: orderId,
+          status: "pending",
+          completion_percentage: 0,
+          raw_materials_used: [],
+          materials_issued: [],
+          overhead_cost: 0,
+          labor_cost: 0,
+          material_cost: 0,
+          total_cost: 0,
+          estimated_cost: 0,
+          created_at: now,
+          updated_at: now,
+          notes: `Fallback work order (critical error: ${innerError})`,
+          items: orderItems,
+          order_source: "web"
+        });
+        console.log(`✅ Created emergency fallback work order`);
       }
     }
 
