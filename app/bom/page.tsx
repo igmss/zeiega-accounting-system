@@ -272,7 +272,7 @@ export default function BOMPage() {
                                   <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
                                       <div><Label className="text-xs text-muted-foreground">Design</Label><p className="font-medium">{selectedBOM.design_name}</p></div>
-                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>getStatusBadge(selectedBOM.status)</div></div>
+                                      <div><Label className="text-xs text-muted-foreground">Status</Label><div>{getStatusBadge(selectedBOM.status)}</div></div>
                                       <div><Label className="text-xs text-muted-foreground">Labor</Label><p>{selectedBOM.labor_hours}h @ {formatCurrency(selectedBOM.labor_rate)}/hr = {formatCurrency(selectedBOM.total_labor_cost)}</p></div>
                                       <div><Label className="text-xs text-muted-foreground">Overhead</Label><p>{selectedBOM.overhead_percentage}% = {formatCurrency(selectedBOM.total_overhead_cost)}</p></div>
                                     </div>
