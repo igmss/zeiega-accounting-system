@@ -78,17 +78,13 @@ export async function POST(request: NextRequest) {
       console.log(`📋 Order ${orderId} not in Supabase — creating from webhook payload`)
       const orderRecord = {
         id: orderId,
-        userId: orderPayload.userId || "unknown",
+        user_id: orderPayload.userId || "unknown",
         status: status,
         items: orderPayload.items || [],
-        shippingAddress: orderPayload.shippingAddress || {},
-        subtotal: orderPayload.subtotal || 0,
+        shipping_address: orderPayload.shippingAddress || {},
         total: orderPayload.total || 0,
-        shipping: orderPayload.shipping || 0,
-        tax: orderPayload.tax || 0,
-        createdAt: orderPayload.createdAt || now,
-        updatedAt: now,
-        notes: orderPayload.notes || null,
+        created_at: orderPayload.createdAt || now,
+        updated_at: now,
       }
       const { data: inserted } = await serviceDb
         .from(TABLES.ORDERS)
@@ -124,46 +120,45 @@ export async function POST(request: NextRequest) {
     if (newPriority >= currentPriority || status === "cancelled") {
       await serviceDb.from(TABLES.ORDERS).update({
         status: status,
-        updatedAt: now
+        updated_at: now
       }).eq("id", orderId)
       console.log(`✅ Progressed status: ${currentStatus} -> ${status}`)
     } else {
       console.log(`ℹ️ Status skip: ${currentStatus} is higher priority than ${status}`)
     }
 
-    // Create/Update sales order in accounting system (Idempotent FIX-006)
+    // Create/Update sales order in accounting system
+    // Lookup by website_order_id (text), not id (uuid)
     const { data: existingSalesOrder } = await serviceDb
       .from(TABLES.SALES_ORDERS)
       .select("*")
-      .eq("id", orderId)
+      .eq("website_order_id", orderId)
       .single();
 
     if (existingSalesOrder) {
       await serviceDb.from(TABLES.SALES_ORDERS).update({
         status: mapOrderStatus(status),
         updated_at: now
-      }).eq("id", orderId);
+      }).eq("website_order_id", orderId);
       console.log(`✅ Updated existing sales order status for ${orderId}`);
     } else {
       const salesOrder = {
-        id: orderId,
         order_number: generateSalesOrderNumber(),
         website_order_id: orderId,
-        customer_id: orderData.userId || "unknown",
-        customer_name: orderData.shippingAddress?.fullName || "Unknown Customer",
-        items: orderData.items?.map((item: any) => ({
+        customer_name: orderData.shipping_address?.fullName || "Unknown Customer",
+        items: orderItems.map((item: any) => ({
           sku: item.productId,
           name: item.name || item.sku || item.productId,
           qty: item.quantity,
           unit_price: item.basePrice || item.adjustedPrice
-        })) || [],
+        })),
         status: mapOrderStatus(status),
-        created_at: orderData.createdAt ? new Date(orderData.createdAt).toISOString() : now,
-        total_amount: Number(orderData.total) || Number(orderData.subtotal) || 0,
+        created_at: orderData.created_at || now,
+        total_amount: Number(orderData.total) || 0,
         order_source: "web",
         updated_at: now
       };
-      await serviceDb.from(TABLES.SALES_ORDERS).upsert(salesOrder, { onConflict: "id" });
+      await serviceDb.from(TABLES.SALES_ORDERS).insert(salesOrder);
       console.log(`✅ Created new sales order for ${orderId}`);
     }
 
