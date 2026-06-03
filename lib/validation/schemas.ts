@@ -148,6 +148,7 @@ export const orderStatusWebhookSchema = z.object({
     orderId: z.string().min(1, "Order ID is required"),
     status: z.string().min(1, "Status is required"),
     webhookId: z.string().optional(),
+    webhookSecret: z.string().optional(),
     order: z.object({
         id: z.string().optional(),
         userId: z.string().nullable().optional(),
@@ -179,7 +180,7 @@ export const orderStatusWebhookSchema = z.object({
         updatedAt: z.string().optional(),
         notes: z.string().nullable().optional(),
     }).optional(),
-})
+}).passthrough()
 
 // ========================================
 // BOM (Bill of Materials) Schemas

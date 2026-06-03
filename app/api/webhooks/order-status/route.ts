@@ -53,7 +53,12 @@ export async function POST(request: NextRequest) {
 
     const { orderId, status, webhookId, order: orderPayload } = parsed.data
 
-    console.log(`🔄 Webhook: Processing order ${orderId} -> ${status}`)
+    console.log(`🔄 Webhook: Processing order ${orderId} -> ${status}`, {
+      hasOrderPayload: !!orderPayload,
+      payloadKeys: Object.keys(parsed.data),
+      orderKeys: orderPayload ? Object.keys(orderPayload) : 'none',
+      itemCount: orderPayload?.items?.length,
+    })
 
     const now = new Date().toISOString()
     const serviceDb = getServiceClient()
