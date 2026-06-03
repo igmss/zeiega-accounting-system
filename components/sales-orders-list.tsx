@@ -500,7 +500,7 @@ export function SalesOrdersList() {
                     <div>
                       <div className="font-medium">{order.customer_name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {order.order_source === "manual" ? "Manual" : "Web"}: {order.order_number || order.id?.slice(0, 8)}
+                        {order.order_source === "manual" ? "Manual" : order.order_source === "mobile_app" ? "Mobile" : "Web"}: {order.order_number || order.id?.slice(0, 8)}
                       </div>
                     </div>
                   </TableCell>
