@@ -180,18 +180,32 @@ export async function POST(request: NextRequest) {
           );
 
           if (result.success && result.workOrderId) {
-            console.log(`✅ Created work order ${result.workOrderId} with estimated cost ${formatCurrency(result.totalEstimatedCost || 0)}`);
+            console.log(`✅ Created work order ${result.workOrderId}`);
 
-            if (result.totalEstimatedCost && result.totalEstimatedCost > 0 && result.workOrderId) {
-              const wipResult = await EnhancedAccountingService.recordWIPOpening(
-                result.workOrderId,
-                result.totalEstimatedCost
-              );
-              if (wipResult.success) {
-                console.log(`✅ Posted WIP opening journal entry ${wipResult.entryId}`);
-              } else {
-                console.error(`❌ Failed to post WIP journal: ${wipResult.error}`);
+            const { data: wo } = await serviceDb.from(TABLES.WORK_ORDERS)
+              .select("id,material_cost,labor_cost,overhead_cost")
+              .eq("id", result.workOrderId).single();
+
+            if (wo) {
+              const matCost = Number(wo.material_cost) || 0;
+              const labCost = Number(wo.labor_cost) || 0;
+              const ohCost = Number(wo.overhead_cost) || 0;
+
+              if (matCost > 0) {
+                await EnhancedAccountingService.recordMaterialIssue(
+                  result.workOrderId,
+                  [{ itemId: "BOM-MAT", itemName: "BOM Materials", quantity: 1, unitCost: matCost }]
+                );
               }
+              if (labCost > 0) {
+                await EnhancedAccountingService.recordLaborApplied(
+                  result.workOrderId, Math.max(1, labCost / 50), 50
+                );
+              }
+              if (ohCost > 0) {
+                await EnhancedAccountingService.recordOverheadApplied(result.workOrderId, ohCost);
+              }
+              console.log(`✅ Posted JEs — mat:${matCost} lab:${labCost} oh:${ohCost}`);
             }
           } else {
             console.error(`❌ Cost calculation failed: ${result.error}`);

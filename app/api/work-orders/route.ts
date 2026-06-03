@@ -57,7 +57,7 @@ export async function PUT(request: Request) {
     const result = await WorkOrderService.updateWorkOrder(id, workOrderData)
     if (!result.success) return NextResponse.json({ error: result.error || "Failed to update work order" }, { status: 400 })
 
-    if (workOrderData.status === "in_progress") {
+    if (workOrderData.status === "in_progress" || workOrderData.status === "producing") {
       try {
         const serviceDb = getServiceClient()
         const { data: wo } = await serviceDb.from(TABLES.WORK_ORDERS).select("*").eq("id", id).maybeSingle()
