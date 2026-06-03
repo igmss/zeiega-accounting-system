@@ -188,10 +188,12 @@ export const orderStatusWebhookSchema = z.object({
 
 export const bomItemSchema = z.object({
     material_id: z.string().min(1, "Material ID is required"),
+    material_name: z.string().optional().default(""),
     quantity: z.number().positive("Quantity must be positive"),
     unit: z.string().max(50).default("pcs"),
-    waste_factor: z.number().min(0).max(1).default(0), // 0-100% waste
-    notes: z.string().max(500).optional(),
+    unit_cost: z.number().min(0).optional().default(0),
+    waste_factor: z.number().min(0).default(0), // 0-100% waste (or decimal)
+    notes: z.string().max(500).optional().default(""),
 })
 
 export const bomSchema = z.object({
@@ -200,7 +202,9 @@ export const bomSchema = z.object({
     version: z.string().max(50).default("1.0"),
     items: z.array(bomItemSchema).min(1, "At least one material is required"),
     labor_hours: z.number().min(0).default(0),
-    notes: z.string().max(1000).optional(),
+    labor_rate: z.number().min(0).optional().default(50),
+    overhead_percentage: z.number().min(0).max(100).optional().default(15),
+    notes: z.string().max(1000).optional().default(""),
     status: z.enum(["draft", "active", "archived"]).default("draft"),
 })
 

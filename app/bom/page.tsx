@@ -408,7 +408,7 @@ export default function BOMPage() {
                       </Select>
                       <Input type="number" min="0.01" step="0.1" value={item.quantity} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], quantity: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-20" placeholder="Qty" />
                       <Input type="number" min="0" step="0.01" value={item.unit_cost} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], unit_cost: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-24" placeholder="Cost" />
-                      <Input type="number" min="0" max="1" step="0.05" value={item.waste_factor} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], waste_factor: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-20" placeholder="Waste" />
+                      <Input type="number" min="0" max="100" step="1" value={item.waste_factor} onChange={(e) => { const ni = [...newBOM.items]; ni[idx] = {...ni[idx], waste_factor: parseFloat(e.target.value) || 0}; setNewBOM({...newBOM, items: ni}) }} className="w-20" placeholder="Waste %" />
                       {newBOM.items.length > 1 && (
                         <Button variant="ghost" size="sm" onClick={() => setNewBOM({...newBOM, items: newBOM.items.filter((_, i) => i !== idx)})} className="text-red-500 h-9 px-2">✕</Button>
                       )}
@@ -434,7 +434,7 @@ export default function BOMPage() {
                       body: JSON.stringify({
                         design_id: newBOM.design_id,
                         name: newBOM.name,
-                        items: newBOM.items.map(i => ({ material_id: i.material_id, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost, waste_factor: i.waste_factor, notes: "" })),
+                        items: newBOM.items.map(i => ({ material_id: i.material_id, material_name: i.material_name, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost, waste_factor: (i.waste_factor || 0) / 100, notes: "" })),
                         labor_hours: newBOM.labor_hours,
                         labor_rate: newBOM.labor_rate,
                         overhead_percentage: newBOM.overhead_percentage,
