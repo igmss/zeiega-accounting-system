@@ -147,6 +147,38 @@ export const paymentSchema = z.object({
 export const orderStatusWebhookSchema = z.object({
     orderId: z.string().min(1, "Order ID is required"),
     status: z.string().min(1, "Status is required"),
+    webhookId: z.string().optional(),
+    order: z.object({
+        id: z.string().optional(),
+        userId: z.string().nullable().optional(),
+        status: z.string().optional(),
+        items: z.array(z.object({
+            productId: z.string().nullable().optional(),
+            name: z.string().optional().default('Unknown Item'),
+            sku: z.string().optional().default(''),
+            quantity: z.number().int().positive().optional().default(1),
+            basePrice: z.number().optional().default(0),
+            adjustedPrice: z.number().optional().default(0),
+            image: z.string().nullable().optional(),
+            size: z.string().nullable().optional(),
+            color: z.string().nullable().optional(),
+        })).optional().default([]),
+        shippingAddress: z.object({
+            fullName: z.string().optional().default(''),
+            address: z.string().optional().default(''),
+            city: z.string().optional().default(''),
+            state: z.string().optional().default(''),
+            zipCode: z.string().optional().default(''),
+            phone: z.string().optional().default(''),
+        }).nullable().optional(),
+        subtotal: z.number().optional().default(0),
+        total: z.number().optional().default(0),
+        shipping: z.number().optional().default(0),
+        tax: z.number().optional().default(0),
+        createdAt: z.string().optional(),
+        updatedAt: z.string().optional(),
+        notes: z.string().nullable().optional(),
+    }).optional(),
 })
 
 // ========================================

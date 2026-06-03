@@ -51,22 +51,53 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { orderId, status } = parsed.data
+    const { orderId, status, webhookId, order: orderPayload } = parsed.data
 
     console.log(`🔄 Webhook: Processing order ${orderId} -> ${status}`)
 
+    const now = new Date().toISOString()
     const serviceDb = getServiceClient()
 
-    const { data: orderData } = await serviceDb
+    let orderData = null
+
+    const { data: existingOrder } = await serviceDb
       .from(TABLES.ORDERS)
       .select("*")
       .eq("id", orderId)
       .single()
 
+    if (existingOrder) {
+      orderData = existingOrder
+      console.log(`📋 Found existing order ${orderId} in Supabase`)
+    } else if (orderPayload) {
+      console.log(`📋 Order ${orderId} not in Supabase — creating from webhook payload`)
+      const orderRecord = {
+        id: orderId,
+        userId: orderPayload.userId || "unknown",
+        status: status,
+        items: orderPayload.items || [],
+        shippingAddress: orderPayload.shippingAddress || {},
+        subtotal: orderPayload.subtotal || 0,
+        total: orderPayload.total || 0,
+        shipping: orderPayload.shipping || 0,
+        tax: orderPayload.tax || 0,
+        createdAt: orderPayload.createdAt || now,
+        updatedAt: now,
+        notes: orderPayload.notes || null,
+      }
+      const { data: inserted } = await serviceDb
+        .from(TABLES.ORDERS)
+        .upsert(orderRecord, { onConflict: "id" })
+        .select("*")
+        .single()
+      orderData = inserted
+      console.log(`✅ Created order ${orderId} in Supabase`)
+    }
+
     if (!orderData) {
       return NextResponse.json(
-        { error: `Order ${orderId} not found` },
-        { status: 404 }
+        { error: `Order ${orderId} not found and no payload provided to create it` },
+        { status: 404, headers: getCORSHeaders(request, ["x-webhook-secret"]) }
       )
     }
 
@@ -83,8 +114,6 @@ export async function POST(request: NextRequest) {
 
     const currentPriority = STATUS_PRIORITY[currentStatus] ?? 0
     const newPriority = STATUS_PRIORITY[status] ?? 0
-
-    const now = new Date().toISOString()
 
     // 4. Status Regression Protection (Idempotent FIX-007)
     if (newPriority >= currentPriority || status === "cancelled") {
