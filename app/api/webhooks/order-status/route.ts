@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         status: mapOrderStatus(status),
         created_at: orderData.created_at || now,
         total_amount: Number(orderData.total) || 0,
-        order_source: "web",
+        order_source: orderPayload?.source || (orderData.source || "web"),
         updated_at: now
       };
       await serviceDb.from(TABLES.SALES_ORDERS).insert(salesOrder);

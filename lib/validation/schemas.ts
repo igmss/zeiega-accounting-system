@@ -179,6 +179,7 @@ export const orderStatusWebhookSchema = z.object({
         createdAt: z.string().optional(),
         updatedAt: z.string().optional(),
         notes: z.string().nullable().optional(),
+        source: z.string().optional(),
     }).optional(),
 }).passthrough()
 
