@@ -192,6 +192,19 @@ export async function POST(request: Request) {
           )
           if (cogsResult.success && cogsResult.entryId) journalEntryIds.push(cogsResult.entryId)
         }
+
+        // Close out manufacturing overhead variance after production + sale cycle completes
+        try {
+          const { OverheadService } = await import("@/lib/services/overhead-service")
+          const periodStart = new Date(new Date().getFullYear(), 0, 1)
+          const periodEnd = new Date()
+          const ohCloseResult = await OverheadService.disposeOverheadVariance(periodStart, periodEnd, 0.1, auth.user.id)
+          if (ohCloseResult.success && ohCloseResult.disposition?.journalEntryId) {
+            journalEntryIds.push(ohCloseResult.disposition.journalEntryId)
+          }
+        } catch (ohErr) {
+          console.warn("OH variance close-out skipped (non-blocking):", ohErr)
+        }
       }
     }
 

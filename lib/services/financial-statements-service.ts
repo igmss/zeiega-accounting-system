@@ -172,12 +172,10 @@ export class FinancialStatementsService {
         const revenueTotal = revenueItems.reduce((sum, item) => sum + item.amount, 0) - contraTotal
 
         const cogsItems = await this.getAccountBalancesByType(AccountType.COGS, startDate, endDate)
-        const cogsTotal = cogsItems
-            .filter(item => {
-                const isCredit = !isDebitNormalBalance(item.code)
-                return !isCredit
-            })
-            .reduce((sum, item) => sum + item.amount, 0)
+        const cogsTotal = cogsItems.reduce((sum, item) => {
+            const isDebit = isDebitNormalBalance(item.code)
+            return sum + (isDebit ? item.amount : -item.amount)
+        }, 0)
         const grossProfit = revenueTotal - cogsTotal
 
         const operatingItems = await this.getAccountBalancesByType(AccountType.EXPENSE, startDate, endDate)
@@ -211,7 +209,7 @@ export class FinancialStatementsService {
                 contraTotal
             },
             costOfGoodsSold: {
-                items: cogsItems.filter(item => isDebitNormalBalance(item.code)),
+                items: cogsItems,
                 total: cogsTotal
             },
             grossProfit,
@@ -298,9 +296,44 @@ export class FinancialStatementsService {
 
         // Read retained earnings directly from the GL instead of recomputing the full income statement
         const retainedEarningsBal = (await this.getAccountBalancesBatch(["3100"], undefined, asOfDate))["3100"] || 0
+        const currentYearPLBal = (await this.getAccountBalancesBatch(["3200"], undefined, asOfDate))["3200"] || 0
 
         let equityTotal = equityItems.reduce((sum, item) => sum + item.amount, 0)
-        equityTotal += retainedEarningsBal
+        equityTotal += retainedEarningsBal + currentYearPLBal
+
+        // If no closing entry has been posted (RE=0 and Current Year P/L=0),
+        // dynamically compute current period net income from P&L accounts
+        if (Math.abs(retainedEarningsBal) < 0.01 && Math.abs(currentYearPLBal) < 0.01) {
+            let dynamicNetIncome = 0
+            try {
+                const revenueItems = await this.getAccountBalancesByType(AccountType.REVENUE, undefined, asOfDate)
+                const contraRevenueItems = await this.getAccountBalancesByType(AccountType.CONTRA_REVENUE, undefined, asOfDate)
+                const revTotal = revenueItems.reduce((s, i) => s + i.amount, 0)
+                const contraRevTotal = contraRevenueItems.reduce((s, i) => s + i.amount, 0)
+
+                const cogsItems = await this.getAccountBalancesByType(AccountType.COGS, undefined, asOfDate)
+                const cogsTotal = cogsItems.reduce((s, i) => s + (isDebitNormalBalance(i.code) ? i.amount : -i.amount), 0)
+
+                const expItems = await this.getAccountBalancesByType(AccountType.EXPENSE, undefined, asOfDate)
+                const expTotal = expItems.reduce((s, i) => s + (isDebitNormalBalance(i.code) ? i.amount : -i.amount), 0)
+
+                const otherItems = await this.getAccountBalancesByType(AccountType.OTHER, undefined, asOfDate)
+                const otherTotal = otherItems.reduce((s, i) => s + (isDebitNormalBalance(i.code) ? i.amount : -i.amount), 0)
+
+                dynamicNetIncome = revTotal - contraRevTotal - cogsTotal - expTotal - otherTotal
+            } catch (e) {
+                console.warn("Could not compute dynamic net income for balance sheet:", e)
+            }
+
+            if (Math.abs(dynamicNetIncome) > 0.01) {
+                equityTotal += dynamicNetIncome
+                equityItems.push({
+                    code: "RETAINED_DYNAMIC",
+                    name: "Retained Earnings (Current Period Net Income)",
+                    amount: dynamicNetIncome,
+                })
+            }
+        }
 
         const totalLiabilitiesAndEquity = totalLiabilities + equityTotal
         const balanceCheckFailed = Math.abs(totalAssets - totalLiabilitiesAndEquity) > 0.01

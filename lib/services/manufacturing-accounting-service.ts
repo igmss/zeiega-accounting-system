@@ -149,6 +149,45 @@ export class ManufacturingAccountingService {
             }
         } catch {}
 
+        // Query ACTUAL WIP sub-ledger balances for this work order
+        // to avoid data inconsistency between WO record and journal entries
+        try {
+            const { data: jeLines } = await getServiceSupabase()
+                .from(TABLES.JOURNAL_ENTRY_LINES)
+                .select("account_code, debit, credit")
+                .eq("reference_type", "work_order")
+                .eq("reference_id", workOrderId)
+
+            if (jeLines && jeLines.length > 0) {
+                const actualLaborDebit = jeLines
+                    .filter((l: any) => l.account_code === ACCOUNT_CODES.WIP_LABOR)
+                    .reduce((s: number, l: any) => s + (l.debit || 0), 0)
+                const actualLaborCredit = jeLines
+                    .filter((l: any) => l.account_code === ACCOUNT_CODES.WIP_LABOR)
+                    .reduce((s: number, l: any) => s + (l.credit || 0), 0)
+                const actualOHDebit = jeLines
+                    .filter((l: any) => l.account_code === ACCOUNT_CODES.WIP_OVERHEAD)
+                    .reduce((s: number, l: any) => s + (l.debit || 0), 0)
+                const actualOHCredit = jeLines
+                    .filter((l: any) => l.account_code === ACCOUNT_CODES.WIP_OVERHEAD)
+                    .reduce((s: number, l: any) => s + (l.credit || 0), 0)
+
+                const netLaborWIP = actualLaborDebit - actualLaborCredit
+                const netOHWIP = actualOHDebit - actualOHCredit
+
+                if (netLaborWIP > 0 && Math.abs(netLaborWIP - labCost) > 0.005) {
+                    console.warn(`recordWIPToFinishedGoods: WO ${workOrderId} labor_cost=${labCost} but actual WIP balance=${netLaborWIP} — using actual`)
+                    labCost = netLaborWIP
+                }
+                if (netOHWIP > 0 && Math.abs(netOHWIP - ohCost) > 0.005) {
+                    console.warn(`recordWIPToFinishedGoods: WO ${workOrderId} overhead_cost=${ohCost} but actual WIP balance=${netOHWIP} — using actual`)
+                    ohCost = netOHWIP
+                }
+            }
+        } catch (e) {
+            console.warn(`recordWIPToFinishedGoods: Could not query actual WIP balances for ${workOrderId}:`, e)
+        }
+
         // Derive FG debit from actual WO component costs so debits equal credits
         const actualTotalCost = matCost + labCost + ohCost
         const fgDebit = actualTotalCost > 0 ? actualTotalCost : totalCost
